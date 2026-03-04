@@ -1408,3 +1408,80 @@ canvas { cursor: default; }
     flex-wrap:wrap;
   }
 }
+
+/* =====================================================
+   FINTRACK MOBILE TRANSACTION UI IMPROVEMENTS
+   Melhor leitura no telefone
+   ===================================================== */
+
+@media (max-width:640px){
+
+  /* estrutura do card */
+  #page-transactions #txBody tr{
+    display:grid;
+    grid-template-columns: 1fr auto;
+    gap:8px 10px;
+    align-items:start;
+  }
+
+  /* DATA */
+  #page-transactions #txBody tr td:nth-child(1){
+    grid-column:1 / 2;
+    font-size:.80rem;
+    color:var(--muted);
+  }
+
+  /* CONTA */
+  #page-transactions #txBody tr td:nth-child(2){
+    grid-column:2 / 3;
+    justify-self:end;
+    font-size:.80rem;
+  }
+
+  /* DESCRIÇÃO */
+  #page-transactions #txBody tr td:nth-child(3){
+    grid-column:1 / 2;
+    font-size:1rem;
+    font-weight:600;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  /* BENEFICIÁRIO (maior) */
+  #page-transactions #txBody tr td:nth-child(4){
+    grid-column:1 / 2;
+    font-size:1.1rem;
+    font-weight:700;
+  }
+
+  /* CATEGORIA abaixo do beneficiário */
+  #page-transactions #txBody tr td:nth-child(5){
+    grid-column:1 / 2;
+    font-size:.85rem;
+    color:var(--muted);
+  }
+
+  /* VALOR bem maior para facilitar leitura */
+  #page-transactions #txBody tr td:nth-child(6){
+    grid-column:2 / 3;
+    justify-self:end;
+    font-size:1.45rem;
+    font-weight:800;
+    white-space:nowrap;
+  }
+
+  /* AÇÕES */
+  #page-transactions #txBody tr td:nth-child(7){
+    grid-column:1 / -1;
+    margin-top:6px;
+  }
+
+  #page-transactions #txBody tr td:nth-child(7) > div{
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+
+}
