@@ -226,6 +226,12 @@ function updateUserUI() {
   if (auditNav) auditNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
   if (settingsNav) settingsNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
 
+  // Topbar icon shortcuts
+  const topAuditBtn = document.getElementById('topAuditBtn');
+  const topSettingsBtn = document.getElementById('topSettingsBtn');
+  if (topAuditBtn) topAuditBtn.style.display = (currentUser.role === 'admin') ? '' : 'none';
+  if (topSettingsBtn) topSettingsBtn.style.display = (currentUser.role === 'admin') ? '' : 'none';
+
   // Apply permission restrictions
   applyPermissions();
 }

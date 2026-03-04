@@ -95,6 +95,27 @@ async function fetchRptTransactions() {
 }
 
 /* ═══ VIEW: ANÁLISE ═══ */
+
+// Build tooltip lines showing category composition for a bar (top categories + others)
+function _rptTopCompositionLines(catMap, total) {
+  if(!catMap) return [];
+  const entries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  if(!entries.length) return [];
+  const max = 6;
+  const top = entries.slice(0, max);
+  const rest = entries.slice(max);
+  const lines = top.map(([name,val]) => {
+    const pct = total>0 ? (val/total*100).toFixed(1)+'%' : '';
+    return `• ${name}: ${fmt(val)}${pct?` (${pct})`:''}`;
+  });
+  if(rest.length) {
+    const restVal = rest.reduce((s,[,v])=>s+v,0);
+    const pct = total>0 ? (restVal/total*100).toFixed(1)+'%' : '';
+    lines.push(`• Outros: ${fmt(restVal)}${pct?` (${pct})`:''}`);
+  }
+  return lines;
+}
+
 async function loadReports() {
   const {from, to} = getRptDateRange();
   const txs  = await fetchRptTransactions();
@@ -155,11 +176,40 @@ async function loadReports() {
     if(t.amount<0) accMap[n].exp+=Math.abs(t.amount); else accMap[n].inc+=t.amount;
   });
   const accE = Object.entries(accMap).sort((a,b)=>(b[1].exp+b[1].inc)-(a[1].exp+a[1].inc));
+// Category composition per account for bar tooltips
+const _accComp = {};
+txs.forEach(t => {
+  const acc = t.accounts?.name || '—';
+  const tp  = t.amount < 0 ? 'Despesas' : 'Receitas';
+  const cat = t.categories?.name || 'Sem categoria';
+  const val = t.amount < 0 ? Math.abs(t.amount) : t.amount;
+  if(!_accComp[acc]) _accComp[acc] = { Despesas:{}, Receitas:{} };
+  _accComp[acc][tp][cat] = (_accComp[acc][tp][cat] || 0) + val;
+});
+
+
   if(accE.length)
     renderChart('reportAccountChart','bar',accE.map(e=>e[0]),[
       {label:'Despesas',data:accE.map(e=>+e[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.8)',borderRadius:5,borderSkipped:false},
       {label:'Receitas',data:accE.map(e=>+e[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
-    ]);
+    ], {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const it = items?.[0];
+              if(!it) return [];
+              const accLabel = it.label;
+              const dsLabel  = it.dataset?.label;
+              const val = Math.abs(Number(it.raw||0));
+              const catMap = _accComp[accLabel]?.[dsLabel];
+              const lines = _rptTopCompositionLines(catMap, val);
+              return lines.length ? ['','Composição por categoria:', ...lines] : [];
+            }
+          }
+        }
+      }
+    });
 
   /* Evolução */
   await renderTrendChart(from, to);
@@ -209,21 +259,84 @@ async function renderTrendChart(from, to) {
       if(t.amount<0) wkMap[w].exp+=Math.abs(t.amount); else wkMap[w].inc+=t.amount;
     });
     const wks=Object.entries(wkMap);
-    if(wks.length) renderChart('reportTrendChart','bar',wks.map(w=>w[0]),[
-      {label:'Receitas',data:wks.map(w=>+w[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
-      {label:'Despesas',data:wks.map(w=>+w[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.75)',borderRadius:5,borderSkipped:false},
-    ]);
-    return;
+    
+if(wks.length) {
+  // Category composition per week bucket (for bar tooltips)
+  const _wkComp = {};
+  rptState.txData.forEach(t=>{
+    const d=new Date(t.date+'T12:00');
+    const w='Sem '+Math.ceil(d.getDate()/7);
+    const tp=t.amount<0?'Despesas':'Receitas';
+    const cat=t.categories?.name||'Sem categoria';
+    const val=t.amount<0?Math.abs(t.amount):t.amount;
+    if(!_wkComp[w]) _wkComp[w]={Despesas:{},Receitas:{}};
+    _wkComp[w][tp][cat]=(_wkComp[w][tp][cat]||0)+val;
+  });
+
+  renderChart('reportTrendChart','bar',wks.map(w=>w[0]),[
+    {label:'Receitas',data:wks.map(w=>+w[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
+    {label:'Despesas',data:wks.map(w=>+w[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.75)',borderRadius:5,borderSkipped:false},
+  ], {
+    plugins: {
+      tooltip: {
+        callbacks: {
+          afterBody(items) {
+            const it = items?.[0]; if(!it) return [];
+            const bucket = it.label;
+            const dsLabel = it.dataset?.label;
+            const val = Math.abs(Number(it.raw||0));
+            const catMap = _wkComp[bucket]?.[dsLabel];
+            const lines = _rptTopCompositionLines(catMap, val);
+            return lines.length ? ['','Composição por categoria:', ...lines] : [];
+          }
+        }
+      }
+    }
+  });
+}
+return;
+
   }
   rptState.txData.forEach(t=>{
     const m=months.find(x=>x.key===t.date.slice(0,7)); if(!m) return;
     if(t.amount<0) m.exp+=Math.abs(t.amount); else m.inc+=t.amount;
   });
+  
+  // Category composition per month label (for bar tooltips)
+  const _moComp = {};
+  months.forEach(m => { _moComp[m.label] = { Despesas:{}, Receitas:{} }; });
+  rptState.txData.forEach(t=>{
+    const key = t.date.slice(0,7);
+    const m = months.find(x=>x.key===key); if(!m) return;
+    const lab = m.label;
+    const tp = t.amount<0?'Despesas':'Receitas';
+    const cat = t.categories?.name || 'Sem categoria';
+    const val = t.amount<0?Math.abs(t.amount):t.amount;
+    _moComp[lab][tp][cat] = (_moComp[lab][tp][cat]||0)+val;
+  });
+
   renderChart('reportTrendChart','bar',months.map(m=>m.label),[
     {label:'Receitas',data:months.map(m=>+m.inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
     {label:'Despesas',data:months.map(m=>+m.exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.75)',borderRadius:5,borderSkipped:false},
-  ]);
+  ], {
+    plugins: {
+      tooltip: {
+        callbacks: {
+          afterBody(items) {
+            const it = items?.[0]; if(!it) return [];
+            const lab = it.label;
+            const dsLabel = it.dataset?.label;
+            const val = Math.abs(Number(it.raw||0));
+            const catMap = _moComp[lab]?.[dsLabel];
+            const lines = _rptTopCompositionLines(catMap, val);
+            return lines.length ? ['','Composição por categoria:', ...lines] : [];
+          }
+        }
+      }
+    }
+  });
 }
+
 
 /* ═══ VIEW: TRANSAÇÕES ═══ */
 async function loadReportTx() {
@@ -712,6 +825,22 @@ async function sendReportByEmail() {
   }
 }
 
+
+// Deep merge helper for chart options (keeps defaults while allowing scoped overrides)
+function _deepMerge(target, source) {
+  if(!source) return target;
+  for(const k of Object.keys(source)) {
+    const sv = source[k];
+    const tv = target[k];
+    if(sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) {
+      target[k] = _deepMerge({...tv}, sv);
+    } else {
+      target[k] = sv;
+    }
+  }
+  return target;
+}
+
 function renderChart(id, type, labels, datasets, extraOptions={}) {
   if(state.chartInstances[id]) state.chartInstances[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
@@ -810,9 +939,14 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
         x: { ticks:{color:'#8c8278',font:{size:10.5}}, grid:{color:'#f0ede811'}, border:{color:'#e8e4de'} },
         y: { ticks:{color:'#8c8278',font:{size:10.5},callback:v=>fmt(v)}, grid:{color:'#f0ede8'}, border:{color:'#e8e4de'} }
       } : undefined,
-      ...extraOptions,
+      /* merged options */
     }
   });
+  // Merge extra options without losing defaults
+  if(extraOptions && Object.keys(extraOptions).length) {
+    state.chartInstances[id].options = _deepMerge(state.chartInstances[id].options || {}, extraOptions);
+    state.chartInstances[id].update();
+  }
   return state.chartInstances[id];
 }
 

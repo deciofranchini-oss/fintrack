@@ -20,6 +20,9 @@ function closeSidebar(){
 }
 
 let sb=null;
+// Supabase connection defaults (loaded from js/config.js if present)
+const DEFAULT_SB_URL = (window.SUPABASE_URL || '').trim();
+const DEFAULT_SB_KEY = (window.SUPABASE_ANON_KEY || '').trim();
 
 // ─────────────────────────────────────────────
 // Background helpers (PWA)
@@ -70,7 +73,10 @@ async function initSupabase(){
   }catch(e){toast('Erro: '+e.message,'error');}
 }
 async function tryAutoConnect(){
-  const url=localStorage.getItem('sb_url'),key=localStorage.getItem('sb_key');
+  let url=localStorage.getItem('sb_url'),key=localStorage.getItem('sb_key');
+  // If not configured on this device, fall back to bundled config (js/config.js)
+  if((!url || !key) && DEFAULT_SB_URL && DEFAULT_SB_KEY){ url = DEFAULT_SB_URL; key = DEFAULT_SB_KEY; }
+
   if(url&&key){
     document.getElementById('supabaseUrl').value=url;
     document.getElementById('supabaseKey').value=key;

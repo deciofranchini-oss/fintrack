@@ -437,6 +437,8 @@ function loadSettings() {
 ══════════════════════════════════════════════════════════════════ */
 
 
+let _pendingLogoFile = null;
+
 function initLogoSettings() {
   // Admin-only section: show/hide
   const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
@@ -459,7 +461,9 @@ function initLogoSettings() {
       const reader = new FileReader();
       reader.onload = async () => {
         const dataUrl = reader.result;
-        if(urlEl) urlEl.value = dataUrl;
+        _pendingLogoFile = f;
+        // Keep preview, but do not rely on DataURL as persisted logo (use Supabase Storage on save)
+        if(urlEl) urlEl.value = '';
         if(previewEl) previewEl.src = dataUrl;
       };
       reader.readAsDataURL(f);
@@ -467,20 +471,53 @@ function initLogoSettings() {
   }
 }
 
+
+async function uploadLogoToStorage(file){
+  if(!sb) throw new Error('Supabase não configurado');
+  const BUCKET = 'fintrack-attachments'; // reuse existing public bucket
+  const fam = currentUser?.family_id ? String(currentUser.family_id) : 'global';
+  const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop().toLowerCase() : 'png';
+  const path = `app/logo/${fam}/logo.${ext}`;
+  const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file, { upsert:true, contentType: file.type || 'image/png' });
+  if(upErr) throw upErr;
+  const { data: urlData } = sb.storage.from(BUCKET).getPublicUrl(path);
+  const publicUrl = urlData?.publicUrl;
+  if(!publicUrl) throw new Error('Não foi possível obter a URL pública do logotipo');
+  return publicUrl;
+}
+
 async function saveAppLogo() {
   const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
   if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
 
-  const urlEl = document.getElementById('appLogoUrl');
-  const val = (urlEl?.value || '').trim();
-  if(!val) { toast('Informe uma URL ou selecione um arquivo','warning'); return; }
+  try{
+    let finalUrl = '';
+    // Prefer upload (ensures logo is shared across devices)
+    if(_pendingLogoFile){
+      finalUrl = await uploadLogoToStorage(_pendingLogoFile);
+      _pendingLogoFile = null;
+    } else {
+      const urlEl = document.getElementById('appLogoUrl');
+      const val = (urlEl?.value || '').trim();
+      if(!val) { toast('Selecione um arquivo ou informe uma URL','warning'); return; }
+      finalUrl = val;
+    }
 
-  await saveAppSetting('app_logo_url', val);
-  if(typeof setAppLogo === 'function') setAppLogo(val);
-  const previewEl = document.getElementById('appLogoPreview');
-  if(previewEl) previewEl.src = val;
-  toast('Logotipo atualizado','success');
+    await saveAppSetting('app_logo_url', finalUrl);
+    if(typeof setAppLogo === 'function') setAppLogo(finalUrl);
+    const previewEl = document.getElementById('appLogoPreview');
+    if(previewEl) previewEl.src = finalUrl;
+    toast('Logotipo atualizado (sincronizado)','success');
+  }catch(e){
+    const msg = (e && e.message) ? e.message : String(e);
+    toast('Erro ao salvar logotipo: '+msg,'error');
+    // Hint if bucket missing
+    if((msg||'').toLowerCase().includes('bucket') || (msg||'').toLowerCase().includes('not found')){
+      toast('Dica: crie/torne público o bucket fintrack-attachments no Supabase Storage','warning');
+    }
+  }
 }
+
 
 async function resetAppLogo() {
   const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
