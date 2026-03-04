@@ -1,0 +1,2278 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f7f6f3">
+<title>J.F. Family Fintrack · Finanças Pessoais</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- SETUP -->
+<!-- PIN LOCK SCREEN -->
+<!-- ══════ LOGIN SCREEN ══════ -->
+<div class="auth-screen" id="authScreen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img id="authLogoImg" src="https://deciofranchini-oss.github.io/Fintrack/logo.png" alt="FinTrack" onerror="this.style.display='none'">
+    </div>
+    <div class="auth-title">Family FinTrack</div>
+    <div class="auth-sub" id="authSubtitle">Gerenciamento de Finanças da Fanmília</div>
+
+    <!-- Change password banner -->
+    <div class="auth-change-pw" id="authChangePwBanner" style="display:none">
+      ⚠️ Por segurança, altere sua senha no primeiro acesso.
+    </div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <div id="authLoginForm">
+      <div class="auth-field">
+        <label>E-mail</label>
+        <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email"
+          onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()">
+      </div>
+      <div class="auth-field">
+        <label>Senha</label>
+        <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="auth-btn" onclick="doLogin()" id="authLoginBtn">Entrar</button>
+    </div>
+
+    <!-- Change password form (shown when must_change_pw) -->
+    <div id="authChangePwForm" style="display:none">
+      <div class="auth-change-pw">🔐 Defina uma nova senha para continuar.</div>
+      <div class="auth-field">
+        <label>Nova Senha</label>
+        <input type="password" id="authNewPw1" placeholder="Mínimo 8 caracteres">
+      </div>
+      <div class="auth-field">
+        <label>Confirmar Nova Senha</label>
+        <input type="password" id="authNewPw2" placeholder="Repita a nova senha">
+      </div>
+      <button class="auth-btn" onclick="doChangePw()">Salvar Nova Senha</button>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;font-size:.72rem;color:#c0b9b0">
+      JF Family FinTrack · Powered by Supabase
+    </div>
+  </div>
+</div>
+
+<!-- ══════ USER MANAGEMENT MODAL ══════ -->
+<div class="modal-overlay" id="userMgmtModal">
+  <div class="modal" style="max-width:600px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">👥 Gerenciar Usuários</span>
+      <button class="modal-close" onclick="closeModal('userMgmtModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:.82rem;color:var(--muted)" id="userMgmtCount"></div>
+        <button class="btn btn-primary btn-sm" onclick="showAddUserForm()">+ Novo Usuário</button>
+      </div>
+
+      <!-- Add user form -->
+      <div id="addUserForm" style="display:none;background:var(--accent-lt);border:1.5px solid rgba(42,96,73,.2);border-radius:var(--r);padding:16px;margin-bottom:14px">
+        <div style="font-size:.85rem;font-weight:600;margin-bottom:10px">Novo Usuário</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="form-group" style="margin:0"><label>E-mail</label><input type="email" id="newUserEmail" placeholder="email@dominio.com"></div>
+          <div class="form-group" style="margin:0"><label>Nome</label><input type="text" id="newUserName" placeholder="Nome completo"></div>
+          <div class="form-group" style="margin:0"><label>Senha Inicial</label><input type="password" id="newUserPw" placeholder="Mínimo 8 chars"></div>
+          <div class="form-group" style="margin:0"><label>Perfil</label>
+            <select id="newUserRole">
+              <option value="viewer">Viewer (somente leitura)</option>
+              <option value="editor">Editor (cria/edita dados)</option>
+              <option value="admin">Admin (acesso total)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="createUser()">Criar Usuário</button>
+          <button class="btn btn-ghost btn-sm" onclick="hideAddUserForm()">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="userList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ EDIT USER MODAL ══════ -->
+<div class="modal-overlay" id="editUserModal">
+  <div class="modal" style="max-width:420px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">✏️ Editar Usuário</span>
+      <button class="modal-close" onclick="closeModal('editUserModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editUserId">
+      <div class="form-group"><label>Nome</label><input type="text" id="editUserName"></div>
+      <div class="form-group"><label>Perfil</label>
+        <select id="editUserRole">
+          <option value="viewer">Viewer (somente leitura)</option>
+          <option value="editor">Editor (cria/edita dados)</option>
+          <option value="admin">Admin (acesso total)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nova Senha (deixe em branco para não alterar)</label>
+        <input type="password" id="editUserNewPw" placeholder="Nova senha...">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="editUserActive" style="width:16px;height:16px">
+        <label for="editUserActive" style="font-size:.85rem;cursor:pointer">Usuário ativo</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editUserModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditUser()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="pin-screen" id="pinScreen" style="display:none">
+  <div class="pin-card">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:2.2rem;margin-bottom:6px">🔐</div>
+      <div class="pin-title">JF Family FinTrack</div>
+      <div class="pin-subtitle">Digite o Masterpin para acessar</div>
+    </div>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+      <div class="pin-dot" id="pd4"></div>
+      <div class="pin-dot" id="pd5"></div>
+    </div>
+    <div class="pin-keypad" id="pinKeypad">
+      <button class="pin-key" onclick="pinKey(1)">1</button>
+      <button class="pin-key" onclick="pinKey(2)">2</button>
+      <button class="pin-key" onclick="pinKey(3)">3</button>
+      <button class="pin-key" onclick="pinKey(4)">4</button>
+      <button class="pin-key" onclick="pinKey(5)">5</button>
+      <button class="pin-key" onclick="pinKey(6)">6</button>
+      <button class="pin-key" onclick="pinKey(7)">7</button>
+      <button class="pin-key" onclick="pinKey(8)">8</button>
+      <button class="pin-key" onclick="pinKey(9)">9</button>
+      <button class="pin-key zero" onclick="pinKey(0)">0</button>
+      <button class="pin-key del" onclick="pinDel()">⌫</button>
+    </div>
+    <div class="pin-error-msg" id="pinErrorMsg"></div>
+  </div>
+</div>
+
+<!-- SUPABASE SETUP -->
+<div class="setup-screen" id="setupScreen" style="display:none">
+  <div class="setup-box">
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="https://deciofranchini-oss.github.io/Fintrack/logo.png" style="height:130px;object-fit:contain;mix-blend-mode:normal" alt="JF Family FinTrack">
+    </div>
+    <p style="text-align:center">Configure sua conexão com o Supabase para começar.</p>
+    <div class="form-group"><label>Supabase URL</label><input type="url" id="supabaseUrl" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+    <div class="form-group"><label>Supabase Anon Key</label><input type="password" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiI..." autocomplete="off"></div>
+    <button class="btn btn-primary" onclick="initSupabase()" style="width:100%;justify-content:center;padding:11px;margin-top:6px;font-size:.9rem">Conectar</button>
+    <p class="setup-hint">Credenciais salvas apenas no seu browser (localStorage).</p>
+  </div>
+</div>
+
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-logo" style="padding:4px 16px 4px;background:var(--surface)">
+    <img id="sidebarLogoImg" src="https://deciofranchini-oss.github.io/Fintrack/logo.png" alt="Family FinTrack" style="width:100%;max-width:180px;height:auto;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:normal">
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-label">Principal</div>
+      <button class="nav-item active" onclick="navigate('dashboard')" id=\"dashboardNav\"><span class="ni-icon">📊</span>Dashboard</button>
+      <button class="nav-item" onclick="navigate('transactions')" id=\"transactionsNav\"><span class="ni-icon">↕</span>Transações</button>
+      <button class="nav-item" onclick="navigate('accounts')" id=\"accountsNav\"><span class="ni-icon">🏦</span>Contas</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Análise</div>
+      <button class="nav-item" onclick="navigate('reports')" id=\"reportsNav\"><span class="ni-icon">📈</span>Relatórios</button>
+      <button class="nav-item" onclick="navigate('budgets')" id=\"budgetsNav\"><span class="ni-icon">🎯</span>Orçamentos</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Planejamento</div>
+      <button class="nav-item" onclick="navigate('scheduled')" id=\"scheduledNav\"><span class="ni-icon">📅</span>Programados</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Cadastros</div>
+      <button class="nav-item" onclick="navigate('categories')" id=\"categoriesNav\"><span class="ni-icon">🏷</span>Categorias</button>
+      <button class="nav-item" onclick="navigate('payees')" id=\"payeesNav\"><span class="ni-icon">👥</span>Beneficiários</button>
+    </div>
+</div>
+  <div class="sidebar-footer" style="display:flex;flex-direction:column;gap:3px">
+<button class="nav-item" onclick="doLogout()" style="color:var(--red);font-size:.8rem;padding:7px 10px"><span class="ni-icon" style="font-size:.85rem">↩</span>Sair</button>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main" id="mainApp">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <img id="topbarLogoImg" src="" alt="JF Family FinTrack" style="height:36px;width:auto;object-fit:contain;display:none">
+      <span class="topbar-title" id="pageTitle">Dashboard</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="privacyToggleBtn" onclick="togglePrivacy()" title="Ocultar valores" style="background:none;border:none;cursor:pointer;padding:6px;border-radius:6px;color:var(--muted);display:flex;align-items:center;transition:color 0.2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <div class="topbar-user" onclick="showUserMenu()" id="topbarUserBtn" style="display:none">
+        <div class="topbar-user-avatar" id="topbarUserAvatar">?</div>
+        <span class="topbar-user-name" id="topbarUserName"></span>
+      </div>
+      
+      <div class="topbar-quick-actions" style="display:flex;align-items:center;gap:6px;margin-right:6px">
+        <a class="topbar-icon-btn" id="schoolPaymentsBtn" href="https://deciofranchini-oss.github.io/objetivo" target="_blank" rel="noopener noreferrer" title="Gerenciamento Escola"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;text-decoration:none;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">🎓</span>
+        </a>
+        <button class="topbar-icon-btn" id="importNav" onclick="navigate('import')" title="Importar"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">📥</span>
+        </button>
+        <button class="topbar-icon-btn" id="auditNav" onclick="navigate('audit')" title="Auditoria"
+           style="display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">🧾</span>
+        </button>
+        <button class="topbar-icon-btn" id="settingsNav" onclick="navigate('settings')" title="Configurações"
+           style="display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">⚙️</span>
+        </button>
+      </div>
+<button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()" title="Nova Transação" aria-label="Nova Transação">+</button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="grid-4 mb-6">
+        <div class="stat-card"><div class="stat-accent"></div><div class="stat-label">Patrimônio Total</div><div class="stat-value text-accent" id="statTotal">—</div><div class="stat-sub">Todas as contas</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--green)"></div><div class="stat-label">Receitas do Mês</div><div class="stat-value text-green" id="statIncome">—</div><div class="stat-sub">Mês atual</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--red)"></div><div class="stat-label">Despesas do Mês</div><div class="stat-value text-red" id="statExpenses">—</div><div class="stat-sub">Mês atual</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--amber)"></div><div class="stat-label">Saldo do Mês</div><div class="stat-value" id="statBalance">—</div><div class="stat-sub">Receitas − Despesas</div></div>
+      </div>
+      <div class="grid-2 mb-6">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Fluxo de Caixa (6 meses)</span>
+            <select id="cashflowAccountFilter" onchange="renderCashflowChart()" 
+              style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:160px">
+              <option value="">Todas as contas</option>
+            </select>
+          </div>
+          <canvas id="cashflowChart" height="200"></canvas>
+        </div>
+        <div class="card"><div class="card-header"><span class="card-title">Despesas por Categoria</span></div><canvas id="categoryChart" height="200"></canvas></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header" style="gap:8px;flex-wrap:wrap">
+  <span class="card-title">Últimas Transações</span>
+  <span id="dashPendingBadge" class="badge" style="background:var(--amber-lt,#fffbeb);color:var(--amber,#b45309);border:1px solid rgba(180,83,9,.18);display:none;white-space:nowrap">⏳ 0 pendentes</span>
+  <span id="dashAutoRunSummary" class="text-muted" style="font-size:.75rem;display:none;white-space:nowrap;cursor:pointer" onclick="navigate('audit')"></span>
+  <select id="dashRecentStatus" onchange="loadDashboardRecent()" style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:170px">
+    <option value="">Todos</option>
+    <option value="confirmed">✅ Confirmadas</option>
+    <option value="pending">⏳ Pendentes</option>
+  </select>
+  <button class="btn btn-ghost btn-sm" onclick="navigate('transactions')">Ver todas</button>
+</div>
+          <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody id="recentTxBody"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando...</td></tr></tbody></table></div>
+        </div>
+        <div class="card"><div class="card-header"><span class="card-title">Saldo por Conta</span></div><div id="accountBalancesList"></div></div>
+      </div>
+    </div>
+
+    <!-- TRANSACTIONS -->
+    <div class="page" id="page-transactions">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openTxClipboardImport()">📋 Importar do Clipboard</button>
+        <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
+      </div>
+      <div class="filters">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="txSearch" placeholder="Buscar transações..." oninput="filterTransactions()">
+        </div>
+        <select id="txMonth" onchange="filterTransactions()" style="max-width:175px"></select>
+        <select id="txAccount" onchange="filterTransactions()" style="max-width:170px"><option value="">Todas as contas</option></select>
+        <select id="txType" onchange="filterTransactions()" style="max-width:140px">
+          <option value="">Todos os tipos</option><option value="income">Receitas</option><option value="expense">Despesas</option><option value="transfer">Transferências</option><option value="card_payment">💳 Pgto. Cartão</option>
+        </select>
+        <select id="txStatusFilter" onchange="filterTransactions()" style="max-width:160px">
+          <option value="">Todos os status</option>
+          <option value="pending">⏳ Pendentes</option>
+          <option value="confirmed">✅ Confirmadas</option>
+        </select>
+        <div class="view-toggle">
+          <button class="view-btn active" id="viewBtnFlat" onclick="setTxView('flat')" title="Lista simples">☰ Lista</button>
+          <button class="view-btn" id="viewBtnGroup" onclick="setTxView('group')" title="Agrupado por conta">⊞ Por Conta</button>
+        </div>
+      </div>
+      <div id="txSummaryBar" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+      <div class="card" id="txFlatCard">
+        <div class="card-header">
+          <span class="card-title" id="txCount">Transações</span>
+          <div style="display:flex;gap:5px"><span id="txTotalIncome" class="badge badge-green"></span><span id="txTotalExpense" class="badge badge-red"></span></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th onclick="sortTx('date')">Data ⇅</th><th>Conta</th><th>Descrição</th><th>Beneficiário</th><th>Categoria</th><th onclick="sortTx('amount')">Valor ⇅</th><th style="width:60px"></th></tr></thead>
+            <tbody id="txBody"><tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+        <div id="txPagination" style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-top:1px solid var(--border);font-size:.78rem;color:var(--muted)"></div>
+      </div>
+      <div id="txGroupContainer" style="display:none"></div>
+    </div>
+
+    <!-- ACCOUNTS -->
+    <div class="page" id="page-accounts">
+      <div class="section-header mb-6">
+        <span class="section-title">Minhas Contas</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openGroupModal()" title="Gerenciar grupos">🗂️ Grupos</button>
+          <button class="btn btn-primary" onclick="openAccountModal()">+ Nova Conta</button>
+        </div>
+      </div>
+      <div class="tab-bar" id="accountsTabBar">
+        <button class="tab active" onclick="filterAccounts('')">Todas</button>
+        <button class="tab" onclick="filterAccounts('corrente')">Corrente</button>
+        <button class="tab" onclick="filterAccounts('cartao_credito')">Cartão</button>
+        <button class="tab" onclick="filterAccounts('investimento')">Investimentos</button>
+        <button class="tab" onclick="filterAccounts('dinheiro')">Dinheiro</button>
+        <button class="tab" onclick="filterAccounts('__group__')">Por Grupo</button>
+      </div>
+      <div id="accountsGroupBar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+      <div class="account-grid" id="accountGrid"></div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="page" id="page-reports">
+
+      <!-- ── Abas de tipo de relatório ── -->
+      <div class="section-header mb-4">
+        <span class="section-title">Relatórios</span>
+        <div class="view-toggle">
+          <button class="view-btn active" id="rptBtnRegular"  onclick="setReportView('regular')">📊 Análise</button>
+          <button class="view-btn"        id="rptBtnTx"       onclick="setReportView('transactions')">📋 Transações</button>
+          <button class="view-btn"        id="rptBtnForecast" onclick="setReportView('forecast')">📅 Previsão</button>
+        </div>
+      </div>
+
+      <!-- ── Barra de filtros ── -->
+      <div class="report-filter-bar" id="reportFilterBar">
+        <div>
+          <label>Período</label>
+          <select id="rptPeriod" onchange="onRptPeriodChange()">
+            <option value="month">Mês específico</option>
+            <option value="custom">Intervalo livre</option>
+            <option value="quarter">Trimestre atual</option>
+            <option value="year">Ano atual</option>
+            <option value="last12">Últimos 12 meses</option>
+          </select>
+        </div>
+        <div id="rptMonthWrap">
+          <label>Mês</label>
+          <input type="month" id="reportMonth" onchange="loadCurrentReport()">
+        </div>
+        <div id="rptFromWrap" style="display:none">
+          <label>De</label>
+          <input type="date" id="rptFrom" onchange="loadCurrentReport()">
+        </div>
+        <div id="rptToWrap" style="display:none">
+          <label>Até</label>
+          <input type="date" id="rptTo" onchange="loadCurrentReport()">
+        </div>
+        <div>
+          <label>Conta</label>
+          <select id="rptAccount" onchange="loadCurrentReport()">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="rptType" onchange="loadCurrentReport()">
+            <option value="">Todos</option>
+            <option value="expense">Despesas</option>
+            <option value="income">Receitas</option>
+          </select>
+        </div>
+        <div>
+          <label>Categoria</label>
+          <select id="rptCategory" onchange="loadCurrentReport()">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div>
+          <label>Beneficiário</label>
+          <select id="rptPayee" onchange="loadCurrentReport()">
+            <option value="">Todos</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ── Barra de exportação ── -->
+      <div class="report-toolbar" id="reportToolbar">
+        <span style="font-size:.8rem;font-weight:600;color:var(--muted);white-space:nowrap">Exportar:</span>
+        <div class="export-btn-group">
+          <button class="export-btn export-btn-pdf"   onclick="exportReportPDF()">📄 Baixar PDF</button>
+          <button class="export-btn export-btn-print" onclick="printReport()">🖨️ Imprimir</button>
+          <button class="export-btn export-btn-csv"   onclick="exportReportCSV()">📊 Baixar CSV</button>
+          <button class="export-btn export-btn-email" onclick="showEmailPopup()">📧 Enviar por E-mail</button>
+        </div>
+        <div class="report-toolbar-sep"></div>
+        <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.75rem">⚙️ EmailJS</button>
+        <span id="reportDataInfo" style="font-size:.75rem;color:var(--muted);margin-left:auto"></span>
+      </div>
+
+      <!-- ── View: Análise ── -->
+      <div id="reportRegularView">
+        <div class="report-kpi-grid" id="reportKpis"></div>
+        <div class="grid-2 mb-4">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Despesas por Categoria</span></div>
+            <canvas id="reportCatChart" height="260"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Receitas por Categoria</span></div>
+            <canvas id="reportIncomeChart" height="260"></canvas>
+          </div>
+        </div>
+        <div class="grid-2 mb-4">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Distribuição por Conta</span></div>
+            <canvas id="reportAccountChart" height="260"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Evolução Mensal</span></div>
+            <canvas id="reportTrendChart" height="260"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Detalhamento por Categoria</span></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Categoria</th><th>Tipo</th><th>Qtd</th><th>Total</th><th>% do Total</th></tr></thead>
+            <tbody id="reportCatBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── View: Transações ── -->
+      <div id="reportTxView" style="display:none">
+        <div class="report-kpi-grid" id="reportTxKpis"></div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Transações</span>
+            <span id="reportTxCount" class="badge badge-muted"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="reportTxTable">
+              <thead><tr>
+                <th onclick="rptSortTx('date')" style="cursor:pointer">Data <span id="rptSortDate"></span></th>
+                <th onclick="rptSortTx('description')" style="cursor:pointer">Descrição <span id="rptSortDesc"></span></th>
+                <th>Conta</th><th>Categoria</th><th>Beneficiário</th>
+                <th onclick="rptSortTx('amount')" style="cursor:pointer">Valor <span id="rptSortAmt"></span></th>
+              </tr></thead>
+              <tbody id="reportTxBody"></tbody>
+              <tfoot><tr style="font-weight:700;background:var(--surface2)">
+                <td colspan="5" style="padding:10px 14px">Total</td>
+                <td id="reportTxTotal" style="padding:10px 14px;font-family:var(--font-serif)"></td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── View: Previsão ── -->
+      <div id="reportForecastView" style="display:none">
+        <div class="report-filter-bar" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:14px">
+          <div>
+            <label>De</label>
+            <input type="date" id="forecastFrom" onchange="loadForecast()">
+          </div>
+          <div>
+            <label>Até</label>
+            <input type="date" id="forecastTo" onchange="loadForecast()">
+          </div>
+          <div>
+            <label>Conta</label>
+            <select id="forecastAccountFilter" onchange="loadForecast()">
+              <option value="">Todas as contas</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;margin-bottom:0">
+              <input type="checkbox" id="forecastIncludeScheduled" checked onchange="loadForecast()">
+              Incluir programados
+            </label>
+          </div>
+        </div>
+        <div class="card mb-4">
+          <div class="card-header"><span class="card-title">Saldo Previsto por Conta</span></div>
+          <div class="forecast-chart-wrap"><canvas id="forecastChart"></canvas></div>
+        </div>
+        <div id="forecastAccountsContainer"></div>
+      </div>
+    </div>
+
+    <!-- Print area (hidden, used for print/PDF) -->
+    <div id="printArea"></div>
+
+    <!-- Email popup -->
+    <div class="email-popup" id="emailPopup" style="display:none" onclick="if(event.target===this)closeEmailPopup()">
+      <div class="email-popup-box">
+        <h3>📧 Enviar Relatório por E-mail</h3>
+        <div class="form-group">
+          <label>Destinatário</label>
+          <input type="email" id="emailTo" placeholder="email@exemplo.com">
+        </div>
+        <div class="form-group">
+          <label>Assunto</label>
+          <input type="text" id="emailSubject" value="Relatório FinTrack">
+        </div>
+        <div class="form-group">
+          <label>Mensagem (opcional)</label>
+          <textarea id="emailMsg" rows="2" placeholder="Segue o relatório..."></textarea>
+        </div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:4px">
+          O PDF será salvo no Supabase Storage e o link de download enviado por e-mail.<br>
+          Requer configuração do EmailJS (botão ⚙️ na barra).
+        </div>
+        <div class="email-popup-row">
+          <button class="btn btn-ghost" onclick="closeEmailPopup()">Cancelar</button>
+          <button class="btn btn-primary" onclick="sendReportByEmail()" id="emailSendBtn">Enviar PDF</button>
+          <span id="emailStatus" style="font-size:.78rem;color:var(--muted);margin-left:4px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUDGETS -->
+    <div class="page" id="page-budgets">
+      <div class="section-header mb-6"><span class="section-title">Orçamentos</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="month" id="budgetMonth" onchange="loadBudgets()"><button class="btn btn-primary" onclick="openBudgetModal()">+ Novo</button></div>
+      </div>
+      <div class="grid-2" id="budgetGrid"></div>
+    </div>
+
+    <!-- CATEGORIES -->
+    <div class="page" id="page-categories">
+      <div class="section-header mb-6">
+        <span class="section-title">Categorias</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','despesa')">+ Despesa</button>
+          <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','receita')">+ Receita</button>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Despesas</span>
+            <span id="catCountExpense" class="badge badge-red"></span>
+          </div>
+          <div id="catEditorExpense"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Receitas</span>
+            <span id="catCountIncome" class="badge badge-green"></span>
+          </div>
+          <div id="catEditorIncome"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAYEES -->
+    <div class="page" id="page-payees">
+      <div class="section-header mb-6"><span class="section-title">Beneficiários & Fontes</span><div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="openPayeeClipboardImport()">📋 Importar da Área de Transferência</button><button class="btn btn-primary" onclick="openPayeeModal()">+ Novo</button></div></div>
+      <div class="filters">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="payeeSearch" placeholder="Buscar..." oninput="filterPayees()">
+        </div>
+        <select id="payeeTypeFilter" onchange="filterPayees()" style="max-width:180px">
+          <option value="">Todos os tipos</option>
+          <option value="beneficiario">Beneficiários</option>
+          <option value="fonte_pagadora">Fontes Pagadoras</option>
+          <option value="ambos">Ambos</option>
+        </select>
+      </div>
+      <!-- Payee group summary chips -->
+      <div id="payeeSummaryBar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
+      <!-- Grouped containers -->
+      <div id="payeeGroups"></div>
+    </div>
+
+    <!-- SCHEDULED TRANSACTIONS -->
+    <div class="page" id="page-scheduled">
+      <div class="section-header mb-6">
+        <span class="section-title">Transações Programadas</span>
+        <button class="btn btn-primary" onclick="openScheduledModal()">+ Programar</button>
+      </div>
+
+      <!-- Status summary bar -->
+      <div id="scheduledSummaryBar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+      <!-- Filter bar -->
+      <div class="filters mb-6" style="flex-wrap:wrap">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="scSearch" placeholder="Buscar..." oninput="filterScheduled()">
+        </div>
+        <select id="scStatusFilter" onchange="filterScheduled()" style="max-width:160px">
+          <option value="">Todos os status</option>
+          <option value="active">Ativos</option>
+          <option value="paused">Pausados</option>
+          <option value="finished">Concluídos</option>
+        </select>
+        <select id="scTypeFilter" onchange="filterScheduled()" style="max-width:140px">
+          <option value="">Todos os tipos</option>
+          <option value="expense">Despesas</option>
+          <option value="income">Receitas</option>
+          <option value="transfer">Transferências</option>
+          <option value="card_payment">💳 Pgto. Cartão</option>
+        </select>
+      </div>
+
+      <!-- Upcoming next 30 days alert -->
+      <div id="scheduledUpcomingCard" style="display:none" class="card mb-6">
+        <div class="card-header">
+          <span class="card-title">⏰ Próximos 30 dias</span>
+          <span id="scheduledUpcomingTotal" class="badge badge-amber"></span>
+        </div>
+        <div class="table-wrap" style="margin:0 -20px -20px">
+          <table>
+            <thead><tr><th>Data</th><th>Descrição</th><th>Conta</th><th>Valor</th><th>Ação</th></tr></thead>
+            <tbody id="scheduledUpcomingBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Main list -->
+      <div id="scheduledList"></div>
+    </div>
+
+    <!-- IMPORT / BACKUP PAGE -->
+    <div class="page" id="page-import">
+
+      <!-- ══ WIZARD STEPS ══ -->
+      <div class="import-wizard-steps" id="importWizardSteps">
+        <div class="import-wizard-step active" id="wizStep1">
+          <div class="import-wizard-step-num">1</div>
+          <span>Arquivo &amp; Fonte</span>
+        </div>
+        <span class="import-wizard-sep">›</span>
+        <div class="import-wizard-step" id="wizStep2">
+          <div class="import-wizard-step-num">2</div>
+          <span>Mapeamento de Colunas</span>
+        </div>
+        <span class="import-wizard-sep">›</span>
+        <div class="import-wizard-step" id="wizStep3">
+          <div class="import-wizard-step-num">3</div>
+          <span>Revisão &amp; Importar</span>
+        </div>
+      </div>
+
+      <!-- ══ STEP 1: File + Source ══ -->
+      <div id="importStep1">
+        <!-- Section selector cards -->
+        <div class="import-section-grid" id="importSectionGrid">
+          <div class="import-section-card active" id="isc-all" onclick="selectImportSection('all')">
+            <div class="import-sc-icon">📦</div>
+            <div class="import-sc-title">Importação Completa</div>
+            <div class="import-sc-sub">Contas + Categorias + Beneficiários + Transações</div>
+          </div>
+          <div class="import-section-card" id="isc-accounts" onclick="selectImportSection('accounts')">
+            <div class="import-sc-icon">🏦</div>
+            <div class="import-sc-title">Só Contas</div>
+            <div class="import-sc-sub">Criar contas do arquivo</div>
+          </div>
+          <div class="import-section-card" id="isc-categories" onclick="selectImportSection('categories')">
+            <div class="import-sc-icon">🏷️</div>
+            <div class="import-sc-title">Só Categorias</div>
+            <div class="import-sc-sub">Criar categorias e subcategorias</div>
+          </div>
+          <div class="import-section-card" id="isc-payees" onclick="selectImportSection('payees')">
+            <div class="import-sc-icon">👤</div>
+            <div class="import-sc-title">Só Beneficiários</div>
+            <div class="import-sc-sub">Importar beneficiários</div>
+          </div>
+          <div class="import-section-card" id="isc-transactions" onclick="selectImportSection('transactions')">
+            <div class="import-sc-icon">💳</div>
+            <div class="import-sc-title">Só Transações</div>
+            <div class="import-sc-sub">Importar histórico</div>
+          </div>
+        </div>
+
+        <!-- Source preset chips -->
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Formato do arquivo</div>
+        <div class="source-chips" id="sourceChips">
+          <div class="source-chip" onclick="selectSourcePreset('moneywiz')" id="chip-moneywiz">MoneyWiz</div>
+          <div class="source-chip active" onclick="selectSourcePreset('generic')" id="chip-generic">CSV Genérico</div>
+          <div class="source-chip" onclick="selectSourcePreset('ofx')" id="chip-ofx">Extrato Bancário (OFX/CSV)</div>
+          <div class="source-chip" onclick="selectSourcePreset('nubank')" id="chip-nubank">Nubank</div>
+          <div class="source-chip" onclick="selectSourcePreset('inter')" id="chip-inter">Banco Inter</div>
+          <div class="source-chip" onclick="selectSourcePreset('itau')" id="chip-itau">Itaú</div>
+          <div class="source-chip" onclick="selectSourcePreset('xp')" id="chip-xp">XP / Rico</div>
+        </div>
+
+        <!-- File drop zone -->
+        <div class="import-drop-zone" id="importDropZone"
+             ondragover="importDragOver(event)" ondragleave="importDragLeave(event)" ondrop="importDrop(event)">
+          <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv,.ofx" onchange="importFileSelected(event)">
+          <div class="import-drop-icon">📂</div>
+          <div class="import-drop-title" id="importDropTitle">Arraste o arquivo ou clique para selecionar</div>
+          <div class="import-drop-sub" id="importDropSub">Suporta CSV, XLSX, XLS — qualquer formato</div>
+        </div>
+      </div>
+
+      <!-- ══ STEP 2: Column Mapper (rebuilt) ══ -->
+      <div class="col-mapper-screen" id="colMapperScreen">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <div>
+            <div class="col-mapper-title">🗂️ Configurar Importação</div>
+            <div class="col-mapper-sub" id="cmapSubtitle">Indique qual coluna do arquivo corresponde a cada campo.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+        </div>
+
+        <!-- File preview table -->
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">
+          📋 Prévia do arquivo <span id="colPreviewInfo" style="font-weight:400;text-transform:none;color:var(--muted)"></span>
+        </div>
+        <div class="col-preview-wrap">
+          <table class="col-preview-table" id="colPreviewTable">
+            <thead id="colPreviewHead"></thead>
+            <tbody id="colPreviewBody"></tbody>
+          </table>
+        </div>
+
+        <!-- Dynamic field groups rendered by JS -->
+        <div id="colMapperGrid"></div>
+
+        <!-- Dedup options (only for transactions) -->
+        <div class="import-mode-bar" id="importModeBar" style="display:none">
+          <span style="font-weight:700;color:var(--text2)">Duplicatas:</span>
+          <label><input type="radio" name="importMode" value="new" checked> Apenas novas</label>
+          <label><input type="radio" name="importMode" value="update"> Atualizar existentes</label>
+          <label><input type="radio" name="importMode" value="all"> Re-importar todas</label>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--muted)">Conta destino padrão:</label>
+            <select id="importAccountFilter" style="font-size:.8rem;max-width:200px">
+              <option value="">— Detectar automaticamente —</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+          <button class="btn btn-ghost" onclick="goToStep(1)">← Voltar</button>
+          <button class="btn btn-primary" onclick="proceedFromColMapper()" id="applyColMapBtn">Analisar &amp; Prévia →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP 2b: Entity Review (Contas/Cats/Payees) ══ -->
+      <div class="field-map-screen" id="fieldMapScreen">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div>
+            <div class="field-map-title">🔄 Revisão de Entidades</div>
+            <div class="field-map-sub">Revise contas, categorias e beneficiários antes de importar. <span style="color:var(--green);font-weight:600">Novo</span> = será criado. <span style="color:var(--muted);font-weight:600">Existente</span> = já existe.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+        </div>
+        <div class="field-map-tabs">
+          <button class="field-map-tab active" onclick="showFieldMapTab('accounts')">🏦 Contas <span id="fmTabAccBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('categories')">🏷️ Categorias <span id="fmTabCatBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('payees')">👤 Beneficiários <span id="fmTabPayBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('transfers')">🔄 Transferências <span id="fmTabXferBadge" class="map-count"></span></button>
+        </div>
+        <div class="field-map-panel active" id="fmpanel-accounts">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Contas encontradas. Mapeie para uma conta existente ou deixe para criar automaticamente.</p>
+          <div class="table-wrap"><table class="distinct-table"><thead><tr>
+            <th>Conta</th><th>Transações</th><th>Saldo Final</th><th>Status</th><th>Mapear para →</th>
+          </tr></thead><tbody id="fmAccountsBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-categories">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Categorias com hierarquia. Subcategorias criadas automaticamente.</p>
+          <div class="table-wrap" style="max-height:320px;overflow-y:auto"><table class="distinct-table"><thead><tr>
+            <th>Categoria</th><th>Tipo</th><th>Transações</th><th>Status</th>
+          </tr></thead><tbody id="fmCategoriesBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-payees">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Beneficiários únicos encontrados.</p>
+          <div class="table-wrap" style="max-height:300px;overflow-y:auto"><table class="distinct-table"><thead><tr>
+            <th>Beneficiário</th><th>Transações</th><th>Status</th>
+          </tr></thead><tbody id="fmPayeesBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-transfers">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Contas de destino em transferências.</p>
+          <div class="table-wrap"><table class="distinct-table"><thead><tr>
+            <th>Conta Destino</th><th>Transferências</th><th>Status</th><th>Mapear para →</th>
+          </tr></thead><tbody id="fmTransfersBody"></tbody></table></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <button class="btn btn-ghost" onclick="goToStep(2)">← Voltar</button>
+          <button class="btn btn-primary" onclick="proceedFromFieldMap()" id="proceedImportBtn">Continuar →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP 3: Progress + Staging ══ -->
+      <!-- Progress -->
+      <div class="import-progress" id="importProgress" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:.85rem;font-weight:600" id="importProgressTitle">Analisando...</span>
+          <span style="font-size:.78rem;color:var(--muted)" id="importProgressPct">0%</span>
+        </div>
+        <div class="import-progress-bar-track">
+          <div class="import-progress-bar-fill" id="importProgressBar"></div>
+        </div>
+        <div class="import-log" id="importLog"></div>
+      </div>
+
+      <!-- Staging preview area -->
+      <div id="importStagingArea" style="display:none">
+        <div class="staging-header">
+          <div>
+            <div style="font-size:1rem;font-weight:600;color:var(--text1)" id="stagingTitle">Pré-visualização</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:2px" id="stagingSubtitle"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+            <button class="btn btn-primary" onclick="commitImport()" id="commitImportBtn">✓ Confirmar Importação</button>
+          </div>
+        </div>
+        <div class="staging-tabs mb-4" id="stagingTabs"></div>
+        <div id="stagingContent"></div>
+      </div>
+
+      <hr style="margin:28px 0;border:none;border-top:1.5px solid var(--border)">
+
+      <!-- Backup / Restore -->
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px">💾 Backup &amp; Restauração</div>
+
+      <div class="backup-card">
+        <h4>📤 Exportar Backup</h4>
+        <p>Exporta todas as contas, categorias, beneficiários e transações para um arquivo JSON.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="exportBackup()">📥 Baixar JSON</button>
+          <span id="backupStatus" style="font-size:.78rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <div class="backup-card">
+        <h4>📥 Restaurar Backup</h4>
+        <p>Restaura dados de um backup .json do FinTrack (upsert — não apaga dados existentes).</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="btn btn-ghost" style="cursor:pointer">
+            📂 Selecionar arquivo .json
+            <input type="file" id="restoreFileInput" accept=".json" onchange="restoreBackup(event)" style="display:none">
+          </label>
+          <span id="restoreStatus" style="font-size:.78rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <div class="backup-card danger-zone">
+        <h4>🗑️ Limpar Base de Dados</h4>
+        <p>Remove <strong>TODOS</strong> os dados permanentemente. Requer confirmação dupla + Masterpin.</p>
+        <button class="btn" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:var(--r-sm);cursor:pointer;font-family:var(--font-sans);font-size:.85rem" onclick="confirmClearDatabase()">⚠️ Limpar Tudo</button>
+      </div>
+
+    </div>
+
+    <!-- SETTINGS PAGE -->
+    <div class="page" id="page-settings">
+      <div class="section-header mb-6"><span class="section-title">Configurações</span></div>
+
+      <!-- Current user info -->
+      <div class="settings-section" id="currentUserSection">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--accent-lt)">👤</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label" id="currentUserName">—</div>
+              <div class="settings-row-sub" id="currentUserEmail">—</div>
+            </div>
+            <div class="settings-row-action" style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="showChangeMyPwd()">🔑 Senha</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="doLogout()">↩ Sair</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Menu visibility (admin configurable) -->
+      <div class="settings-section" id="menuVisibilitySection" style="display:none">
+        <div class="settings-card">
+          <div class="settings-row" style="align-items:flex-start">
+            <div class="settings-row-icon" style="background:var(--accent-lt)">📋</div>
+            <div class="settings-row-body">
+              <div class="settings-row-title">Itens do menu</div>
+              <div class="settings-row-subtitle">Escolha quais páginas aparecem no menu lateral (configuração global).</div>
+
+              <div id="menuVisibilityForm" style="margin-top:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"></div>
+
+              <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary" onclick="saveMenuVisibility()">Salvar</button>
+                <button class="btn" onclick="resetMenuVisibility()">Restaurar padrão</button>
+              </div>
+              <div id="menuVisibilityHint" class="text-muted" style="margin-top:8px;font-size:.85rem"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Logo -->
+      
+      <!-- App logo (admin only) -->
+      <div class="settings-section" id="logoSettingsSection" style="display:none">
+        <div class="settings-card">
+          <div class="settings-row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div class="settings-row-icon" style="background:var(--amber-lt)">🖼️</div>
+            <div class="settings-row-info" style="min-width:240px;flex:1">
+              <div class="settings-row-label">Logotipo da aplicação (Admin)</div>
+              <div class="settings-row-sub">Faça upload (PNG/JPG/SVG) ou cole uma URL. O logo é aplicado imediatamente.</div>
+
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                <input id="appLogoUrl" type="text" placeholder="URL ou DataURL do logo" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);color:var(--text2)">
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                  <input id="appLogoFile" type="file" accept="image/*" style="max-width:260px">
+                  <button class="btn btn-primary btn-sm" onclick="saveAppLogo()">💾 Salvar</button>
+                  <button class="btn btn-ghost btn-sm" onclick="resetAppLogo()">↺ Restaurar padrão</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <img id="appLogoPreview" alt="Preview do logo" style="height:44px;max-width:220px;object-fit:contain;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface)">
+                  <span class="text-muted" style="font-size:.75rem">Preview</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+<div class="settings-section">
+        <div class="settings-card">
+          <div class="settings-row" style="justify-content:center;padding:20px;flex-direction:column;gap:0">
+            <img id="settingsLogoImg" src="https://deciofranchini-oss.github.io/Fintrack/logo.png" alt="JF Family FinTrack" style="height:150px;object-fit:contain;mix-blend-mode:normal">
+            <div style="text-align:center">
+              <div style="font-weight:700;font-size:1.15rem;font-family:var(--font-serif);color:var(--text)">JF Family FinTrack</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:3px">The family finance tracker · v2.0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- Conexão -->
+      <div class="settings-section">
+        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">🔗 Conexão</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--blue-lt)">🗄️</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Supabase</div>
+              <div class="settings-row-sub" id="supabaseStatusLabel">Verificando...</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('setupScreen').style.display='flex'">Reconfigurar</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#fff7ed">🗑️</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Limpar Cache</div>
+              <div class="settings-row-sub">Remove dados temporários do navegador</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="clearAppCache()">Limpar</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--green-lt)">📧</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">EmailJS</div>
+              <div class="settings-row-sub" id="ejSettingsSub">Para envio de relatórios por e-mail</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()">Configurar</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--blue-lt,#eff6ff)">📋</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">SQL: Migração Auto-Registro</div>
+              <div class="settings-row-sub">Adiciona colunas de automação à tabela scheduled_transactions</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="showAutoRegisterMigration()">Ver SQL</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#fef3c7">🔐</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">SQL: Migração Multi-Usuário</div>
+              <div class="settings-row-sub">Cria tabelas app_users e app_sessions para login com aprovação</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="showAuthMigration()">Ver SQL</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Management (admin only) -->
+      <div class="settings-section" id="userMgmtSection" style="display:none">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#e0f2fe">👥</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Gerenciar Usuários</div>
+              <div class="settings-row-sub" id="userMgmtSub">Controle de acesso e permissões</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="openUserAdmin()">Gerenciar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users Management (admin only) -->
+      <div class="settings-section" id="settingsUserMgmt" style="display:none">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#fef3c7">👥</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Gerenciar Usuários</div>
+              <div class="settings-row-sub">Criar, editar e controlar acesso</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="openUserAdmin()">Abrir</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ AUTOMAÇÃO ══ -->
+      <div class="settings-section">
+        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">⚙️ Automação de Programados</div>
+        <div class="settings-card">
+          <!-- Enable/disable auto check -->
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--green-lt)">🤖</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Verificação Automática</div>
+              <div class="settings-row-sub">Registra transações programadas automaticamente quando a data chegar</div>
+            </div>
+            <div class="settings-row-action">
+              <label style="position:relative;display:inline-block;width:42px;height:22px">
+                <input type="checkbox" id="autoCheckEnabled" onchange="saveAutoCheckConfig()" style="opacity:0;width:0;height:0">
+                <span style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:100px;transition:.3s" id="autoCheckToggle"></span>
+              </label>
+            </div>
+          </div>
+
+<div class="settings-row">
+  <div class="settings-row-info">
+    <div class="settings-row-label">Modo compacto (Transações)</div>
+    <div class="settings-row-sub">Melhora leitura em telas menores e reduz altura das linhas</div>
+  </div>
+  <div class="settings-row-action">
+    <label style="position:relative;display:inline-block;width:42px;height:22px">
+      <input type="checkbox" id="txCompactToggle" onchange="saveTxCompactPreference()" style="opacity:0;width:0;height:0">
+      <span style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:100px;transition:.3s" id="txCompactKnob"></span>
+    </label>
+  </div>
+</div>
+          <!-- Frequency -->
+          <div class="settings-row" id="autoCheckFreqRow">
+            <div class="settings-row-icon" style="background:var(--bg2)">⏱️</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Frequência de Verificação</div>
+              <div class="settings-row-sub">Com que frequência verificar transações pendentes</div>
+            </div>
+            <div class="settings-row-action">
+              <select id="autoCheckInterval" onchange="saveAutoCheckConfig()" style="font-size:.82rem;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface)">
+                <option value="15">A cada 15 min</option>
+                <option value="30">A cada 30 min</option>
+                <option value="60" selected>A cada 1 hora</option>
+                <option value="360">A cada 6 horas</option>
+                <option value="720">A cada 12 horas</option>
+                <option value="1440">Uma vez ao dia</option>
+              </select>
+            </div>
+          </div>
+          <!-- Days ahead -->
+          <div class="settings-row" id="autoCheckDaysRow">
+            <div class="settings-row-icon" style="background:var(--bg2)">📅</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Antecipar Registro</div>
+              <div class="settings-row-sub">Quantos dias antes da data registrar a transação automática</div>
+            </div>
+            <div class="settings-row-action">
+              <select id="autoCheckDaysAhead" onchange="saveAutoCheckConfig()" style="font-size:.82rem;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface)">
+                <option value="0" selected>No dia exato</option>
+                <option value="1">1 dia antes</option>
+                <option value="2">2 dias antes</option>
+                <option value="3">3 dias antes</option>
+                <option value="7">1 semana antes</option>
+              </select>
+            </div>
+          </div>
+          <!-- Email for notifications -->
+          <div class="settings-row" id="autoCheckEmailRow">
+            <div class="settings-row-icon" style="background:var(--bg2)">📧</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">E-mail para Notificações</div>
+              <div class="settings-row-sub">E-mail padrão para avisos de transações programadas</div>
+            </div>
+            <div class="settings-row-action">
+              <input type="email" id="autoCheckEmailDefault" placeholder="email@exemplo.com" oninput="saveAutoCheckConfig()"
+                style="font-size:.82rem;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);max-width:220px;background:var(--surface)">
+            </div>
+          </div>
+          <!-- Method: browser vs Supabase -->
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--bg2)">🔧</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Método de Execução</div>
+              <div class="settings-row-sub" id="autoCheckMethodSub">Como a verificação automática é executada</div>
+            </div>
+            <div class="settings-row-action">
+              <select id="autoCheckMethod" onchange="onAutoCheckMethodChange()" style="font-size:.82rem;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface)">
+                <option value="browser">Navegador (setInterval)</option>
+                <option value="supabase_cron">Supabase pg_cron</option>
+                <option value="supabase_edge">Supabase Edge Function</option>
+              </select>
+            </div>
+          </div>
+          <!-- Supabase cron info (shown when method=supabase) -->
+          <div id="autoCheckSupabaseInfo" style="display:none;padding:12px 16px;background:var(--accent-lt);border-radius:var(--r-sm);margin:8px 16px 16px;border-left:3px solid var(--accent)">
+            <div style="font-size:.82rem;font-weight:600;color:var(--accent);margin-bottom:8px">📋 SQL para configurar no Supabase</div>
+            <div style="font-size:.75rem;color:var(--text2);margin-bottom:8px">Execute este SQL no Editor SQL do Supabase para registrar transações automaticamente via pg_cron:</div>
+            <pre id="autoCheckSqlCode" style="font-size:.7rem;background:var(--surface);padding:10px;border-radius:6px;overflow-x:auto;color:var(--text1);border:1px solid var(--border);white-space:pre-wrap;word-break:break-all"></pre>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-ghost btn-sm" onclick="copyAutoCheckSql()">📋 Copiar SQL</button>
+              <button class="btn btn-ghost btn-sm" onclick="window.open('https://supabase.com/dashboard','_blank')">🔗 Abrir Supabase</button>
+            </div>
+          </div>
+          <!-- Last run info -->
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--bg2)">📊</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Última Verificação</div>
+              <div class="settings-row-sub" id="autoCheckLastRun">Nunca executada</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="runAutoRegister(true)">▶️ Executar agora</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logout -->
+      <div class="settings-section">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--red-lt)">🚪</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Sair</div>
+              <div class="settings-row-sub" id="settingsCurrentUser">Usuário atual</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="doLogout()">Sair</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Import / Backup -->
+      <div class="settings-section">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:var(--accent-lt)">📥</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Importar / Backup</div>
+              <div class="settings-row-sub">MoneyWiz, backup JSON, limpar dados</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="navigate('import')">Abrir</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sobre -->
+      <div class="settings-section">
+        <div class="settings-card">
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;padding:16px 18px">
+            <div style="font-size:.75rem;color:var(--muted);line-height:1.8">
+              Desenvolvido com ❤️ usando <strong>Supabase</strong> + <strong>Claude AI</strong><br>
+              Todos os dados salvos em sua instância Supabase.<br>
+              Masterpin armazenado localmente no dispositivo.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT PAGE (admin) -->
+    <div class="page" id="page-audit">
+      <div class="card">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <h3 style="margin:0">🧾 Auditoria: Auto-registros</h3>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <select id="auditStatusFilter" class="input" style="max-width:180px" onchange="loadAuditLogs()">
+              <option value="">Todos</option>
+              <option value="confirmed">✅ Confirmadas</option>
+              <option value="pending">⏳ Pendentes</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs()">↻ Atualizar</button>
+          </div>
+        </div>
+        <div class="text-muted" style="margin-top:6px;font-size:.82rem">
+          Mostra execuções automáticas de transações programadas (registro diário e timers).
+        </div>
+        <div style="margin-top:12px;overflow:auto">
+          <table class="table tx-table" style="min-width:720px">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Status</th>
+                <th style="text-align:right">Valor</th>
+                <th>Transação</th>
+              </tr>
+            </thead>
+            <tbody id="auditBody">
+              <tr><td colspan="5" class="text-muted" style="text-align:center;padding:18px">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- EMAILJS CONFIG MODAL -->
+
+  <!-- ═══════════ LOGIN SCREEN ═══════════ -->
+  <div id="loginScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#0d3d2b 0%,#1e5c42 60%,#0d3d2b 100%);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:24px">
+    <div style="width:100%;max-width:400px;background:#fff;border-radius:20px;padding:36px 32px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
+      <div style="text-align:center;margin-bottom:28px">
+        <img id="loginLogoImg" src="https://deciofranchini-oss.github.io/Fintrack/logo.png" alt="Logo" style="width:120px;height:auto;object-fit:contain;margin-bottom:12px">
+        <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#9ca3af">Personal Finance Management</div>
+      </div>
+      <div id="loginFormArea">
+        <div class="form-group" style="margin-bottom:16px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
+          <input type="email" id="loginEmail" placeholder="seu@email.com" 
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;transition:border .15s;box-sizing:border-box"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'"
+            onkeydown="if(event.key==='Enter')document.getElementById('loginPassword').focus()">
+        </div>
+        <div class="form-group" style="margin-bottom:20px;position:relative">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Senha</label>
+          <input type="password" id="loginPassword" placeholder="••••••••"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;transition:border .15s;box-sizing:border-box;padding-right:44px"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'"
+            onkeydown="if(event.key==='Enter')doLogin()">
+          <button onclick="toggleLoginPwd()" style="position:absolute;right:12px;bottom:11px;background:none;border:none;cursor:pointer;font-size:1rem;color:#9ca3af">👁</button>
+        </div>
+        <div style="display:flex;align-items:center;margin-bottom:16px;gap:8px">
+          <input type="checkbox" id="rememberMe" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer;flex-shrink:0">
+          <label for="rememberMe" style="font-size:.82rem;color:#6b7280;cursor:pointer;user-select:none">Lembrar meu e-mail e senha</label>
+        </div>
+        <button onclick="doLogin()" id="loginBtn"
+          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit">
+          Entrar
+        </button>
+        <div id="loginError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
+        <div style="text-align:center;margin-top:16px;font-size:.8rem;color:#6b7280">
+          Não tem conta?
+          <button onclick="showRegisterForm()" style="background:none;border:none;color:#2a6049;font-weight:600;cursor:pointer;font-size:.8rem;text-decoration:underline">Solicitar acesso</button>
+        </div>
+      </div>
+
+      <!-- Register form -->
+      <div id="registerFormArea" style="display:none">
+        <div style="font-size:1rem;font-weight:700;color:#1e5c42;text-align:center;margin-bottom:16px">📝 Solicitar Acesso</div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Nome completo</label>
+          <input type="text" id="regName" placeholder="Seu nome"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
+          <input type="email" id="regEmail" placeholder="seu@email.com"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Senha (mín. 8 chars)</label>
+          <input type="password" id="regPassword" placeholder="••••••••"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Confirmar Senha</label>
+          <input type="password" id="regPassword2" placeholder="••••••••"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
+            onkeydown="if(event.key==='Enter')doRegister()"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+        <button onclick="doRegister()" id="regBtn"
+          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
+          Enviar Solicitação
+        </button>
+        <div id="regError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
+        <div style="text-align:center;margin-top:14px">
+          <button onclick="showLoginFormArea()" style="background:none;border:none;color:#6b7280;font-size:.8rem;cursor:pointer;text-decoration:underline">← Voltar ao login</button>
+        </div>
+      </div>
+
+      <!-- Pending approval screen -->
+      <div id="pendingApprovalArea" style="display:none;text-align:center">
+        <div style="font-size:2.5rem;margin-bottom:12px">⏳</div>
+        <div style="font-size:1rem;font-weight:700;color:#1e5c42;margin-bottom:8px">Aguardando aprovação</div>
+        <div style="font-size:.82rem;color:#6b7280;margin-bottom:20px">Sua solicitação foi enviada. Um administrador precisa aprovar seu acesso antes que você possa entrar.</div>
+        <button onclick="showLoginFormArea()" style="background:none;border:1.5px solid #2a6049;color:#2a6049;padding:10px 24px;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer">Voltar ao login</button>
+      </div>
+      <!-- Change password form (shown on first login) -->
+      <div id="changePwdArea" style="display:none">
+        <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:.82rem;color:#92400e">
+          🔐 Por segurança, defina uma nova senha no seu primeiro acesso.
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Nova Senha</label>
+          <input type="password" id="newPwd1" placeholder="Mínimo 8 caracteres"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box">
+        </div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Confirmar Senha</label>
+          <input type="password" id="newPwd2" placeholder="Repita a senha"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box">
+        </div>
+        <button onclick="doChangePwd()"
+          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
+          Definir Senha e Entrar
+        </button>
+        <div id="changePwdError" style="margin-top:10px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ USER ADMIN MODAL ═══════════ -->
+  <div class="modal-overlay" id="userAdminModal">
+    <div class="modal" style="max-width:760px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">👥 Gerenciar Usuários & Famílias</span>
+        <button class="modal-close" onclick="closeModal('userAdminModal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <!-- Tabs -->
+        <div style="display:flex;border-bottom:1px solid var(--border);padding:0 20px">
+          <button class="tab active" id="uaTabUsers" onclick="switchUATab('users')" style="padding:12px 16px;font-size:.85rem">👤 Usuários</button>
+          <button class="tab" id="uaTabFamilies" onclick="switchUATab('families')" style="padding:12px 16px;font-size:.85rem">🏠 Famílias</button>
+        </div>
+
+        <!-- Users tab -->
+        <div id="uaUsers" style="padding:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <span style="font-size:.82rem;color:var(--muted)" id="userAdminCount"></span>
+            <button class="btn btn-primary btn-sm" onclick="showNewUserForm()">+ Novo Usuário</button>
+          </div>
+          <!-- New/Edit user form -->
+          <div id="userFormArea" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px">
+            <div style="font-size:.85rem;font-weight:600;margin-bottom:12px" id="userFormTitle">Novo Usuário</div>
+            <input type="hidden" id="editUserId">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group">
+                <label>Nome</label>
+                <input type="text" id="uName" placeholder="Nome completo">
+              </div>
+              <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="uEmail" placeholder="email@dominio.com">
+              </div>
+              <div class="form-group">
+                <label>Senha <span style="font-size:.72rem;color:var(--muted)" id="pwdHint">(mín. 8 chars)</span></label>
+                <input type="password" id="uPassword" placeholder="Deixe em branco para manter">
+              </div>
+              <div class="form-group">
+                <label>Perfil</label>
+                <select id="uRole">
+                  <option value="viewer">Visualizador</option>
+                  <option value="user" selected>Usuário</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <div class="form-group full" style="grid-column:1/-1">
+                <label>Família <span style="font-size:.72rem;color:var(--muted)">(admins sem família veem todos os dados)</span></label>
+                <select id="uFamilyId">
+                  <option value="">— Nenhuma (admin global) —</option>
+                </select>
+              </div>
+            </div>
+            <div style="font-size:.8rem;font-weight:600;color:var(--text2);margin:10px 0 6px">Permissões</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pView" checked> Visualizar</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pCreate" checked> Criar</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pEdit" checked> Editar</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pDelete"> Excluir</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pExport" checked> Exportar</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer"><input type="checkbox" id="pImport"> Importar</label>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" onclick="saveUser()">💾 Salvar</button>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('userFormArea').style.display='none'">Cancelar</button>
+            </div>
+          </div>
+          <!-- Users list -->
+          <div id="usersList"></div>
+        </div>
+
+        <!-- Families tab -->
+        <div id="uaFamilies" style="display:none;padding:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <span style="font-size:.82rem;color:var(--muted)">Gerencie as famílias e seus membros</span>
+            <button class="btn btn-primary btn-sm" onclick="showFamilyForm()">+ Nova Família</button>
+          </div>
+          <!-- Family form -->
+          <div id="familyFormArea" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px">
+            <div style="font-size:.85rem;font-weight:600;margin-bottom:12px" id="familyFormTitle">Nova Família</div>
+            <input type="hidden" id="editFamilyId">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group">
+                <label>Nome da Família *</label>
+                <input type="text" id="fName" placeholder="Ex: Família Silva">
+              </div>
+              <div class="form-group">
+                <label>Descrição</label>
+                <input type="text" id="fDesc" placeholder="Opcional">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-primary btn-sm" onclick="saveFamily()">💾 Salvar</button>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('familyFormArea').style.display='none'">Cancelar</button>
+            </div>
+          </div>
+          <!-- Families list -->
+          <div id="familiesList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div class="modal-overlay" id="emailjsModal">
+  <div class="modal" style="max-width:520px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">📧 Configurar EmailJS</span>
+      <button class="modal-close" onclick="closeModal('emailjsModal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding-bottom:8px">
+
+      <!-- Status indicator -->
+      <div id="ejStatusBar" style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border-radius:var(--r-sm);margin-bottom:16px;font-size:.82rem">
+        <span class="ej-status-dot ej-status-warn" id="ejStatusDot"></span>
+        <span id="ejStatusText" style="color:var(--muted)">Não configurado</span>
+        <button class="btn btn-ghost btn-sm" onclick="testEmailJSConnection()" id="ejTestBtn" style="margin-left:auto;font-size:.75rem">Testar conexão</button>
+      </div>
+
+      <!-- Credentials -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;justify-content:space-between">
+          Service ID
+          <a href="https://dashboard.emailjs.com/admin" target="_blank" style="font-size:.72rem;color:var(--accent)">Abrir dashboard ↗</a>
+        </label>
+        <div class="ej-field-row">
+          <input type="text" id="ejServiceId" placeholder="service_xxxxxxx" autocomplete="off" oninput="ejCheckStatus()">
+          <button class="ej-copy-btn" onclick="copyEjField('ejServiceId')" title="Copiar">📋</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Em Email Services → clique no serviço → Service ID</div>
+      </div>
+
+      <div class="form-group">
+        <label>Template ID</label>
+        <div class="ej-field-row">
+          <input type="text" id="ejTemplateId" placeholder="template_xxxxxxx" autocomplete="off" oninput="ejCheckStatus()">
+          <button class="ej-copy-btn" onclick="copyEjField('ejTemplateId')" title="Copiar">📋</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Em Email Templates → clique no template → Template ID</div>
+      </div>
+
+      <div class="form-group">
+        <label>Public Key</label>
+        <div class="ej-field-row">
+          <input type="password" id="ejPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" autocomplete="off" oninput="ejCheckStatus()">
+          <button class="ej-copy-btn" onclick="toggleEjKey()" id="ejKeyToggle" title="Mostrar/ocultar">👁</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Em Account → General → Public Key</div>
+      </div>
+
+      <div id="ejTestResult" class="ej-test-result"></div>
+
+      <!-- Help box -->
+      <div class="ej-help-box" style="margin-top:14px">
+        <div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:.8rem">
+          ⚠️ <strong>Passo obrigatório no painel do EmailJS:</strong><br>
+          No seu template, o campo <strong>"To Email"</strong> deve ser definido como <code style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:.85em">{{to_email}}</code> — caso contrário o envio falhará com erro "recipients address is empty".<br>
+          <a href="https://dashboard.emailjs.com/admin/templates" target="_blank" style="color:var(--accent);font-weight:600">Abrir Templates no EmailJS ↗</a>
+        </div>
+        <strong>📋 Variáveis disponíveis no template EmailJS:</strong><br><br>
+        <span style="font-weight:700;color:var(--text2)">Roteamento</span><br>
+        <code>{{to_email}}</code> destinatário &nbsp;·&nbsp;
+        <code>{{from_name}}</code> remetente &nbsp;·&nbsp;
+        <code>{{subject}}</code> assunto<br><br>
+        <span style="font-weight:700;color:var(--text2)">Corpo do e-mail</span><br>
+        <code>{{message}}</code> mensagem do usuário &nbsp;·&nbsp;
+        <code>{{report_period}}</code> período &nbsp;·&nbsp;
+        <code>{{report_view}}</code> tipo de relatório<br>
+        <code>{{report_income}}</code> receitas &nbsp;·&nbsp;
+        <code>{{report_expense}}</code> despesas &nbsp;·&nbsp;
+        <code>{{report_balance}}</code> saldo &nbsp;·&nbsp;
+        <code>{{report_count}}</code> nº de transações<br><br>
+        <span style="font-weight:700;color:var(--text2)">📎 Link do PDF (Supabase Storage)</span><br>
+        <code>{{pdf_url}}</code> URL pública de download do relatório<br>
+        <code>{{pdf_name}}</code> nome do arquivo PDF gerado<br>
+        <span style="font-size:.7rem;color:var(--muted)">O PDF é salvo automaticamente no bucket <em>fintrack-attachments/reports/</em> com visibilidade pública.</span>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('emailjsModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEmailJSConfig()">💾 Salvar configuração</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCHEDULED TRANSACTION MODAL -->
+<div class="modal-overlay" id="scheduledModal">
+  <div class="modal" style="max-width:580px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="scheduledModalTitle">Programar Transação</span>
+      <button class="modal-close" onclick="closeModal('scheduledModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="scId">
+      <div class="tab-bar mb-4">
+        <button class="tab active" onclick="setScType('expense')">Despesa</button>
+        <button class="tab" onclick="setScType('income')">Receita</button>
+        <button class="tab" onclick="setScType('transfer')">Transferência</button>
+        <button class="tab" onclick="setScType('card_payment')">💳 Pgto.Cartão</button>
+      </div>
+      <div id="scCardPaymentBadge" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--blue-lt,#eff6ff);border:1px solid #bfdbfe;border-radius:var(--r-sm);font-size:.82rem;color:#1d4ed8">
+        💳 <strong>Pagamento de Cartão de Crédito</strong> — debita a conta origem e credita o cartão. Permite categorizar como pagamento de cartão.
+      </div>
+      <input type="hidden" id="scTypeField" value="expense">
+
+      <div class="form-grid">
+        <!-- Basic info -->
+        <div class="form-group full"><label>Descrição *</label><input type="text" id="scDesc" placeholder="Ex: Aluguel, Salário..."></div>
+        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="scAmountSignBtn" onclick="toggleAmtSign('scAmount')" aria-label="Alternar sinal">+</button><input type="text" id="scAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
+        <div class="form-group"><label>Conta Origem *</label><select id="scAccountId"></select></div>
+        <div class="form-group" id="scTransferToGroup" style="display:none"><label>Conta Destino *</label><select id="scTransferToAccountId"></select></div>
+        <div class="form-group" id="scPayeeGroup" style="position:relative">
+          <label>Beneficiário / Fonte</label>
+          <input type="hidden" id="scPayeeId">
+          <div class="payee-input-wrap">
+            <input type="text" id="scPayeeName" placeholder="Buscar ou criar..." autocomplete="off"
+              oninput="onPayeeInput(this.value,'sc')" onblur="onPayeeBlur('sc')" onkeydown="onPayeeKey(event,'sc')">
+            <span id="scPayeeStatus" class="payee-status"></span>
+          </div>
+          <div id="scPayeeDropdown" class="payee-dropdown" style="display:none"></div>
+        </div>
+        <div class="form-group" id="scCategoryGroup">
+          <label>Categoria</label>
+          <input type="hidden" id="scCategoryId">
+          <div class="cat-picker-wrap" id="scCatPickerWrap">
+            <button type="button" class="cat-picker-btn" id="scCatPickerBtn" onclick="toggleCatPicker('sc')">
+              <span class="cat-picker-dot" id="scCatPickerDot" style="display:none"></span>
+              <span id="scCatPickerLabel" style="color:var(--muted)">— Sem categoria —</span>
+              <span class="cat-picker-caret">▼</span>
+            </button>
+            <div class="cat-picker-dropdown" id="scCatPickerDropdown"></div>
+          </div>
+        </div>
+        <div class="form-group"><label>Tags</label><input type="text" id="scTags" placeholder="IR, Décio, ..."></div>
+
+        <!-- Divider -->
+        <div class="full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
+          <span style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Agendamento</span>
+        </div>
+
+        <!-- Scheduling -->
+        <div class="form-group"><label>Primeira data *</label><input type="date" id="scStartDate"></div>
+        <div class="form-group"><label>Status</label>
+          <select id="scStatus">
+            <option value="active">Ativo</option>
+            <option value="paused">Pausado</option>
+          </select>
+        </div>
+
+        <!-- Recurrence -->
+        <div class="form-group full">
+          <label>Recorrência</label>
+          <div class="sc-recurrence-grid">
+            <label class="sc-freq-opt" data-freq="once"><input type="radio" name="scFreq" value="once" checked> <span>Uma vez</span></label>
+            <label class="sc-freq-opt" data-freq="weekly"><input type="radio" name="scFreq" value="weekly"> <span>Semanal</span></label>
+            <label class="sc-freq-opt" data-freq="biweekly"><input type="radio" name="scFreq" value="biweekly"> <span>Quinzenal</span></label>
+            <label class="sc-freq-opt" data-freq="monthly"><input type="radio" name="scFreq" value="monthly"> <span>Mensal</span></label>
+            <label class="sc-freq-opt" data-freq="bimonthly"><input type="radio" name="scFreq" value="bimonthly"> <span>Bimestral</span></label>
+            <label class="sc-freq-opt" data-freq="quarterly"><input type="radio" name="scFreq" value="quarterly"> <span>Trimestral</span></label>
+            <label class="sc-freq-opt" data-freq="semiannual"><input type="radio" name="scFreq" value="semiannual"> <span>Semestral</span></label>
+            <label class="sc-freq-opt" data-freq="annual"><input type="radio" name="scFreq" value="annual"> <span>Anual</span></label>
+            <label class="sc-freq-opt" data-freq="custom"><input type="radio" name="scFreq" value="custom"> <span>Personalizado</span></label>
+          </div>
+        </div>
+
+        <!-- Custom interval (shown only for custom) -->
+        <div class="form-group" id="scCustomIntervalGroup" style="display:none">
+          <label>A cada</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="scCustomInterval" min="1" value="1" style="width:70px" inputmode="numeric">
+            <select id="scCustomUnit" style="flex:1">
+              <option value="days">dias</option>
+              <option value="weeks">semanas</option>
+              <option value="months" selected>meses</option>
+              <option value="years">anos</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- End condition (hidden for "once") -->
+        <div class="form-group full" id="scEndGroup" style="display:none">
+          <label>Término</label>
+          <div class="sc-end-grid">
+            <label class="sc-end-opt"><input type="radio" name="scEnd" value="forever" checked> Indefinido</label>
+            <label class="sc-end-opt"><input type="radio" name="scEnd" value="count"> Nº de vezes</label>
+            <label class="sc-end-opt"><input type="radio" name="scEnd" value="date"> Até a data</label>
+          </div>
+          <div id="scEndCountGroup" style="display:none;margin-top:8px">
+            <input type="number" id="scEndCount" min="1" placeholder="Ex: 12 (parcelas)" inputmode="numeric" style="max-width:160px">
+            <span style="font-size:.78rem;color:var(--muted);margin-left:8px">repetições</span>
+          </div>
+          <div id="scEndDateGroup" style="display:none;margin-top:8px">
+            <input type="date" id="scEndDate">
+          </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="full">
+          <div id="scPreview" class="sc-preview"></div>
+        </div>
+
+        <div class="form-group full"><label>Memo / Observação</label><textarea id="scMemo" rows="2" placeholder="Notas..."></textarea></div>
+
+        <!-- Divider -->
+        <div class="full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
+          <span style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Automação</span>
+        </div>
+
+        <!-- Auto register -->
+        <div class="form-group full">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="scAutoRegister" style="width:16px;height:16px;margin-top:2px;cursor:pointer">
+            <div>
+              <div style="font-weight:600;font-size:.88rem">Registrar automaticamente</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Quando a data chegar, cria a transação automaticamente sem necessidade de aprovação manual</div>
+            </div>
+          </label>
+          <label class="iof-intl-toggle" style="margin-top:8px;display:block" onclick="event.stopPropagation()">
+            <input type="checkbox" id="scAutoConfirm" />
+            ✅ Auto-confirmar ao registrar automaticamente
+          </label>
+        </div>
+
+        <!-- Email notification -->
+        <div class="form-group full">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="scNotifyEmail" style="width:16px;height:16px;margin-top:2px;cursor:pointer" onchange="document.getElementById('scNotifyEmailDetails').style.display=this.checked?'':'none'">
+            <div>
+              <div style="font-weight:600;font-size:.88rem">Notificar por e-mail</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Enviar e-mail de aviso quando a transação estiver próxima ou for registrada automaticamente</div>
+            </div>
+          </label>
+        </div>
+        <div class="form-group full" id="scNotifyEmailDetails" style="display:none;padding:12px;background:var(--accent-lt);border-radius:var(--r-sm);border:1px solid rgba(42,96,73,.15)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label>E-mail destino</label>
+              <input type="email" id="scNotifyEmailAddr" placeholder="email@exemplo.com">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Avisar com antecedência</label>
+              <select id="scNotifyDaysBefore">
+                <option value="0">No dia</option>
+                <option value="1" selected>1 dia antes</option>
+                <option value="2">2 dias antes</option>
+                <option value="3">3 dias antes</option>
+                <option value="7">1 semana antes</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('scheduledModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveScheduled()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTER OCCURRENCE MODAL -->
+<div class="modal-overlay" id="registerOccModal">
+  <div class="modal" style="max-width:440px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Registrar Ocorrência</span>
+      <button class="modal-close" onclick="closeModal('registerOccModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="registerOccDesc" style="margin-bottom:14px;color:var(--muted);font-size:.875rem"></p>
+      <div class="form-grid">
+        <div class="form-group"><label>Data real *</label><input type="date" id="occDate"></div>
+        <div class="form-group"><label>Valor real *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="occAmountSignBtn" onclick="toggleAmtSign('occAmount')" aria-label="Alternar sinal">+</button><input type="text" id="occAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
+        <div class="form-group full"><label>Memo</label><input type="text" id="occMemo" placeholder="Observação desta ocorrência"></div>
+      </div>
+      <input type="hidden" id="occScId">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('registerOccModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmRegisterOccurrence()">Registrar Transação</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PIN MODAL -->
+<div class="modal-overlay" id="changePinModal" style="display:none">
+  <div class="modal" style="max-width:380px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Alterar Masterpin</span>
+      <button class="modal-close" onclick="closeModal('changePinModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Step 1: confirm current -->
+      <div class="pin-step active" id="pinStep1">
+        <p style="color:var(--muted);font-size:.875rem;margin-bottom:12px">Digite o PIN atual para confirmar sua identidade:</p>
+        <div class="pin-input-row">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_0" oninput="pinModalInput(1,0)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_1" oninput="pinModalInput(1,1)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_2" oninput="pinModalInput(1,2)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_3" oninput="pinModalInput(1,3)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_4" oninput="pinModalInput(1,4)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp1_5" oninput="pinModalInput(1,5)">
+        </div>
+        <p id="pinStep1Error" style="color:var(--red);font-size:.8rem;text-align:center;min-height:18px"></p>
+      </div>
+      <!-- Step 2: new pin -->
+      <div class="pin-step" id="pinStep2">
+        <p style="color:var(--muted);font-size:.875rem;margin-bottom:12px">Digite o novo Masterpin (6 dígitos):</p>
+        <div class="pin-input-row">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_0" oninput="pinModalInput(2,0)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_1" oninput="pinModalInput(2,1)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_2" oninput="pinModalInput(2,2)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_3" oninput="pinModalInput(2,3)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_4" oninput="pinModalInput(2,4)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp2_5" oninput="pinModalInput(2,5)">
+        </div>
+      </div>
+      <!-- Step 3: confirm new pin -->
+      <div class="pin-step" id="pinStep3">
+        <p style="color:var(--muted);font-size:.875rem;margin-bottom:12px">Confirme o novo Masterpin:</p>
+        <div class="pin-input-row">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_0" oninput="pinModalInput(3,0)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_1" oninput="pinModalInput(3,1)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_2" oninput="pinModalInput(3,2)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_3" oninput="pinModalInput(3,3)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_4" oninput="pinModalInput(3,4)">
+          <input class="pin-input-box" type="password" inputmode="numeric" maxlength="1" id="cp3_5" oninput="pinModalInput(3,5)">
+        </div>
+        <p id="pinStep3Error" style="color:var(--red);font-size:.8rem;text-align:center;min-height:18px"></p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('changePinModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="advancePinStep()" id="pinStepBtn">Próximo</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav" id="bottomNav">
+  <div class="bottom-nav-inner">
+    <button class="bn-item active" onclick="navigate('dashboard')" data-page="dashboard"><span class="bn-icon">📊</span>Início</button>
+    <button class="bn-item" onclick="navigate('transactions')" data-page="transactions"><span class="bn-icon">↕</span>Lançamentos</button>
+    <button class="bn-item" onclick="navigate('accounts')" data-page="accounts"><span class="bn-icon">🏦</span>Contas</button>
+    <button class="bn-item" onclick="navigate('scheduled')" data-page="scheduled"><span class="bn-icon">📅</span>Programados</button>
+    <button class="bn-item" onclick="openSidebar()" data-page="more"><span class="bn-icon">☰</span>Mais</button>
+  </div>
+</nav>
+<button class="fab" onclick="openTransactionModal()" aria-label="Nova transação">+</button>
+
+<!-- MODALS -->
+<!-- Transaction Detail Modal -->
+<div class="modal-overlay" id="txDetailModal" onclick="if(event.target===this)closeModal('txDetailModal')">
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="txDetailTitle">Detalhes da Transação</span>
+      <button class="modal-close" onclick="closeModal('txDetailModal')">✕</button>
+    </div>
+    <div class="modal-body" id="txDetailBody" style="padding:0">
+      <!-- filled by JS -->
+    </div>
+    <div class="modal-footer" style="gap:8px">
+      <button class="btn btn-ghost" onclick="closeModal('txDetailModal')">Fechar</button>
+      <button class="btn btn-ghost" id="txDetailDupBtn" onclick="_txDetailAction('dup')">📋 Duplicar</button>
+      <button class="btn btn-ghost" style="color:var(--red)" id="txDetailDelBtn" onclick="_txDetailAction('del')">🗑️ Excluir</button>
+      <button class="btn btn-primary" id="txDetailEditBtn" onclick="_txDetailAction('edit')">✏️ Editar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="txModal">
+  <div class="modal"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title" id="txModalTitle">Nova Transação</span><button class="modal-close" onclick="closeModal('txModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="tab-bar mb-4">
+        <button class="tab active" onclick="setTxType('expense')">Despesa</button>
+        <button class="tab" onclick="setTxType('income')">Receita</button>
+        <button class="tab" onclick="setTxType('transfer')">Transferência</button>
+        <button class="tab" onclick="setTxType('card_payment')">💳 Pgto.Cartão</button>
+      </div>
+      <div id="txCardPaymentBadge" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--blue-lt,#eff6ff);border:1px solid #bfdbfe;border-radius:var(--r-sm);font-size:.82rem;color:#1d4ed8">
+        💳 <strong>Pagamento de Cartão de Crédito</strong> — debita a conta corrente e credita o cartão. Permite categorizar como "Pgto. Cartão".
+      </div>
+      <input type="hidden" id="txId"><input type="hidden" id="txTypeField" value="expense">
+      <div class="form-grid">
+        <div class="form-group"><label>Data *</label><input type="date" id="txDate"></div>
+        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="txAmountSignBtn" onclick="toggleAmtSign('txAmount')" aria-label="Alternar sinal">+</button><input type="text" id="txAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="if(document.getElementById('txIsInternational')?.checked)updateIofMirror()"></div></div>
+        <div class="form-group full"><label>Descrição *</label><input type="text" id="txDesc" placeholder="Ex: Almoço no restaurante"></div>
+                <div class="form-group"><label>Status</label><select id="txStatus"><option value="confirmed">Confirmada</option><option value="pending">Pendente</option></select></div>
+<div class="form-group"><label>Conta *</label><select id="txAccountId" onchange="checkAccountIofConfig(this.value)"></select></div>
+        <div class="form-group" id="txTransferToGroup" style="display:none"><label>Conta Destino *</label><select id="txTransferTo"></select></div>
+        <div class="form-group" id="txPayeeGroup" style="position:relative">
+          <label>Beneficiário / Fonte</label>
+          <input type="hidden" id="txPayeeId">
+          <div class="payee-input-wrap">
+            <input type="text" id="txPayeeName" placeholder="Digite para buscar ou criar..." autocomplete="off" oninput="onPayeeInput(this.value)" onblur="onPayeeBlur()" onkeydown="onPayeeKey(event)">
+            <span id="txPayeeStatus" class="payee-status"></span>
+          </div>
+          <div id="txPayeeDropdown" class="payee-dropdown" style="display:none"></div>
+          <div id="txPayeeSimilarBanner" class="payee-similar-banner" style="display:none"></div>
+        </div>
+        <div class="form-group" id="txCategoryGroup">
+          <label>Categoria</label>
+          <input type="hidden" id="txCategoryId">
+          <div class="cat-picker-wrap" id="catPickerWrap">
+            <button type="button" class="cat-picker-btn" id="catPickerBtn" onclick="toggleCatPicker()">
+              <span class="cat-picker-dot" id="catPickerDot" style="display:none"></span>
+              <span id="catPickerLabel" style="color:var(--muted)">— Sem categoria —</span>
+              <span class="cat-picker-caret">▼</span>
+            </button>
+            <div class="cat-picker-dropdown" id="catPickerDropdown"></div>
+          </div>
+          <div class="cat-suggestion" id="catSuggestion" onclick="applyCatSuggestion()">
+            <span class="cat-sug-dot" id="catSugDot"></span>
+            <span class="cat-sug-label">Última usada:</span>
+            <span class="cat-sug-name" id="catSugName"></span>
+            <span class="cat-sug-dismiss" onclick="event.stopPropagation();hideCatSuggestion()" title="Dispensar">✕</span>
+          </div>
+        </div>
+        <div class="form-group full"><label>Observação</label><textarea id="txMemo" rows="2" placeholder="Memo, notas..."></textarea></div>
+        <div class="form-group full"><label>Tags (vírgula)</label><input type="text" id="txTags" placeholder="IR, Décio, ..."></div>
+
+        <!-- IOF internacional (só aparece para cartão BR) -->
+        <div class="form-group full" id="txIofGroup" style="display:none">
+          <label class="iof-intl-toggle" onclick="toggleIofIntl()">
+            <input type="checkbox" id="txIsInternational" onclick="event.stopPropagation();updateIofMirror()">
+            🌍 Compra internacional (aplicar IOF)
+          </label>
+          <div class="iof-mirror-info" id="txIofMirrorInfo"></div>
+        </div>
+
+        <!-- Anexo -->
+        <div class="form-group full" id="txAttachGroup">
+          <label>Anexo (PDF ou imagem)</label>
+          <div class="tx-attachment-area" id="txAttachArea"
+            onclick="if(event.target!==document.getElementById('txAttachFile'))document.getElementById('txAttachFile').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-active')"
+            ondragleave="this.classList.remove('drag-active')"
+            ondrop="handleAttachDrop(event)">
+            <input type="file" id="txAttachFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleAttachSelect(this.files[0])">
+            <span id="txAttachLabel">📎 Clique ou arraste um PDF/imagem aqui</span>
+          </div>
+          <div id="txAttachPreview" style="display:none" class="tx-attachment-preview">
+            <span id="txAttachIcon" style="font-size:1.2rem">📄</span>
+            <span class="att-name" id="txAttachName"></span>
+            <span class="att-remove" onclick="removeAttachment()" title="Remover">✕</span>
+          </div>
+          <!-- Hidden fields persist attachment state between form resets -->
+          <input type="hidden" id="txAttachUrl">
+          <input type="hidden" id="txAttachNameHidden">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('txModal')">Cancelar</button><button class="btn btn-primary" onclick="saveTransaction()">Salvar</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="accountModal">
+  <div class="modal"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title" id="accountModalTitle">Nova Conta</span><button class="modal-close" onclick="closeModal('accountModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="accountId">
+      <div class="form-grid">
+        <div class="form-group full"><label>Nome da Conta *</label><input type="text" id="accountName" placeholder="Ex: Itaú Corrente"></div>
+        <div class="form-group"><label>Tipo *</label><select id="accountType" onchange="onAccountTypeChange()"><option value="corrente">Conta Corrente</option><option value="poupanca">Poupança</option><option value="cartao_credito">Cartão de Crédito</option><option value="investimento">Investimentos</option><option value="dinheiro">Dinheiro</option><option value="outros">Outros</option></select></div>
+        <div class="form-group"><label>Moeda</label><select id="accountCurrency"><option value="BRL">BRL — Real</option><option value="USD">USD — Dólar</option><option value="EUR">EUR — Euro</option><option value="AED">AED — Dirham</option></select></div>
+        <div class="form-group full"><label>Grupo</label><select id="accountGroupId"><option value="">— Sem grupo —</option></select></div>
+        <!-- IOF config - só para cartão de crédito -->
+        <div class="form-group full" id="accountIofConfig" style="display:none">
+          <div class="iof-config visible">
+            <div class="iof-row">
+              <label class="iof-toggle">
+                <input type="checkbox" id="accountIsBrazilian" onchange="toggleAccountIof()">
+                <span>🇧🇷 Cartão brasileiro</span>
+              </label>
+              <span style="font-size:.75rem;color:var(--muted)">Habilita cálculo de IOF em compras internacionais</span>
+            </div>
+            <div id="accountIofRateGroup" style="display:none;margin-top:10px">
+              <div class="iof-row">
+                <label style="font-size:.85rem;flex-shrink:0">IOF sobre compras internacionais:</label>
+                <input type="number" id="accountIofRate" step="0.01" min="0" max="10" value="3.38" style="width:80px" inputmode="decimal">
+                <span style="font-size:.85rem;color:var(--muted)">% (padrão: 3,38%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group"><label id="accountBalanceLabel">Saldo Inicial</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="accountBalanceSignBtn" onclick="toggleAmtSign('accountBalance')" aria-label="Alternar sinal">+</button><input type="text" id="accountBalance" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div><div style="font-size:.72rem;color:var(--muted);margin-top:4px">Este é o saldo de abertura. O saldo atual é calculado automaticamente com base nas transações.</div></div>
+        <div class="form-group full">
+          <label>Ícone</label>
+          <div class="icon-picker" id="accountIconPicker">
+            <div class="icon-picker-tabs">
+              <button class="icon-tab active" onclick="showIconGroup(event,'banks-br')">🇧🇷 Bancos BR</button>
+              <button class="icon-tab" onclick="showIconGroup(event,'banks-fr')">🇫🇷 Bancos FR</button>
+              <button class="icon-tab" onclick="showIconGroup(event,'cards')">💳 Cartões</button>
+              <button class="icon-tab" onclick="showIconGroup(event,'generic')">⭐ Outros</button>
+            </div>
+            <div class="icon-grid" id="iconGroup-banks-br">
+              <div class="icon-option" data-icon="itau" data-color="#FF6600" onclick="selectAccountIcon(this)" title="Itaú"><span class="bank-logo itau-logo">I</span><span class="icon-label">Itaú</span></div>
+              <div class="icon-option" data-icon="inter" data-color="#FF7A00" onclick="selectAccountIcon(this)" title="Banco Inter"><span class="bank-logo inter-logo">IN</span><span class="icon-label">Inter</span></div>
+              <div class="icon-option" data-icon="bradesco" data-color="#CC092F" onclick="selectAccountIcon(this)" title="Bradesco"><span class="bank-logo bradesco-logo">B</span><span class="icon-label">Bradesco</span></div>
+              <div class="icon-option" data-icon="nubank" data-color="#820AD1" onclick="selectAccountIcon(this)" title="Nubank"><span class="bank-logo nubank-logo">N</span><span class="icon-label">Nubank</span></div>
+              <div class="icon-option" data-icon="bb" data-color="#F5A623" onclick="selectAccountIcon(this)" title="Banco do Brasil"><span class="bank-logo bb-logo">BB</span><span class="icon-label">BB</span></div>
+              <div class="icon-option" data-icon="caixa" data-color="#005CA9" onclick="selectAccountIcon(this)" title="Caixa"><span class="bank-logo caixa-logo">CE</span><span class="icon-label">Caixa</span></div>
+              <div class="icon-option" data-icon="santander" data-color="#EC0000" onclick="selectAccountIcon(this)" title="Santander"><span class="bank-logo santander-logo">S</span><span class="icon-label">Santander</span></div>
+              <div class="icon-option" data-icon="xp" data-color="#000000" onclick="selectAccountIcon(this)" title="XP Investimentos"><span class="bank-logo xp-logo">XP</span><span class="icon-label">XP</span></div>
+              <div class="icon-option" data-icon="c6" data-color="#242424" onclick="selectAccountIcon(this)" title="C6 Bank"><span class="bank-logo c6-logo">C6</span><span class="icon-label">C6</span></div>
+              <div class="icon-option" data-icon="neon" data-color="#00D4FF" onclick="selectAccountIcon(this)" title="Neon"><span class="bank-logo neon-logo" style="background:#00D4FF">Ne</span><span class="icon-label">Neon</span></div>
+              <div class="icon-option" data-icon="next" data-color="#00AF3F" onclick="selectAccountIcon(this)" title="Next"><span class="bank-logo next-logo" style="background:#00AF3F">Nx</span><span class="icon-label">Next</span></div>
+              <div class="icon-option" data-icon="picpay" data-color="#21C25E" onclick="selectAccountIcon(this)" title="PicPay"><span class="bank-logo picpay-logo" style="background:#21C25E">PP</span><span class="icon-label">PicPay</span></div>
+              <div class="icon-option" data-icon="mercadopago" data-color="#009EE3" onclick="selectAccountIcon(this)" title="Mercado Pago"><span class="bank-logo mercadopago-logo" style="background:#009EE3">MP</span><span class="icon-label">Mercado Pago</span></div>
+              <div class="icon-option" data-icon="sicoob" data-color="#006837" onclick="selectAccountIcon(this)" title="Sicoob"><span class="bank-logo" style="background:#006837;color:#fff;border-radius:50%;font-weight:700;font-size:.65rem">SC</span><span class="icon-label">Sicoob</span></div>
+              <div class="icon-option" data-icon="rico" data-color="#00A86B" onclick="selectAccountIcon(this)" title="Rico"><span class="bank-logo" style="background:#00A86B;color:#fff;border-radius:4px;font-weight:700;font-size:.65rem">Rc</span><span class="icon-label">Rico</span></div>
+              <div class="icon-option" data-icon="will" data-color="#7B2D8B" onclick="selectAccountIcon(this)" title="Will Bank"><span class="bank-logo" style="background:#7B2D8B;color:#fff;border-radius:50%;font-weight:700;font-size:.65rem">W</span><span class="icon-label">Will</span></div>
+            </div>
+            <div class="icon-grid" id="iconGroup-banks-fr" style="display:none">
+              <div class="icon-option" data-icon="boursobank" data-color="#1A2E5A" onclick="selectAccountIcon(this)" title="Boursobank"><span class="bank-logo boursobank-logo">Bb</span><span class="icon-label">Boursobank</span></div>
+              <div class="icon-option" data-icon="bnp" data-color="#009B55" onclick="selectAccountIcon(this)" title="BNP Paribas"><span class="bank-logo" style="background:#009B55;color:#fff;border-radius:4px;font-weight:700;font-size:.65rem">BNP</span><span class="icon-label">BNP Paribas</span></div>
+              <div class="icon-option" data-icon="sg" data-color="#E30613" onclick="selectAccountIcon(this)" title="Société Générale"><span class="bank-logo" style="background:#E30613;color:#fff;border-radius:4px;font-weight:700;font-size:.6rem">SG</span><span class="icon-label">Soc. Gén.</span></div>
+              <div class="icon-option" data-icon="ca" data-color="#009A44" onclick="selectAccountIcon(this)" title="Crédit Agricole"><span class="bank-logo" style="background:#009A44;color:#fff;border-radius:4px;font-weight:700;font-size:.6rem">CA</span><span class="icon-label">Crédit Ag.</span></div>
+              <div class="icon-option" data-icon="lcl" data-color="#005BAB" onclick="selectAccountIcon(this)" title="LCL"><span class="bank-logo" style="background:#005BAB;color:#fff;border-radius:4px;font-weight:700;font-size:.7rem">LCL</span><span class="icon-label">LCL</span></div>
+              <div class="icon-option" data-icon="laposte" data-color="#FDD000" onclick="selectAccountIcon(this)" title="La Banque Postale"><span class="bank-logo" style="background:#FDD000;color:#333;border-radius:4px;font-weight:700;font-size:.6rem">LP</span><span class="icon-label">La Poste</span></div>
+              <div class="icon-option" data-icon="cic" data-color="#003087" onclick="selectAccountIcon(this)" title="CIC"><span class="bank-logo" style="background:#003087;color:#fff;border-radius:4px;font-weight:700;font-size:.7rem">CIC</span><span class="icon-label">CIC</span></div>
+              <div class="icon-option" data-icon="bred" data-color="#C8102E" onclick="selectAccountIcon(this)" title="BRED"><span class="bank-logo" style="background:#C8102E;color:#fff;border-radius:4px;font-weight:700;font-size:.65rem">BRED</span><span class="icon-label">BRED</span></div>
+              <div class="icon-option" data-icon="revolut" data-color="#0075EB" onclick="selectAccountIcon(this)" title="Revolut"><span class="bank-logo" style="background:#0075EB;color:#fff;border-radius:6px;font-weight:700;font-size:.65rem">Rv</span><span class="icon-label">Revolut</span></div>
+              <div class="icon-option" data-icon="n26" data-color="#3B82F6" onclick="selectAccountIcon(this)" title="N26"><span class="bank-logo" style="background:#3B82F6;color:#fff;border-radius:6px;font-weight:700;font-size:.7rem">N26</span><span class="icon-label">N26</span></div>
+              <div class="icon-option" data-icon="wise" data-color="#9FE870" onclick="selectAccountIcon(this)" title="Wise"><span class="bank-logo" style="background:#9FE870;color:#163300;border-radius:6px;font-weight:700;font-size:.65rem">W</span><span class="icon-label">Wise</span></div>
+              <div class="icon-option" data-icon="paypal" data-color="#003087" onclick="selectAccountIcon(this)" title="PayPal"><span class="bank-logo" style="background:#003087;color:#fff;border-radius:6px;font-weight:700;font-size:.65rem">PP</span><span class="icon-label">PayPal</span></div>
+            </div>
+            <div class="icon-grid" id="iconGroup-cards" style="display:none">
+              <div class="icon-option" data-icon="visa" data-color="#1A1F71" onclick="selectAccountIcon(this)" title="Visa"><span class="bank-logo card-visa"><em>VISA</em></span><span class="icon-label">Visa</span></div>
+              <div class="icon-option" data-icon="mastercard" data-color="#EB001B" onclick="selectAccountIcon(this)" title="Mastercard"><span class="bank-logo card-mc"><span class="mc-left"></span><span class="mc-right"></span></span><span class="icon-label">Mastercard</span></div>
+              <div class="icon-option" data-icon="amex" data-color="#2E77BC" onclick="selectAccountIcon(this)" title="American Express"><span class="bank-logo card-amex">AMEX</span><span class="icon-label">Amex</span></div>
+              <div class="icon-option" data-icon="elo" data-color="#000000" onclick="selectAccountIcon(this)" title="Elo"><span class="bank-logo card-elo">elo</span><span class="icon-label">Elo</span></div>
+              <div class="icon-option" data-icon="hipercard" data-color="#B40019" onclick="selectAccountIcon(this)" title="Hipercard"><span class="bank-logo" style="background:#B40019;color:#fff;border-radius:4px;font-weight:700;font-size:.6rem">HC</span><span class="icon-label">Hipercard</span></div>
+              <div class="icon-option" data-icon="dinersclub" data-color="#004B87" onclick="selectAccountIcon(this)" title="Diners Club"><span class="bank-logo" style="background:#004B87;color:#fff;border-radius:50%;font-weight:700;font-size:.6rem">DC</span><span class="icon-label">Diners</span></div>
+              <div class="icon-option" data-icon="sams" data-color="#0067A0" onclick="selectAccountIcon(this)" title="Sam's Club"><span class="bank-logo" style="background:#0067A0;color:#fff;border-radius:4px;font-weight:700;font-size:.6rem">S</span><span class="icon-label">Sam's</span></div>
+              <div class="icon-option" data-icon="porto" data-color="#005B8E" onclick="selectAccountIcon(this)" title="Porto Seguro"><span class="bank-logo" style="background:#005B8E;color:#fff;border-radius:4px;font-weight:700;font-size:.6rem">PS</span><span class="icon-label">Porto</span></div>
+            </div>
+            <div class="icon-grid" id="iconGroup-generic" style="display:none">
+              <div class="icon-option" data-icon="emoji-🏦" data-color="#2a6049" onclick="selectAccountIcon(this)" title="Banco"><span style="font-size:1.5rem">🏦</span><span class="icon-label">Banco</span></div>
+              <div class="icon-option" data-icon="emoji-💳" data-color="#1A1F71" onclick="selectAccountIcon(this)" title="Cartão"><span style="font-size:1.5rem">💳</span><span class="icon-label">Cartão</span></div>
+              <div class="icon-option" data-icon="emoji-💰" data-color="#F5A623" onclick="selectAccountIcon(this)" title="Dinheiro"><span style="font-size:1.5rem">💰</span><span class="icon-label">Dinheiro</span></div>
+              <div class="icon-option" data-icon="emoji-💵" data-color="#2a7a4a" onclick="selectAccountIcon(this)" title="Notas"><span style="font-size:1.5rem">💵</span><span class="icon-label">Notas</span></div>
+              <div class="icon-option" data-icon="emoji-📈" data-color="#1e5ba8" onclick="selectAccountIcon(this)" title="Investimentos"><span style="font-size:1.5rem">📈</span><span class="icon-label">Invest.</span></div>
+              <div class="icon-option" data-icon="emoji-🐷" data-color="#F4A0C0" onclick="selectAccountIcon(this)" title="Poupança"><span style="font-size:1.5rem">🐷</span><span class="icon-label">Poupança</span></div>
+              <div class="icon-option" data-icon="emoji-🌍" data-color="#1e5ba8" onclick="selectAccountIcon(this)" title="Internacional"><span style="font-size:1.5rem">🌍</span><span class="icon-label">Intern.</span></div>
+              <div class="icon-option" data-icon="emoji-💱" data-color="#b45309" onclick="selectAccountIcon(this)" title="Câmbio"><span style="font-size:1.5rem">💱</span><span class="icon-label">Câmbio</span></div>
+            </div>
+            <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:.75rem;color:var(--muted)">Selecionado:</span>
+              <span id="accountIconPreview" style="font-size:1.2rem;min-width:28px"></span>
+              <input type="hidden" id="accountIcon">
+              <input type="color" id="accountColor" value="#2a6049" style="width:36px;height:28px;padding:2px;border-radius:6px;cursor:pointer;border:1px solid var(--border)">
+              <span style="font-size:.72rem;color:var(--muted)">Ajustar cor</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('accountModal')">Cancelar</button><button class="btn btn-primary" onclick="saveAccount()">Salvar</button></div>
+  </div>
+</div>
+
+<!-- GROUP MANAGEMENT MODAL -->
+<div class="modal-overlay" id="groupModal">
+  <div class="modal" style="max-width:460px"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">🗂️ Grupos de Contas</span><button class="modal-close" onclick="closeModal('groupModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:16px">
+        <div class="form-grid">
+          <input type="hidden" id="groupEditId">
+          <div class="form-group" style="flex:1"><label>Nome do Grupo *</label><input type="text" id="groupName" placeholder="Ex: Brasil, França, Investimentos..."></div>
+          <div class="form-group" style="flex:0 0 auto"><label>Emoji</label><input type="text" id="groupEmoji" placeholder="🇧🇷" maxlength="4" style="width:60px;text-align:center;font-size:1.2rem"></div>
+          <div class="form-group" style="flex:0 0 auto"><label>Cor</label><input type="color" id="groupColor" value="#2a6049" style="width:44px;height:36px;padding:2px;border-radius:6px;cursor:pointer;border:1px solid var(--border)"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-primary btn-sm" onclick="saveGroup()">💾 Salvar Grupo</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelGroupEdit()">Cancelar</button>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">Grupos existentes</div>
+        <div id="groupList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('groupModal')">Fechar</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="categoryModal">
+  <div class="modal" style="max-width:440px"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title" id="categoryModalTitle">Nova Categoria</span><button class="modal-close" onclick="closeModal('categoryModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="categoryId">
+      <div class="form-grid">
+        <div id="catParentHint" style="display:none;grid-column:1/-1;background:var(--accent-lt);color:var(--accent);font-size:.78rem;font-weight:500;padding:7px 10px;border-radius:var(--r-sm);border:1px solid rgba(42,96,73,.2)"></div>
+        <div class="form-group full"><label>Nome *</label><input type="text" id="categoryName" placeholder="Ex: Alimentação"></div>
+        <div class="form-group"><label>Tipo *</label><select id="categoryType"><option value="despesa">Despesa</option><option value="receita">Receita</option><option value="transferencia">Transferência</option></select></div>
+        <div class="form-group"><label>Categoria Pai</label><select id="categoryParent"><option value="">— Nenhuma —</option></select></div>
+        <div class="form-group"><label>Ícone</label><input type="text" id="categoryIcon" placeholder="📦" maxlength="4"></div>
+        <div class="form-group"><label>Cor</label><input type="color" id="categoryColor" value="#2a6049"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('categoryModal')">Cancelar</button><button class="btn btn-primary" onclick="saveCategory()">Salvar</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="payeeModal">
+  <div class="modal" style="max-width:440px"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title" id="payeeModalTitle">Novo Beneficiário</span><button class="modal-close" onclick="closeModal('payeeModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="payeeId">
+      <div class="form-grid">
+        <div class="form-group full"><label>Nome *</label><input type="text" id="payeeName" placeholder="Ex: Supermercado Extra"></div>
+        <div class="form-group"><label>Tipo *</label><select id="payeeType"><option value="beneficiario">Beneficiário</option><option value="fonte_pagadora">Fonte Pagadora</option><option value="ambos">Ambos</option></select></div>
+        <div class="form-group"><label>Categoria Padrão</label><select id="payeeCategory"><option value="">— Nenhuma —</option></select></div>
+        <div class="form-group full"><label>Notas</label><textarea id="payeeNotes" rows="2" placeholder="Observações..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('payeeModal')">Cancelar</button><button class="btn btn-primary" onclick="savePayee()">Salvar</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="payeeClipboardModal">
+  <div class="modal" style="max-width:560px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">📋 Importar Beneficiários da Área de Transferência</span>
+      <button class="modal-close" onclick="closeModal('payeeClipboardModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">
+        Cole abaixo uma lista de nomes — um por linha, separados por vírgula, ponto-e-vírgula, ou Tab. Duplicatas existentes serão ignoradas automaticamente.
+      </p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="pasteFromClipboard()" style="gap:5px">📋 Colar da Área de Transferência</button>
+        <span style="font-size:.75rem;color:var(--muted)">ou cole diretamente no campo abaixo</span>
+      </div>
+      <textarea id="payeeClipboardText" rows="8"
+        placeholder="Supermercado Extra&#10;Amazon&#10;Netflix&#10;Salário Empresa XPTO&#10;..."
+        oninput="parsePayeeClipboard()"
+        style="width:100%;resize:vertical;font-size:.85rem;font-family:var(--font-mono,monospace);border:1.5px solid var(--border);border-radius:var(--r-sm);padding:10px;background:var(--bg2);color:var(--text);box-sizing:border-box"></textarea>
+
+      <div style="display:flex;gap:10px;align-items:center;margin:10px 0 6px">
+        <label style="font-size:.82rem;color:var(--text2);font-weight:600">Tipo padrão:</label>
+        <select id="payeeClipboardType" style="font-size:.82rem" onchange="parsePayeeClipboard()">
+          <option value="beneficiario">Beneficiário</option>
+          <option value="fonte_pagadora">Fonte Pagadora</option>
+          <option value="ambos">Ambos</option>
+        </select>
+        <span style="margin-left:auto;font-size:.78rem;color:var(--muted)" id="payeeClipboardCount"></span>
+      </div>
+
+      <!-- Preview list -->
+      <div id="payeeClipboardPreview" style="display:none;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg2)">
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+          <thead>
+            <tr style="position:sticky;top:0;background:var(--bg2);z-index:1">
+              <th style="padding:7px 12px;text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border)">Nome</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);width:90px">Status</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);width:30px">
+                <input type="checkbox" id="payeeClipboardSelectAll" onchange="payeeClipboardToggleAll(this.checked)" title="Selecionar todos">
+              </th>
+            </tr>
+          </thead>
+          <tbody id="payeeClipboardPreviewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('payeeClipboardModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmPayeeClipboardImport()" id="payeeClipboardImportBtn" disabled>Importar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="txClipboardModal">
+  <div class="modal" style="max-width:700px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">📋 Importar Transações do Clipboard</span>
+      <button class="modal-close" onclick="closeModal('txClipboardModal')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Format reference -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:12px;font-size:.8rem;line-height:1.7">
+        <strong>Formato esperado — uma transação por linha, campos separados por vírgula:</strong><br>
+        <code style="background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:.8rem">data, valor, descrição, conta, categoria, beneficiário, memo</code><br>
+        <span style="color:var(--muted);font-size:.75rem">
+          • <strong>Data</strong>: DD/MM/AAAA ou AAAA-MM-DD &nbsp;·&nbsp;
+          <strong>Valor</strong>: negativo = despesa (ex: -150,00), positivo = receita &nbsp;·&nbsp;
+          <strong>Conta, categoria, beneficiário</strong>: nome exato ou deixar vazio &nbsp;·&nbsp;
+          <strong>memo</strong>: opcional
+        </span>
+      </div>
+
+      <!-- Account override -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="font-size:.82rem;font-weight:600;color:var(--text2);white-space:nowrap">Conta padrão (se não informada na linha):</label>
+        <select id="txClipDefaultAccount" style="font-size:.82rem;min-width:160px">
+          <option value="">— usar coluna conta —</option>
+        </select>
+      </div>
+
+      <!-- Paste area -->
+      <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="txClipPasteFromClipboard()">📋 Colar da Área de Transferência</button>
+        <span style="font-size:.75rem;color:var(--muted)">ou cole diretamente abaixo</span>
+      </div>
+      <textarea id="txClipText" rows="7"
+        placeholder="01/03/2026, -150,00, Supermercado Extra, Nubank, Alimentação, Supermercado Extra, compras da semana&#10;01/03/2026, 5000,00, Salário, Itaú, Salário,, depósito mensal&#10;02/03/2026, -49,90, Netflix, Nubank, Lazer"
+        oninput="parseTxClipboard()"
+        style="width:100%;resize:vertical;font-size:.82rem;font-family:var(--font-mono,monospace);border:1.5px solid var(--border);border-radius:var(--r-sm);padding:10px;background:var(--bg2);color:var(--text);box-sizing:border-box"></textarea>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+        <span style="font-size:.78rem;color:var(--muted)" id="txClipCount"></span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.78rem;cursor:pointer">
+          <input type="checkbox" id="txClipSelectAll" onchange="txClipToggleAll(this.checked)" checked> Selecionar todos
+        </label>
+      </div>
+
+      <!-- Preview table -->
+      <div id="txClipPreview" style="display:none;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm)">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+          <thead>
+            <tr style="position:sticky;top:0;background:var(--surface2);z-index:1;border-bottom:1px solid var(--border)">
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted);white-space:nowrap">Data</th>
+              <th style="padding:6px 8px;text-align:right;font-weight:600;color:var(--muted)">Valor</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Descrição</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Conta</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Categoria</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Beneficiário</th>
+              <th style="padding:6px 8px;text-align:center;font-weight:600;color:var(--muted);width:60px">Status</th>
+              <th style="padding:6px 8px;text-align:center;font-weight:600;color:var(--muted);width:30px">
+                <input type="checkbox" id="txClipSelectAllTh" onchange="txClipToggleAll(this.checked)" checked>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="txClipPreviewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('txClipboardModal')">Cancelar</button>
+      <button class="btn btn-primary" id="txClipImportBtn" onclick="confirmTxClipImport()" disabled>Importar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="budgetModal">
+  <div class="modal" style="max-width:400px"><div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Novo Orçamento</span><button class="modal-close" onclick="closeModal('budgetModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="budgetId">
+      <div class="form-grid">
+        <div class="form-group full"><label>Categoria *</label><select id="budgetCategory"></select></div>
+        <div class="form-group"><label>Mês *</label><input type="month" id="budgetMonthInput"></div>
+        <div class="form-group"><label>Valor (R$) *</label><input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('budgetModal')">Cancelar</button><button class="btn btn-primary" onclick="saveBudget()">Salvar</button></div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+
+  <script src="js/app.js"></script>
+  <script src="js/accounts.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/payees.js"></script>
+  <script src="js/transactions.js"></script>
+  <script src="js/budgets.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/reports.js"></script>
+  <script src="js/payee_autocomplete.js"></script>
+  <script src="js/ui_helpers.js"></script>
+  <script src="js/scheduled.js"></script>
+  <script src="js/attachments.js"></script>
+  <script src="js/iof.js"></script>
+  <script src="js/forecast.js"></script>
+  <script src="js/email.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/import.js"></script>
+  <script src="js/backup.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/auto_register.js"></script>
+<script src="js/audit.js"></script>
+</body>
+</html>
+
