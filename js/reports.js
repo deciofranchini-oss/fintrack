@@ -427,7 +427,7 @@ async function exportReportPDF() {
     doc.setFillColor(42,96,73); doc.rect(0,0,W,30,'F');
     doc.setTextColor(255,255,255);
     doc.setFontSize(15); doc.setFont('helvetica','bold');
-    doc.text("Family FinTrack — Relatório", 14, 12);
+    doc.text("J.F. Family FinTrack — Relatório", 14, 12);
     doc.setFontSize(9); doc.setFont('helvetica','normal');
     doc.text('Período: ' + fmtDate(from) + ' a ' + fmtDate(to), 14, 21);
     doc.text('Gerado: ' + new Date().toLocaleString('pt-BR'), W-14, 21, {align:'right'});
@@ -490,7 +490,7 @@ async function exportReportPDF() {
     const pages=doc.internal.getNumberOfPages();
     for(let i=1;i<=pages;i++){
       doc.setPage(i);doc.setFontSize(8);doc.setTextColor(150);
-      doc.text(`Family FinTrack  ·  Página ${i}/${pages}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'});
+      doc.text(`JF Family FinTrack  ·  Página ${i}/${pages}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'});
     }
 
     doc.save(`FinTrack_${from}_${to}.pdf`);
@@ -554,7 +554,7 @@ function printReport() {
   area.innerHTML=`
     <div style="font-family:Arial,sans-serif;max-width:900px;margin:0 auto">
       <div style="background:#2a6049;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;margin-bottom:0">
-        <div style="font-size:20px;font-weight:700">Family FinTrack — Relatório</div>
+        <div style="font-size:20px;font-weight:700">JF Family FinTrack — Relatório</div>
         <div style="font-size:13px;opacity:.85;margin-top:4px">Período: ${fmtDate(from)} a ${fmtDate(to)}  ·  Gerado: ${new Date().toLocaleString('pt-BR')}</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px;background:#f5f5f5">
@@ -637,7 +637,7 @@ async function sendReportByEmail() {
     doc.setFillColor(42, 96, 73); doc.rect(0, 0, W, 30, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(15); doc.setFont('helvetica', 'bold');
-    doc.text('Family FinTrack — Relatório', 14, 12);
+    doc.text('J.F. Family FinTrack — Relatório', 14, 12);
     doc.setFontSize(9); doc.setFont('helvetica', 'normal');
     doc.text('Período: ' + fmtDate(from) + ' a ' + fmtDate(to), 14, 21);
     doc.text('Gerado: ' + new Date().toLocaleString('pt-BR'), W - 14, 21, { align: 'right' });
@@ -720,7 +720,7 @@ async function sendReportByEmail() {
     const pages = doc.internal.getNumberOfPages();
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p); doc.setFontSize(8); doc.setTextColor(150);
-      doc.text(`Family FinTrack  ·  Página ${p}/${pages}`,
+      doc.text(`JF Family FinTrack  ·  Página ${p}/${pages}`,
         W / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
     }
 
@@ -764,7 +764,7 @@ async function sendReportByEmail() {
       recipient:      toAddr,
       dest_email:     toAddr,
       reply_to:       toAddr,
-      from_name:      'Family FinTrack',
+      from_name:      'J.F. Family FinTrack',
       subject:        subject,
       message:        userMessage,
       report_period:  `${fmtDate(from)} a ${fmtDate(to)}`,

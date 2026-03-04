@@ -12,7 +12,7 @@ async function exportBackup() {
       famQ(sb.from('scheduled_transactions').select('*')).then(r=>r, () => ({ data:[] })),
     ]);
     const backup = {
-      version: '2.0', app: "Family FinTrack",
+      version: '2.0', app: "JF Family FinTrack",
       exported_at: new Date().toISOString(),
       counts: { accounts: a.data?.length||0, transactions: t.data?.length||0 },
       data: {

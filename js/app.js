@@ -168,43 +168,6 @@ async function bootApp(){
 }
 
 const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações'};
-// ── Compact mode (mobile-friendly transaction rows) ───────────────
-function _getCompactModeFlag(){
-  try{
-    const pref = (typeof getUserPreference==='function') ? getUserPreference('transactions','compact_view') : null;
-    if(pref===true || pref==='true') return true;
-  }catch(e){}
-  return localStorage.getItem('tx_compact_view')==='1';
-}
-
-function applyCompactMode(isCompact){
-  document.body.classList.toggle('tx-compact', !!isCompact);
-  const btn = document.getElementById('compactToggleBtn');
-  if(btn) btn.classList.toggle('is-active', !!isCompact);
-  const chk = document.getElementById('txCompactToggle');
-  if(chk) chk.checked = !!isCompact;
-}
-
-async function setCompactMode(isCompact){
-  localStorage.setItem('tx_compact_view', isCompact ? '1' : '0');
-  try{ if(typeof setUserPreference==='function') await setUserPreference('transactions','compact_view', !!isCompact); }catch(e){}
-  applyCompactMode(isCompact);
-  try{
-    if(state.currentPage==='transactions') renderTransactions();
-    if(state.currentPage==='dashboard' && typeof loadDashboardRecent==='function') loadDashboardRecent();
-  }catch(e){}
-}
-
-function toggleCompactMode(){
-  const next = !_getCompactModeFlag();
-  setCompactMode(next);
-  toast(next ? 'Modo compacto ativado' : 'Modo compacto desativado','success');
-}
-
-function initCompactModeOnStart(){
-  applyCompactMode(_getCompactModeFlag());
-}
-
 function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
   const btn=document.getElementById('privacyToggleBtn');

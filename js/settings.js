@@ -145,9 +145,9 @@ async function testEmailJSConnection() {
       ? svc : (currentUser?.email || 'teste@fintrack.app');
     await emailjs.send(svc, tpl, {
       to_email:       testEmail,
-      from_name:      'Family FinTrack',
+      from_name:      'J.F. Family FinTrack',
       subject:        'FinTrack — Teste de conexão ✅',
-      message:        'Este é um e-mail de teste enviado pelo Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
+      message:        'Este é um e-mail de teste enviado pelo JF Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
       report_period:  'Teste — ' + new Date().toLocaleDateString('pt-BR'),
       report_view:    'Teste de conexão',
       report_income:  'R$ 1.000,00',
@@ -569,13 +569,20 @@ async function setUserPreference(screen, key, value){
 
 function loadTxCompactPreference(){
   const el = document.getElementById('txCompactToggle');
-  let pref = null;
-  try{ if(typeof getUserPreference==='function') pref = getUserPreference('transactions','compact_view'); }catch(e){}
+  if(!el) return;
+  const pref = getUserPreference('transactions','compact_view');
   const isCompact = pref===true || pref==='true' || localStorage.getItem('tx_compact_view')==='1';
-  if(el) el.checked = !!isCompact;
+  el.checked = !!isCompact;
+  const knob = document.getElementById('txCompactKnob');
+  if(knob){
+    knob.style.background = isCompact ? 'var(--accent)' : '#ccc';
+    document.getElementById('txCompactStyle')?.remove();
+    const st = document.createElement('style');
+    st.id='txCompactStyle';
+    st.textContent = `#txCompactKnob::before{transform:translateX(${isCompact?20:0}px)}`;
+    document.head.appendChild(st);
+  }
   document.body.classList.toggle('tx-compact', !!isCompact);
-  const btn = document.getElementById('compactToggleBtn');
-  if(btn) btn.classList.toggle('is-active', !!isCompact);
 }
 
 async function saveTxCompactPreference(){
