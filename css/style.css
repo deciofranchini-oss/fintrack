@@ -34,7 +34,7 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .nav-item.active{color:var(--accent);background:var(--accent-lt);font-weight:500;}
 .ni-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.95rem;background:transparent;transition:background .15s;flex-shrink:0;}
 .nav-item.active .ni-icon{background:rgba(42,96,73,.1);}
-.sidebar-footer{padding:10px 12px;border-top:1px solid var(--border);}
+.sidebar-footer{padding:10px 12px;border-top:none;}
 .config-btn{width:100%;display:flex;align-items:center;gap:8px;background:var(--bg2);color:var(--muted);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;font-family:var(--font-sans);font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;}
 .config-btn:hover{border-color:var(--border2);color:var(--text2);background:var(--bg);}
 
@@ -80,24 +80,13 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 /* ACCOUNT CARDS */
 .account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;}
 /* Account Groups */
-.account-group-section{margin-bottom:32px;}
-.account-group-header{
-  display:flex;align-items:center;gap:12px;
-  margin-bottom:12px;
-  padding:10px 14px;
-  border-radius:10px;
-  background:var(--surface2);
-  border-left:4px solid var(--border2);
-  transition:background .15s;
-}
-.account-group-header:hover{background:var(--surface3,var(--border));}
-.account-group-accent{width:4px;height:28px;border-radius:4px;flex-shrink:0;display:none;}
-.account-group-emoji{font-size:1.25rem;line-height:1;flex-shrink:0;}
-.account-group-name{font-weight:600;font-size:.92rem;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.account-group-meta{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-.account-group-count{font-size:.7rem;color:var(--muted);background:var(--border);border-radius:99px;padding:2px 8px;font-weight:500;}
-.account-group-balance{font-family:var(--font-serif);font-size:.95rem;font-weight:600;letter-spacing:-.01em;}
-.account-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;}
+.account-group-section{margin-bottom:28px;}
+.account-group-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+.account-group-badge{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:1rem;flex-shrink:0;}
+.account-group-title{font-weight:600;font-size:.95rem;color:var(--text);flex:1;}
+.account-group-sum{font-family:var(--font-serif);font-size:.9rem;font-weight:500;color:var(--accent);}
+.account-group-actions{display:none;gap:4px;}
+.account-group-header:hover .account-group-actions{display:flex;}
 .account-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);}
 .account-card-stripe{position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r) var(--r) 0 0;}
 .account-card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px);}
