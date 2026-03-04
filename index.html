@@ -23,53 +23,7 @@
 <!-- SETUP -->
 <!-- PIN LOCK SCREEN -->
 <!-- ══════ LOGIN SCREEN ══════ -->
-<div class="auth-screen" id="authScreen" style="display:none">
-  <div class="auth-card">
-    <div class="auth-logo">
-      <img id="authLogoImg" src="https://deciofranchini-oss.github.io/Fintrack/logo.png" alt="FinTrack" onerror="this.style.display='none'">
-    </div>
-    <div class="auth-title">Family FinTrack</div>
-    <div class="auth-sub" id="authSubtitle">Gerenciamento de Finanças da Fanmília</div>
 
-    <!-- Change password banner -->
-    <div class="auth-change-pw" id="authChangePwBanner" style="display:none">
-      ⚠️ Por segurança, altere sua senha no primeiro acesso.
-    </div>
-
-    <div class="auth-error" id="authError"></div>
-
-    <div id="authLoginForm">
-      <div class="auth-field">
-        <label>E-mail</label>
-        <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email"
-          onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()">
-      </div>
-      <div class="auth-field">
-        <label>Senha</label>
-        <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password"
-          onkeydown="if(event.key==='Enter')doLogin()">
-      </div>
-      <button class="auth-btn" onclick="doLogin()" id="authLoginBtn">Entrar</button>
-    </div>
-
-    <!-- Change password form (shown when must_change_pw) -->
-    <div id="authChangePwForm" style="display:none">
-      <div class="auth-change-pw">🔐 Defina uma nova senha para continuar.</div>
-      <div class="auth-field">
-        <label>Nova Senha</label>
-        <input type="password" id="authNewPw1" placeholder="Mínimo 8 caracteres">
-      </div>
-      <div class="auth-field">
-        <label>Confirmar Nova Senha</label>
-        <input type="password" id="authNewPw2" placeholder="Repita a nova senha">
-      </div>
-      <button class="auth-btn" onclick="doChangePw()">Salvar Nova Senha</button>
-    </div>
-
-    <div style="text-align:center;margin-top:20px;font-size:.72rem;color:#c0b9b0">
-      JF Family FinTrack · Powered by Supabase
-    </div>
-  </div>
 </div>
 
 <!-- ══════ USER MANAGEMENT MODAL ══════ -->
@@ -144,13 +98,7 @@
   </div>
 </div>
 
-<div class="pin-screen" id="pinScreen" style="display:none">
-  <div class="pin-card">
-    <div style="text-align:center;margin-bottom:20px">
-      <div style="font-size:2.2rem;margin-bottom:6px">🔐</div>
-      <div class="pin-title">JF Family FinTrack</div>
-      <div class="pin-subtitle">Digite o Masterpin para acessar</div>
-    </div>
+
     <div class="pin-dots" id="pinDots">
       <div class="pin-dot" id="pd0"></div>
       <div class="pin-dot" id="pd1"></div>
