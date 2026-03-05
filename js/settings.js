@@ -203,18 +203,32 @@ function getMasterPin() {
 // Ensure Supabase client is available using saved credentials.
 // (Needed so the app can boot after unlocking from the PIN screen.)
 function ensureSupabaseClient() {
-  if(sb) return sb;
-  const url = localStorage.getItem('sb_url');
-  const key = localStorage.getItem('sb_key');
-  if(!url || !key) return null;
+  // Prefer an already initialized client
+  if (sb) return sb;
+
+  // Prefer bundled constants (js/config.js), fallback to previously saved credentials
+  const url = (window.SUPABASE_URL || '').trim() || localStorage.getItem('sb_url');
+  const key = (window.SUPABASE_ANON_KEY || '').trim() || localStorage.getItem('sb_key');
+
+  if (!url || !key) return null;
+
+  // Keep localStorage in sync so the rest of the app (and older code paths) keep working
+  try {
+    if (localStorage.getItem('sb_url') !== url) localStorage.setItem('sb_url', url);
+    if (localStorage.getItem('sb_key') !== key) localStorage.setItem('sb_key', key);
+  } catch (e) {
+    // localStorage can fail in private mode; non-fatal
+  }
+
   try {
     sb = supabase.createClient(url, key);
     return sb;
-  } catch(e) {
+  } catch (e) {
     console.error('Supabase client init failed:', e);
     return null;
   }
 }
+
 
 function initPinScreen() {
   // Lock screen removed: always proceed without PIN
@@ -321,18 +335,6 @@ async function unlockApp() {
   document.addEventListener('keydown', resetAutoLockTimer, { passive: true });
 }
 
-function lockApp() { /* lock screen removed */ }
-
-
-// ── Auto-lock ─────────────────────────────────────────────────
-function resetAutoLockTimer() { /* auto-lock removed */ }
-
-
-function clearAutoLockTimer() {
-  if(_autoLockTimer) { clearTimeout(_autoLockTimer); _autoLockTimer = null; }
-}
-
-function saveAutoLock() { /* auto-lock removed */ }
 
 
 // ── Change PIN modal ──────────────────────────────────────────
