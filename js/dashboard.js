@@ -9,6 +9,22 @@ function toggleDashGroup(key) {
   if (arrow) arrow.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
+// Dashboard formatter: no decimals (0 casas) for quick glance
+function dashFmt(value, currency='BRL'){
+  const v = Number(value) || 0;
+  try{
+    const opts = { minimumFractionDigits: 0, maximumFractionDigits: 0 };
+    if(currency){
+      return v.toLocaleString('pt-BR', { style:'currency', currency, ...opts });
+    }
+    return v.toLocaleString('pt-BR', opts);
+  }catch(e){
+    // Fallback
+    const rounded = Math.round(v);
+    return (currency ? `R$ ${rounded.toLocaleString('pt-BR')}` : rounded.toLocaleString('pt-BR'));
+  }
+}
+
 async function loadDashboardRecent(){
   const status = document.getElementById('dashRecentStatus')?.value || '';
   let q = famQ(
@@ -53,8 +69,28 @@ async function loadDashboard(){
   const total = state.accounts.reduce((s,a)=>{
     return s + (parseFloat(a.balance)||0);
   },0);
-  document.getElementById('statTotal').textContent=fmt(total,'BRL');document.getElementById('statIncome').textContent=fmt(income);document.getElementById('statExpenses').textContent=fmt(expense);
-  const bal=income-expense,balEl=document.getElementById('statBalance');balEl.textContent=fmt(bal);balEl.className='stat-value '+(bal>=0?'text-green':'text-red');
+  const statTotalEl = document.getElementById('statTotal');
+  const statIncomeEl = document.getElementById('statIncome');
+  const statExpensesEl = document.getElementById('statExpenses');
+  const bal = income - expense;
+  const balEl = document.getElementById('statBalance');
+
+  if (statTotalEl){
+    statTotalEl.textContent = dashFmt(total,'BRL');
+    statTotalEl.className = 'stat-value ' + (total >= 0 ? 'amount-pos' : 'amount-neg');
+  }
+  if (statIncomeEl){
+    statIncomeEl.textContent = dashFmt(income,'BRL');
+    statIncomeEl.className = 'stat-value amount-pos';
+  }
+  if (statExpensesEl){
+    statExpensesEl.textContent = dashFmt(expense,'BRL');
+    statExpensesEl.className = 'stat-value amount-neg';
+  }
+  if (balEl){
+    balEl.textContent = dashFmt(bal,'BRL');
+    balEl.className = 'stat-value ' + (bal >= 0 ? 'amount-pos' : 'amount-neg');
+  }
   // Pending transactions badge
   try {
     const { count: pendingCount } = await famQ(
@@ -112,7 +148,7 @@ async function loadDashboard(){
             <span style="display:inline-block;transition:transform .2s;transform:rotate(${collapsed?'-90deg':'0deg'})" id="dashGroupArrow-${key}">▾</span>
             ${label}
           </span>
-          <span style="font-size:.75rem;font-weight:600;color:var(--muted)">${fmt(gTotal,'BRL')}</span>
+          <span style="font-size:.75rem;font-weight:600;color:var(--muted)">${dashFmt(gTotal,'BRL')}</span>
         </div>
         <div id="dashGroupBody-${key}" style="padding-left:4px;overflow:hidden;transition:max-height .25s ease;max-height:${collapsed?'0':'2000px'}">
           ${gAccs.map(rowHtml).join('')}
