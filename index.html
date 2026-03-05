@@ -2,10 +2,13 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f7f6f3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
 <title>Family Fintrack · Gerenciador Financeiro da Família</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -16,7 +19,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -1526,17 +1529,21 @@
         <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Em Email Templates → clique no template → Template ID</div>
       </div>
 
+
       <div class="form-group">
         <label style="display:flex;align-items:center;justify-content:space-between">
           Template ID (Programados)
           <span style="font-size:.72rem;color:var(--muted)">opcional</span>
         </label>
         <div class="ej-field-row">
-          <input type="text" id="ejScheduledTemplateId" placeholder="template_sched_xxxxx" autocomplete="off" oninput="ejCheckStatus()">
-          <button class="ej-copy-btn" onclick="copyEjField('ejScheduledTemplateId')" title="Copiar">📋</button>
+          <input type="text" id="ejSchedTemplateId" placeholder="template_xxxxxxx" autocomplete="off" oninput="ejCheckStatus()">
+          <button class="ej-copy-btn" onclick="copyEjField('ejSchedTemplateId')" title="Copiar">📋</button>
         </div>
-        <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Se vazio, as notificações de transações programadas usarão o mesmo Template ID acima.</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:3px">
+          Se vazio, usa o Template ID padrão. Use este template para notificações de transações programadas (auto-register / lembretes).
+        </div>
       </div>
+
 
       <div class="form-group">
         <label>Public Key</label>
@@ -1569,19 +1576,6 @@
         <code>{{report_expense}}</code> despesas &nbsp;·&nbsp;
         <code>{{report_balance}}</code> saldo &nbsp;·&nbsp;
         <code>{{report_count}}</code> nº de transações<br><br>
-
-        <span style="font-weight:700;color:var(--text2)">⏱️ Notificações de programados (template opcional)</span><br>
-        <span style="font-size:.72rem;color:var(--muted)">Se você configurar um template específico para programados, use estas variáveis:</span><br>
-        <code>{{tx_description}}</code> descrição &nbsp;·&nbsp;
-        <code>{{tx_date}}</code> data &nbsp;·&nbsp;
-        <code>{{tx_amount}}</code> valor<br>
-        <code>{{tx_type}}</code> tipo (expense/income/transfer/card_payment)<br>
-        <code>{{tx_account}}</code> conta origem &nbsp;·&nbsp;
-        <code>{{tx_to_account}}</code> conta destino (se transferência)<br>
-        <code>{{tx_category}}</code> categoria &nbsp;·&nbsp;
-        <code>{{tx_payee}}</code> beneficiário/pagador<br>
-        <code>{{tx_currency}}</code> moeda &nbsp;·&nbsp;
-        <code>{{tx_status}}</code> status (pending/confirmed)<br><br>
         <span style="font-weight:700;color:var(--text2)">📎 Link do PDF (Supabase Storage)</span><br>
         <code>{{pdf_url}}</code> URL pública de download do relatório<br>
         <code>{{pdf_name}}</code> nome do arquivo PDF gerado<br>
