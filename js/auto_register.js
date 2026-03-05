@@ -272,18 +272,6 @@ async function runAutoRegister(manual=false) {
       return;
     }
 
-
-    // Preload destination account names for transfer/card_payment scheduled items (for email content)
-    try {
-      const toIds = [...new Set((schedList||[]).map(s => s.transfer_to_account_id).filter(Boolean))];
-      if(toIds.length) {
-        const { data: toAccs } = await sb.from('accounts').select('id,name').in('id', toIds);
-        const map = {};
-        (toAccs||[]).forEach(a => { map[a.id] = a.name; });
-        (schedList||[]).forEach(s => { if(s.transfer_to_account_id) s.transfer_to_account_name = map[s.transfer_to_account_id] || '-'; });
-      }
-    } catch(e) { /* ignore */ }
-
     let totalRegistered = 0;
     let totalNotified = 0;
 
@@ -431,88 +419,49 @@ function nextScheduledDate(dateStr, sc) {
 }
 
 /* ── Email Notifications ── */
-function _ejMonthYear(dateStr) {
-  try {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  } catch { return dateStr; }
-}
-
-function _ejEsc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function buildScheduledEmailReportContent(sc, dateStr, amount, mode, daysBefore) {
-  const desc = _ejEsc(sc.description || '');
-  const type = _ejEsc(sc.type || '');
-  const status = mode === 'upcoming' ? 'scheduled' : 'processed';
-  const acc = _ejEsc(sc.accounts?.name || '-');
-  const toAcc = _ejEsc(sc.transfer_to_account_name || '-');
-  const cat = _ejEsc(sc.categories?.name || '-');
-  const payee = _ejEsc(sc.payees?.name || '-');
-  const cur = _ejEsc(sc.accounts?.currency || sc.currency || 'BRL');
-  const amt = _ejEsc(fmt(Math.abs(amount)));
-  const when = _ejEsc(fmtDate(dateStr));
-  const hint = mode === 'upcoming'
-    ? `Será processada ${daysBefore > 0 ? `em ${daysBefore} dia(s)` : 'hoje'}.`
-    : 'Foi processada automaticamente.';
-
-  return `
-  <div style="font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;padding:14px">
-    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e6e8f0;border-radius:12px;padding:16px">
-      <div style="font-size:14px;color:#6b7280;margin-bottom:6px">${_ejEsc(hint)}</div>
-      <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:2px">${desc}</div>
-      <div style="font-size:22px;font-weight:800;color:#0f766e;margin-bottom:10px">${amt} <span style="font-size:12px;color:#6b7280;font-weight:700">${cur}</span></div>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#374151">
-        <tr><td style="padding:6px 0;color:#6b7280;width:38%">Data</td><td style="padding:6px 0;font-weight:600">${when}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Tipo</td><td style="padding:6px 0;font-weight:600">${type}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Conta</td><td style="padding:6px 0;font-weight:600">${acc}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Conta destino</td><td style="padding:6px 0;font-weight:600">${toAcc}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Categoria</td><td style="padding:6px 0;font-weight:600">${cat}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Beneficiário</td><td style="padding:6px 0;font-weight:600">${payee}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Status</td><td style="padding:6px 0;font-weight:600">${_ejEsc(status)}</td></tr>
-      </table>
-    </div>
-  </div>`;
-}
-
 async function sendScheduledNotification(sc, date, amount, emailTo) {
-  const tplId = EMAILJS_CONFIG.scheduledTemplateId || EMAILJS_CONFIG.templateId;
-  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !tplId) return;
+  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !EMAILJS_CONFIG.templateId) return;
   try {
     emailjs.init(EMAILJS_CONFIG.publicKey);
-    const month_year = _ejMonthYear(date);
-    await emailjs.send(EMAILJS_CONFIG.serviceId, tplId, {
-      to_email: emailTo,
-      Subject: sc.description || 'Transação programada',
-      month_year,
-      report_content: buildScheduledEmailReportContent(sc, date, amount, 'processed', 0),
+    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
+      to_email:    emailTo,
+      subject:     `✅ Transação registrada: ${sc.description}`,
+      message:     `A transação "${sc.description}" de ${fmt(Math.abs(amount))} foi registrada automaticamente em ${fmtDate(date)}.`,
+      from_name:   'J.F. Family FinTrack',
+      report_period: fmtDate(date),
+      report_income: amount > 0 ? fmt(amount) : '—',
+      report_expense: amount < 0 ? fmt(Math.abs(amount)) : '—',
+      report_balance: fmt(amount),
+      report_count: '1',
+      report_view: 'Automático',
     });
   } catch(e) { console.warn('[AutoReg] Email error:', e.message); }
 }
 
 async function sendUpcomingNotification(sc, date, emailTo, daysBefore) {
-  const tplId = EMAILJS_CONFIG.scheduledTemplateId || EMAILJS_CONFIG.templateId;
-  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !tplId) return;
+  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !EMAILJS_CONFIG.templateId) return;
   // Check if already sent (use localStorage to avoid duplicates)
   const sentKey = `notified_${sc.id}_${date}`;
   if(localStorage.getItem(sentKey)) return;
   try {
     emailjs.init(EMAILJS_CONFIG.publicKey);
-    const month_year = _ejMonthYear(date);
-    await emailjs.send(EMAILJS_CONFIG.serviceId, tplId, {
-      to_email: emailTo,
-      Subject: sc.description || 'Transação programada',
-      month_year,
-      report_content: buildScheduledEmailReportContent(sc, date, sc.amount, 'upcoming', daysBefore || 0),
+    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
+      to_email:    emailTo,
+      subject:     `🔔 Transação programada em ${daysBefore > 0 ? daysBefore + ' dia(s)' : 'hoje'}: ${sc.description}`,
+      message:     `Lembrete: a transação "${sc.description}" de ${fmt(Math.abs(sc.amount))} está programada para ${fmtDate(date)}.`,
+      from_name:   'J.F. Family FinTrack — Lembrete',
+      report_period: fmtDate(date),
+      report_income: sc.amount > 0 ? fmt(sc.amount) : '—',
+      report_expense: sc.amount < 0 ? fmt(Math.abs(sc.amount)) : '—',
+      report_balance: fmt(sc.amount),
+      report_count: '1',
+      report_view: 'Lembrete',
     });
     localStorage.setItem(sentKey, '1');
   } catch(e) { console.warn('[AutoReg] Upcoming email error:', e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   SQL MIGRATION — Fields for auto_regis
    SQL MIGRATION — Fields for auto_register
    (run in Supabase SQL Editor)
 ══════════════════════════════════════════════════════════════════ */

@@ -18,7 +18,6 @@ async function loadAppSettings() {
     // Hydrate EmailJS config
     EMAILJS_CONFIG.serviceId  = _appSettingsCache['ej_service']  || localStorage.getItem('ej_service')  || '';
     EMAILJS_CONFIG.templateId = _appSettingsCache['ej_template'] || localStorage.getItem('ej_template') || '';
-    EMAILJS_CONFIG.scheduledTemplateId = _appSettingsCache['ej_sched_template'] || localStorage.getItem('ej_sched_template') || '';
     EMAILJS_CONFIG.publicKey  = _appSettingsCache['ej_key']      || localStorage.getItem('ej_key')      || '';
     // Hydrate masterPin
     const dbPin = _appSettingsCache['masterPin'];
@@ -71,8 +70,6 @@ function showEmailConfig() {
   // Populate fields with saved values
   document.getElementById('ejServiceId').value  = EMAILJS_CONFIG.serviceId;
   document.getElementById('ejTemplateId').value = EMAILJS_CONFIG.templateId;
-  const stpl = document.getElementById('ejSchedTemplateId');
-  if(stpl) stpl.value = EMAILJS_CONFIG.scheduledTemplateId || '';
   document.getElementById('ejPublicKey').value  = EMAILJS_CONFIG.publicKey;
   ejCheckStatus();
   openModal('emailjsModal');
@@ -81,8 +78,6 @@ function showEmailConfig() {
 function ejCheckStatus() {
   const svc = document.getElementById('ejServiceId').value.trim();
   const tpl = document.getElementById('ejTemplateId').value.trim();
-  const schedTplEl = document.getElementById('ejSchedTemplateId');
-  const stpl = schedTplEl ? schedTplEl.value.trim() : '';
   const key = document.getElementById('ejPublicKey').value.trim();
   const ok  = svc && tpl && key;
   const dot = document.getElementById('ejStatusDot');
@@ -106,21 +101,16 @@ function ejCheckStatus() {
 async function saveEmailJSConfig() {
   const svc = document.getElementById('ejServiceId').value.trim();
   const tpl = document.getElementById('ejTemplateId').value.trim();
-  const schedTplEl = document.getElementById('ejSchedTemplateId');
-  const stpl = schedTplEl ? schedTplEl.value.trim() : '';
   const key = document.getElementById('ejPublicKey').value.trim();
   if(!svc || !tpl || !key) {
     toast('Preencha todos os campos', 'error'); return;
   }
   EMAILJS_CONFIG.serviceId  = svc;
   EMAILJS_CONFIG.templateId = tpl;
-  EMAILJS_CONFIG.scheduledTemplateId = stpl;
   EMAILJS_CONFIG.publicKey  = key;
   await saveAppSetting('ej_service',  svc);
   await saveAppSetting('ej_template', tpl);
-  await saveAppSetting('ej_sched_template', stpl);
   await saveAppSetting('ej_key',      key);
-  try { localStorage.setItem('ej_sched_template', stpl); } catch {}
   ejCheckStatus();
   closeModal('emailjsModal');
   toast('✓ EmailJS configurado e salvo no banco!', 'success');
@@ -142,8 +132,6 @@ function copyEjField(id) {
 async function testEmailJSConnection() {
   const svc = document.getElementById('ejServiceId').value.trim();
   const tpl = document.getElementById('ejTemplateId').value.trim();
-  const schedTplEl = document.getElementById('ejSchedTemplateId');
-  const stpl = schedTplEl ? schedTplEl.value.trim() : '';
   const key = document.getElementById('ejPublicKey').value.trim();
   if(!svc || !tpl || !key) { toast('Preencha todos os campos primeiro','error'); return; }
   const btn = document.getElementById('ejTestBtn');
@@ -203,40 +191,34 @@ function getMasterPin() {
 // Ensure Supabase client is available using saved credentials.
 // (Needed so the app can boot after unlocking from the PIN screen.)
 function ensureSupabaseClient() {
-  // Prefer an already initialized client
-  if (sb) return sb;
-
-  // Prefer bundled constants (js/config.js), fallback to previously saved credentials
-  const url = (window.SUPABASE_URL || '').trim() || localStorage.getItem('sb_url');
-  const key = (window.SUPABASE_ANON_KEY || '').trim() || localStorage.getItem('sb_key');
-
-  if (!url || !key) return null;
-
-  // Keep localStorage in sync so the rest of the app (and older code paths) keep working
-  try {
-    if (localStorage.getItem('sb_url') !== url) localStorage.setItem('sb_url', url);
-    if (localStorage.getItem('sb_key') !== key) localStorage.setItem('sb_key', key);
-  } catch (e) {
-    // localStorage can fail in private mode; non-fatal
-  }
-
+  if(sb) return sb;
+  const url = localStorage.getItem('sb_url');
+  const key = localStorage.getItem('sb_key');
+  if(!url || !key) return null;
   try {
     sb = supabase.createClient(url, key);
     return sb;
-  } catch (e) {
+  } catch(e) {
     console.error('Supabase client init failed:', e);
     return null;
   }
 }
 
-
 function initPinScreen() {
-const client = ensureSupabaseClient(); // já prioriza config.js e sincroniza localStorage
-if (client) {
-  bootApp();
-} else {
-  const setup = document.getElementById('setupScreen');
-  if (setup) setup.style.display = 'flex';
+  // Lock screen removed: always proceed without PIN
+  try { const ps = document.getElementById('pinScreen'); if(ps) ps.style.display='none'; } catch(e){}
+  _pinUnlocked = true;
+  clearAutoLockTimer();
+  // If Supabase credentials exist, boot app; otherwise show setup screen
+  const url = localStorage.getItem('sb_url');
+  const key = localStorage.getItem('sb_key');
+  if(url && key){
+    ensureSupabaseClient();
+    bootApp();
+  } else {
+    const setup = document.getElementById('setupScreen');
+    if(setup) setup.style.display='flex';
+  }
 }
 
 function onPinKeyboard(e) {
@@ -327,6 +309,18 @@ async function unlockApp() {
   document.addEventListener('keydown', resetAutoLockTimer, { passive: true });
 }
 
+function lockApp() { /* lock screen removed */ }
+
+
+// ── Auto-lock ─────────────────────────────────────────────────
+function resetAutoLockTimer() { /* auto-lock removed */ }
+
+
+function clearAutoLockTimer() {
+  if(_autoLockTimer) { clearTimeout(_autoLockTimer); _autoLockTimer = null; }
+}
+
+function saveAutoLock() { /* auto-lock removed */ }
 
 
 // ── Change PIN modal ──────────────────────────────────────────

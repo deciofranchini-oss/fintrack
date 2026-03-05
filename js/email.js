@@ -3,10 +3,9 @@
    EMAILJS CONFIGURATION
 ═══════════════════════════════════════════════════════════════ */
 const EMAILJS_CONFIG = {
-  serviceId:  'service_8e4rkde',
-  templateId: 'template_fla7gdi',
-  scheduledTemplateId: 'template_yfmczq7',
-  publicKey:  'wwnXjEFDaVY7K-qIjwX0H',
+  serviceId:  '',
+  templateId: '',
+  publicKey:  '',
 };
 
 /* ═══════════════════════════════════════════════════════════════

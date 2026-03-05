@@ -21,27 +21,6 @@ function closeSidebar(){
 
 let sb=null;
 
-
-function getSupabaseCreds(){
-  try{
-    const cfgUrl = (window.SUPABASE_URL || '').toString().trim();
-    const cfgKey = (window.SUPABASE_ANON_KEY || '').toString().trim();
-    const lsUrl = (localStorage.getItem('sb_url') || '').toString().trim();
-    const lsKey = (localStorage.getItem('sb_key') || '').toString().trim();
-    const url = cfgUrl || lsUrl;
-    const key = cfgKey || lsKey;
-    if(!url || !key) return { url:'', key:'', source:'' };
-    // Keep localStorage in sync so legacy flows keep working.
-    if(cfgUrl && cfgKey && (lsUrl !== cfgUrl || lsKey !== cfgKey)){
-      try{ localStorage.setItem('sb_url', cfgUrl); localStorage.setItem('sb_key', cfgKey); }catch(e){}
-    }
-    return { url, key, source: cfgUrl && cfgKey ? 'config' : 'localStorage' };
-  }catch(e){
-    return { url:'', key:'', source:'' };
-  }
-}
-
-
 // ─────────────────────────────────────────────
 // Background helpers (PWA)
 // ─────────────────────────────────────────────
@@ -91,8 +70,7 @@ async function initSupabase(){
   }catch(e){toast('Erro: '+e.message,'error');}
 }
 async function tryAutoConnect(){
-  const creds=getSupabaseCreds();
-  const url=creds.url, key=creds.key;
+  const url=localStorage.getItem('sb_url'),key=localStorage.getItem('sb_key');
   if(url&&key){
     document.getElementById('supabaseUrl').value=url;
     document.getElementById('supabaseKey').value=key;
@@ -162,6 +140,14 @@ async function bootApp(){
   registerServiceWorkerSafe();
   // Logos (can be overridden by app_settings)
   setAppLogo(APP_LOGO_URL);
+
+  // Amount fields: auto-decimals (centavos) mask so user never types comma.
+  // Defined in js/reports.js (global). Safe no-op if function not available.
+  try {
+    if (typeof bindAllAmtAutoDecimals === 'function') {
+      bindAllAmtAutoDecimals(['txAmount','accountBalance','budgetAmount','scAmount','occAmount']);
+    }
+  } catch(e) {}
 
   // Carregar dados base
   try {
