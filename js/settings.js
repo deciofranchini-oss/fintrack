@@ -231,20 +231,12 @@ function ensureSupabaseClient() {
 
 
 function initPinScreen() {
-  // Lock screen removed: always proceed without PIN
-  try { const ps = document.getElementById('pinScreen'); if(ps) ps.style.display='none'; } catch(e){}
-  _pinUnlocked = true;
-  clearAutoLockTimer();
-  // If Supabase credentials exist, boot app; otherwise show setup screen
-  const url = localStorage.getItem('sb_url');
-  const key = localStorage.getItem('sb_key');
-  if(url && key){
-    ensureSupabaseClient();
-    bootApp();
-  } else {
-    const setup = document.getElementById('setupScreen');
-    if(setup) setup.style.display='flex';
-  }
+const client = ensureSupabaseClient(); // já prioriza config.js e sincroniza localStorage
+if (client) {
+  bootApp();
+} else {
+  const setup = document.getElementById('setupScreen');
+  if (setup) setup.style.display = 'flex';
 }
 
 function onPinKeyboard(e) {
