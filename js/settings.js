@@ -446,6 +446,9 @@ function loadSettings() {
     dbBackupSec.style.display = isAdmin ? '' : 'none';
     if (isAdmin) loadDbBackups();
   }
+
+  // IA settings — status badge (todos os usuários podem ver/configurar)
+  if (typeof initAiSettings === 'function') initAiSettings();
 }
 
 

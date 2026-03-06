@@ -439,6 +439,8 @@ function resetTxModal(){
   try { document.getElementById('txAttachFile').value = ''; } catch(e) {}
   document.getElementById('txAttachPreview').style.display = 'none';
   document.getElementById('txAttachArea').style.display = '';
+  // Reset IA de recibo
+  if (typeof resetReceiptAI === 'function') resetReceiptAI();
   const oldThumb = document.getElementById('txAttachThumb');
   if (oldThumb) oldThumb.remove();
   // Reset IOF
