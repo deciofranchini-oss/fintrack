@@ -98,24 +98,19 @@ async function tryAutoConnect(){
     document.getElementById('supabaseKey').value=key;
     // Create client early so we can boot right after PIN unlock
     sb=supabase.createClient(url,key);
-    // Check multi-user
-    const multiUser = await isMultiUserEnabled().catch(()=>false);
-    if(multiUser){
-      await ensureMasterAdmin().catch(()=>{});
-      const restored = await tryRestoreSession().catch(()=>false);
-      if(restored){
-        // Lock screen removed
-        try{const ps=document.getElementById('pinScreen'); if(ps) ps.style.display='none';}catch(e){}
-        _pinUnlocked=true;
-        await bootApp();
-        updateUserUI();
-      } else {
-        _pinUnlocked=true;
-        document.getElementById('pinScreen').style.display='none';
-        showLoginScreen();
-      }
-      return;
+    // Restore Supabase Auth session (RLS-friendly)
+    const restored = await tryRestoreSession().catch(()=>false);
+    // Lock screen removed
+    try{const ps=document.getElementById('pinScreen'); if(ps) ps.style.display='none';}catch(e){}
+    _pinUnlocked=true;
+    if(restored){
+      hideLoginScreen?.();
+      updateUserUI?.();
+      await bootApp();
+    } else {
+      showLoginScreen();
     }
+    return;
   } else {
     // No saved credentials yet
     sb = null;
@@ -125,7 +120,14 @@ async function tryAutoConnect(){
   _pinUnlocked=true;
   if(url&&key){
     ensureSupabaseClient();
-    await bootApp();
+    const restored = await tryRestoreSession().catch(()=>false);
+    if(restored){
+      hideLoginScreen?.();
+      updateUserUI?.();
+      await bootApp();
+    } else {
+      showLoginScreen();
+    }
   } else {
     const setup=document.getElementById('setupScreen');
     if(setup) setup.style.display='flex';
@@ -165,13 +167,7 @@ async function bootApp(){
 
   // Carregar dados base
   try {
-    await Promise.all([
-      loadAccounts(),
-      loadCategories(),
-      loadPayees(),
-      (typeof loadAppSettings === 'function' ? loadAppSettings() : Promise.resolve()),
-      loadScheduled().catch(()=>{})
-    ]);
+    await Promise.all([loadAccounts(),loadCategories(),loadPayees(),loadAppSettings(),loadScheduled().catch(()=>{})]);
   } catch(e) {
     toast('Erro ao carregar dados: '+e.message,'error');
     return;
@@ -259,9 +255,3 @@ if('serviceWorker' in navigator){
   });
 }
 
-
-
-// Auto-boot on first load (after DOM is ready)
-document.addEventListener('DOMContentLoaded', ()=>{
-  try { tryAutoConnect(); } catch(e) { console.error('Auto-connect failed:', e); }
-});

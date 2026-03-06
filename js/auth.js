@@ -1,15 +1,73 @@
-let currentUser = null;  // { id, email, name, role, family_id, can_*, must_change_pwd }
+// Auth context for the UI and data-layer helpers.
+// With RLS enabled, the app MUST use Supabase Auth (auth.uid()) as the primary identity.
+// currentUser is a lightweight projection used by the UI.
+let currentUser = null;  // { id, email, name, role, family_id, can_* }
 
-// Returns a Supabase query with family_id filter applied (if user has a family)
-// Admin with no family_id sees ALL data (superadmin mode)
+// Returns a Supabase query with family_id filter applied.
+// With RLS enabled, the server will also enforce access.
 function famQ(query) {
   if (currentUser?.family_id) return query.eq('family_id', currentUser.family_id);
-  return query; // admin without family = see everything
+  return query;
 }
 
 // Returns the family_id to inject on inserts (null for admin without family)
 function famId() {
   return currentUser?.family_id || null;
+}
+
+// ─────────────────────────────────────────────
+// Supabase Auth helpers
+// ─────────────────────────────────────────────
+
+async function _loadCurrentUserContext() {
+  if (!sb) throw new Error('Supabase client não inicializado.');
+
+  const { data: uRes, error: uErr } = await sb.auth.getUser();
+  if (uErr) throw uErr;
+  const user = uRes?.user;
+  if (!user) return null;
+
+  // Profile (created by public.handle_new_user trigger)
+  const { data: profile, error: pErr } = await sb
+    .from('user_profiles')
+    .select('id,email,display_name,role,active')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (pErr) throw pErr;
+
+  // Family membership (pick the first family for now)
+  const { data: fm, error: fmErr } = await sb
+    .from('family_members')
+    .select('family_id,role')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (fmErr) throw fmErr;
+  const famRow = (fm && fm.length) ? fm[0] : null;
+
+  const appRole = (profile?.role || famRow?.role || 'viewer');
+
+  // Map roles to capabilities (keep UI compatible with existing checks)
+  const caps = {
+    can_view: true,
+    can_create: appRole !== 'viewer',
+    can_edit: appRole !== 'viewer',
+    can_delete: appRole === 'admin' || appRole === 'owner',
+    can_export: true,
+    can_import: appRole === 'admin' || appRole === 'owner',
+    can_admin: appRole === 'admin' || appRole === 'owner'
+  };
+
+  currentUser = {
+    id: user.id,
+    email: user.email || profile?.email || '',
+    name: profile?.display_name || user.email || 'Usuário',
+    role: appRole,
+    family_id: famRow?.family_id || null,
+    ...caps
+  };
+
+  return currentUser;
 }
 
 // ── SHA-256 helper (Web Crypto API) ──
@@ -98,64 +156,29 @@ async function doLogin() {
 
   btn.disabled = true; btn.textContent = 'Verificando...';
   try {
-    const hash = await sha256(password);
-    // First check if user exists at all
-    const { data: anyUser, error: anyErr } = await sb.from('app_users')
-      .select('id,email,active,approved,password_hash,role,must_change_pwd,name,family_id,can_view,can_create,can_edit,can_delete,can_export,can_import,can_admin,last_login,created_at')
-      .eq('email', email).limit(1);
-    if (anyErr) throw anyErr;
-
-    if (!anyUser?.length) { showLoginErr('E-mail ou senha incorretos.'); return; }
-    const user = anyUser[0];
-
-    // Check password first
-    if (user.password_hash !== hash && user.password_hash !== 'placeholder_will_be_set_on_first_login') {
-      showLoginErr('E-mail ou senha incorretos.'); return;
-    }
-
-    // Check approval status
-    if (!user.approved) {
-      // User registered but not approved yet
-      document.getElementById('loginFormArea').style.display = 'none';
-      document.getElementById('pendingApprovalArea').style.display = '';
-      btn.disabled = false; btn.textContent = 'Entrar';
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      const msg = (error.message || '').toLowerCase().includes('confirm')
+        ? 'Confirme seu e-mail antes de entrar.'
+        : 'E-mail ou senha incorretos.';
+      showLoginErr(msg);
       return;
     }
 
-    // Check if active
-    if (!user.active) {
-      showLoginErr('Conta desativada. Contate o administrador.'); return;
-    }
-
-    const users = [user];
-    if (!users?.length) { showLoginErr('E-mail ou senha incorretos.'); return; }
-
-    // Success — set session
-    currentUser = user;
     // Handle "Remember me"
     const rememberMe = document.getElementById('rememberMe')?.checked;
-    if (rememberMe) {
-      _saveRememberedCredentials(email, document.getElementById('loginPassword').value);
-    } else {
-      _clearRememberedCredentials();
-    }
-    await sb.from('app_users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
-    // Save session token
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b=>b.toString(16).padStart(2,'0')).join('');
-    const expires = new Date(Date.now() + 30*24*60*60*1000).toISOString();
-    await sb.from('app_sessions').insert({ user_id: user.id, token, expires_at: expires });
-    localStorage.setItem('ft_session_token', token);
-    localStorage.setItem('ft_user_id', user.id);
+    if (rememberMe) _saveRememberedCredentials(email, password);
+    else _clearRememberedCredentials();
 
-    if (user.must_change_pwd) {
-      // Show password change form
-      document.getElementById('loginFormArea').style.display = 'none';
-      document.getElementById('changePwdArea').style.display = '';
-    } else {
-      onLoginSuccess();
+    await _loadCurrentUserContext();
+
+    if (!currentUser?.family_id) {
+      toast('Seu usuário ainda não está vinculado a uma família. Peça ao admin para associar.', 'warning');
     }
+
+    onLoginSuccess();
   } catch(e) {
-    showLoginErr('Erro: ' + e.message);
+    showLoginErr('Erro: ' + (e?.message || e));
   } finally {
     btn.disabled = false; btn.textContent = 'Entrar';
   }
@@ -174,11 +197,11 @@ async function doChangePwd() {
   if (p1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display=''; return; }
   if (p1 !== p2)     { errEl.textContent = 'As senhas não coincidem.'; errEl.style.display=''; return; }
   try {
-    const hash = await sha256(p1);
-    await sb.from('app_users').update({ password_hash: hash, must_change_pwd: false }).eq('id', currentUser.id);
-    currentUser.must_change_pwd = false;
+    // Supabase Auth password update
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) throw error;
     onLoginSuccess();
-  } catch(e) { errEl.textContent = 'Erro: ' + e.message; errEl.style.display=''; }
+  } catch(e) { errEl.textContent = 'Erro: ' + (e?.message || e); errEl.style.display=''; }
 }
 
 // ── Change my own password (from settings) ──
@@ -188,10 +211,10 @@ async function showChangeMyPwd() {
   const p2 = prompt('Confirme a nova senha:');
   if (p1 !== p2) { toast('Senhas não coincidem','error'); return; }
   try {
-    const hash = await sha256(p1);
-    await sb.from('app_users').update({ password_hash: hash }).eq('id', currentUser.id);
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) throw error;
     toast('✓ Senha alterada com sucesso!','success');
-  } catch(e) { toast('Erro: '+e.message,'error'); }
+  } catch(e) { toast('Erro: '+(e?.message||e),'error'); }
 }
 
 // ── On login success ──
@@ -268,12 +291,9 @@ if (!(p.role==='admin' || p.can_admin)) {
 
 // ── Logout ──
 async function doLogout() {
-  const token = localStorage.getItem('ft_session_token');
-  if (token) {
-    try { await sb.from('app_sessions').delete().eq('token', token); } catch(e) {}
-    localStorage.removeItem('ft_session_token');
-    localStorage.removeItem('ft_user_id');
-  }
+  try { await sb?.auth?.signOut(); } catch(e) {}
+  localStorage.removeItem('ft_session_token');
+  localStorage.removeItem('ft_user_id');
   currentUser = null;
   // Reset charts
   Object.values(state.chartInstances||{}).forEach(c => c?.destroy?.());
@@ -298,13 +318,14 @@ async function clearAppCache() {
     // Preserve essential connection keys
     const sbUrl = localStorage.getItem('sb_url');
     const sbKey  = localStorage.getItem('sb_key');
-    const sessionToken = localStorage.getItem('ft_session_token');
-    const userId  = localStorage.getItem('ft_user_id');
+    const sessionToken = localStorage.getItem('ft_session_token'); // legacy
+    const userId  = localStorage.getItem('ft_user_id'); // legacy
     const rememberMe = localStorage.getItem('ft_remember_me');
     localStorage.clear();
     // Restore essential keys
     if (sbUrl)        localStorage.setItem('sb_url', sbUrl);
     if (sbKey)        localStorage.setItem('sb_key', sbKey);
+    // Keep legacy tokens only if they still exist (older deployments)
     if (sessionToken) localStorage.setItem('ft_session_token', sessionToken);
     if (userId)       localStorage.setItem('ft_user_id', userId);
     if (rememberMe)   localStorage.setItem('ft_remember_me', rememberMe);
@@ -326,31 +347,28 @@ async function clearAppCache() {
 
 // ── Session restore on load ──
 async function tryRestoreSession() {
-  const token = localStorage.getItem('ft_session_token');
-  if (!token || !sb) return false;
+  if (!sb) return false;
   try {
-    const { data: sessions } = await sb.from('app_sessions')
-      .select('*, app_users(*)')
-      .eq('token', token)
-      .gt('expires_at', new Date().toISOString())
-      .limit(1);
-    if (!sessions?.length) return false;
-    currentUser = sessions[0].app_users;
-    if (!currentUser?.active) return false;
-    return true;
-  } catch { return false; }
+    const { data, error } = await sb.auth.getSession();
+    if (error) throw error;
+    if (!data?.session) return false;
+    await _loadCurrentUserContext();
+    return !!currentUser;
+  } catch {
+    return false;
+  }
 }
 
 // ── Check if multi-user is enabled (app_users table exists) ──
 async function isMultiUserEnabled() {
+  // Legacy app_users mode is deprecated when using RLS.
+  // Keep this for backward compatibility (when RLS is off).
   try {
     const { error } = await sb.from('app_users').select('id').limit(1);
-    if (error) {
-      console.warn('app_users not found:', error.message);
-      return false;
-    }
-    return true;
-  } catch { return false; }
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 // ── Show / hide register form ──
@@ -387,39 +405,25 @@ async function doRegister() {
   const btn = document.getElementById('regBtn');
   btn.disabled = true; btn.textContent = 'Enviando...';
   try {
-    // Check if email already exists
-    const { data: exist } = await sb.from('app_users').select('id,active,approved').eq('email', email).limit(1);
-    if (exist?.length) {
-      const u = exist[0];
-      if (!u.approved) {
-        // Already registered, still pending
-        document.getElementById('registerFormArea').style.display = 'none';
-        document.getElementById('pendingApprovalArea').style.display = '';
-        return;
-      }
-      errEl.textContent = 'E-mail já cadastrado. Faça login.';
-      errEl.style.display = '';
-      return;
-    }
-
-    const hash = await sha256(pwd);
-    const { error } = await sb.from('app_users').insert({
-      email, name,
-      password_hash: hash,
-      role: 'user',
-      active: false,      // admin must activate
-      approved: false,    // admin must approve
-      must_change_pwd: false,
-      can_view: true, can_create: true, can_edit: true,
-      can_delete: false, can_export: true, can_import: false, can_admin: false
+    // Supabase Auth sign-up.
+    // The DB trigger public.handle_new_user should create user_profiles + family_members.
+    const { error } = await sb.auth.signUp({
+      email,
+      password: pwd,
+      options: { data: { display_name: name } }
     });
     if (error) throw error;
 
-    // Show pending screen
+    // Show pending/confirmation screen
     document.getElementById('registerFormArea').style.display = 'none';
     document.getElementById('pendingApprovalArea').style.display = '';
+    const pending = document.getElementById('pendingApprovalArea');
+    if (pending) {
+      const p = pending.querySelector('p');
+      if (p) p.textContent = 'Conta criada! Verifique seu e-mail para confirmar e depois faça login.';
+    }
   } catch(e) {
-    errEl.textContent = 'Erro: ' + e.message;
+    errEl.textContent = 'Erro: ' + (e?.message || e);
     errEl.style.display = '';
   } finally {
     btn.disabled = false; btn.textContent = 'Enviar Solicitação';
@@ -435,7 +439,12 @@ let _families = []; // cached families list
 async function openUserAdmin() {
   if (currentUser?.role !== 'admin') { toast('Acesso restrito a administradores','error'); return; }
   await loadFamiliesList();
-  await loadUsersList();
+  // When using Supabase Auth + RLS, user management should happen in Supabase Dashboard.
+  // Keep the Families tab usable, and make Users tab best-effort.
+  try { await loadUsersList(); } catch(e) {
+    console.warn('User admin (legacy) not available:', e?.message || e);
+    toast('Gestão de usuários (criar/invitar) deve ser feita no Supabase Dashboard.','info');
+  }
   openModal('userAdminModal');
 }
 
