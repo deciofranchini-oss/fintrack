@@ -289,8 +289,8 @@ function navigate(page){
   else if(page==='transactions'){populateTxMonthFilter();loadTransactions();}
   else if(page==='accounts')renderAccounts();
   else if(page==='reports'){populateReportFilters();loadCurrentReport();}
-  else if(page==='budgets')loadBudgets();
-  else if(page==='categories')renderCategories();
+  else if(page==='budgets')initBudgetsPage();
+  else if(page==='categories')initCategoriesPage();
   else if(page==='payees')renderPayees();
   else if(page==='scheduled')loadScheduled();
   else if(page==='import')initImportPage();
