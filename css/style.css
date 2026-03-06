@@ -2211,3 +2211,291 @@ html, body{
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE UX v2 — Programados, Categorias, geral
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Scheduled: summary bar ────────────────────────────────────────────── */
+.sc-summary-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  margin-bottom: 14px;
+}
+.sc-summary-bar::-webkit-scrollbar { display: none; }
+.sc-summary-bar .badge {
+  font-size: .8rem;
+  padding: 5px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Scheduled: filter bar ─────────────────────────────────────────────── */
+.sc-filter-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sc-filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.sc-filter-chips::-webkit-scrollbar { display: none; }
+.sc-chip {
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.sc-chip:hover  { border-color: var(--accent); color: var(--accent); }
+.sc-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sc-type-select {
+  font-size: .82rem;
+  padding: 7px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 100px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* ── Scheduled: upcoming items ─────────────────────────────────────────── */
+.sc-upcoming-list {
+  padding: 8px 0;
+}
+.sc-upcoming-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.sc-upcoming-item:last-child { border-bottom: none; }
+.sc-upcoming-item:hover { background: var(--surface2); }
+.sc-upcoming-overdue { background: var(--red-lt) !important; }
+.sc-upcoming-today   { background: var(--amber-lt) !important; }
+.sc-upcoming-left  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sc-upcoming-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.sc-upcoming-date  { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sc-upcoming-desc  { font-size: .88rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-upcoming-acct  { font-size: .75rem; color: var(--muted2); }
+.sc-upcoming-amt   { font-family: var(--font-serif); font-weight: 700; font-size: 1rem; }
+.sc-upcoming-btn   { font-size: .75rem; padding: 5px 10px; white-space: nowrap; }
+
+/* ── Scheduled: card redesign ──────────────────────────────────────────── */
+.sc-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow .15s, transform .1s;
+}
+.sc-card:active { transform: scale(.995); }
+.sc-card-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.sc-card-transfer-tag {
+  font-size: .68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Card footer — action bar */
+.sc-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+.sc-footer-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.sc-action-btn {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: none;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.sc-action-register {
+  background: var(--accent);
+  color: #fff;
+}
+.sc-action-register:hover { filter: brightness(1.08); }
+.sc-action-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.sc-action-icon:hover   { background: var(--bg2); border-color: var(--accent); }
+.sc-action-delete:hover { background: var(--red-lt); border-color: var(--red); }
+
+/* Card body info row */
+.sc-body-info {
+  padding: 10px 16px 12px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  font-size: .75rem;
+  color: var(--muted);
+}
+
+/* ── Category items: bigger touch targets on mobile ────────────────────── */
+.cat-item-row {
+  min-height: 48px;
+}
+
+/* ── DB Backup rows in settings ─────────────────────────────────────────── */
+.db-backup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+.db-backup-row:last-child { border-bottom: none; }
+.db-backup-row:hover { background: var(--surface2); }
+.db-backup-row-info { flex: 1; min-width: 0; }
+.db-backup-row-label {
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-backup-row-meta {
+  font-size: .73rem;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+.db-backup-row-counts {
+  font-size: .72rem;
+  color: var(--muted2);
+  margin-top: 3px;
+}
+.db-backup-row-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* ── Global mobile tweaks ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Scheduled: stack filter bar */
+  .sc-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .sc-filter-chips {
+    overflow-x: auto;
+  }
+  .sc-type-select {
+    width: 100%;
+    border-radius: var(--r-sm);
+  }
+
+  /* Scheduled: upcoming items tighter */
+  .sc-upcoming-item { padding: 10px 14px; }
+
+  /* Scheduled card: footer full width register btn */
+  .sc-card-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sc-action-btn {
+    flex: 1;
+    text-align: center;
+  }
+  .sc-footer-actions { margin-left: auto; }
+
+  /* Category rows: larger touch targets */
+  .cat-item-row { min-height: 52px; padding: 11px 14px; }
+  .cat-inline-actions {
+    opacity: 1 !important;
+  }
+
+  /* DB Backup rows: stack on mobile */
+  .db-backup-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .db-backup-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Settings rows: better spacing */
+  .settings-row { min-height: 56px; padding: 12px 16px; }
+  .settings-row-action { flex-shrink: 0; }
+
+  /* Modals: full-screen on small phones */
+  .modal { border-radius: var(--r) var(--r) 0 0; }
+
+  /* Tables: hide more columns on narrow screens */
+  .sc-upcoming-item .sc-upcoming-acct { display: none; }
+}
+
+@media (max-width: 480px) {
+  /* Scheduled summary bar: tiny chips */
+  .sc-summary-bar .badge { font-size: .72rem; padding: 4px 10px; }
+
+  /* Upcoming: further simplify */
+  .sc-upcoming-right { flex-direction: row; align-items: center; gap: 8px; }
+  .sc-upcoming-btn   { font-size: .72rem; padding: 5px 8px; }
+
+  /* Cards: tighter */
+  .sc-card-header { padding: 12px 14px; gap: 10px; }
+  .sc-card-type   { width: 32px; height: 32px; font-size: .9rem; }
+  .sc-card-amount { font-size: .95rem; }
+}
