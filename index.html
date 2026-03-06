@@ -2181,6 +2181,19 @@
           <div class="form-group" style="flex:1"><label>Nome do Grupo *</label><input type="text" id="groupName" placeholder="Ex: Brasil, França, Investimentos..."></div>
           <div class="form-group" style="flex:0 0 auto"><label>Emoji</label><input type="text" id="groupEmoji" placeholder="🇧🇷" maxlength="4" style="width:60px;text-align:center;font-size:1.2rem"></div>
           <div class="form-group" style="flex:0 0 auto"><label>Cor</label><input type="color" id="groupColor" value="#2a6049" style="width:44px;height:36px;padding:2px;border-radius:6px;cursor:pointer;border:1px solid var(--border)"></div>
+          <div class="form-group" style="flex:0 0 auto"><label>Moeda</label>
+            <select id="groupCurrency" style="padding:7px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.85rem;background:var(--surface);min-width:80px">
+              <option value="BRL">BRL R$</option>
+              <option value="USD">USD $</option>
+              <option value="EUR">EUR €</option>
+              <option value="GBP">GBP £</option>
+              <option value="CHF">CHF Fr</option>
+              <option value="JPY">JPY ¥</option>
+              <option value="CAD">CAD $</option>
+              <option value="AUD">AUD $</option>
+              <option value="ARS">ARS $</option>
+            </select>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:4px">
           <button class="btn btn-primary btn-sm" onclick="saveGroup()">💾 Salvar Grupo</button>
@@ -2206,7 +2219,130 @@
         <div class="form-group full"><label>Nome *</label><input type="text" id="categoryName" placeholder="Ex: Alimentação"></div>
         <div class="form-group"><label>Tipo *</label><select id="categoryType"><option value="despesa">Despesa</option><option value="receita">Receita</option><option value="transferencia">Transferência</option></select></div>
         <div class="form-group"><label>Categoria Pai</label><select id="categoryParent"><option value="">— Nenhuma —</option></select></div>
-        <div class="form-group"><label>Ícone</label><input type="text" id="categoryIcon" placeholder="📦" maxlength="4"></div>
+        <div class="form-group full">
+          <label>Ícone</label>
+          <div class="icon-picker" id="categoryIconPicker" style="max-height:220px">
+            <div class="icon-picker-tabs">
+              <button class="icon-tab active" onclick="showCatIconGroup(event,'food')">🍽️ Alimentação</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'home')">🏠 Casa</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'transport')">🚗 Transporte</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'health')">❤️ Saúde</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'leisure')">🎭 Lazer</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'finance')">💰 Finanças</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'work')">💼 Trabalho</button>
+              <button class="icon-tab" onclick="showCatIconGroup(event,'other')">⭐ Outros</button>
+            </div>
+            <div class="icon-grid" id="catIconGroup-food">
+              <div class="icon-option" data-icon="emoji-🍽️" onclick="selectCatIcon(this)" title="Restaurante"><span style="font-size:1.4rem">🍽️</span><span class="icon-label">Restaurante</span></div>
+              <div class="icon-option" data-icon="emoji-🛒" onclick="selectCatIcon(this)" title="Supermercado"><span style="font-size:1.4rem">🛒</span><span class="icon-label">Mercado</span></div>
+              <div class="icon-option" data-icon="emoji-☕" onclick="selectCatIcon(this)" title="Café"><span style="font-size:1.4rem">☕</span><span class="icon-label">Café</span></div>
+              <div class="icon-option" data-icon="emoji-🍕" onclick="selectCatIcon(this)" title="Pizza"><span style="font-size:1.4rem">🍕</span><span class="icon-label">Pizza</span></div>
+              <div class="icon-option" data-icon="emoji-🍺" onclick="selectCatIcon(this)" title="Bar"><span style="font-size:1.4rem">🍺</span><span class="icon-label">Bar</span></div>
+              <div class="icon-option" data-icon="emoji-🍱" onclick="selectCatIcon(this)" title="Marmita"><span style="font-size:1.4rem">🍱</span><span class="icon-label">Marmita</span></div>
+              <div class="icon-option" data-icon="emoji-🥗" onclick="selectCatIcon(this)" title="Salada"><span style="font-size:1.4rem">🥗</span><span class="icon-label">Salada</span></div>
+              <div class="icon-option" data-icon="emoji-🥩" onclick="selectCatIcon(this)" title="Açougue"><span style="font-size:1.4rem">🥩</span><span class="icon-label">Açougue</span></div>
+              <div class="icon-option" data-icon="emoji-🧁" onclick="selectCatIcon(this)" title="Confeitaria"><span style="font-size:1.4rem">🧁</span><span class="icon-label">Confeitaria</span></div>
+              <div class="icon-option" data-icon="emoji-🥤" onclick="selectCatIcon(this)" title="Bebidas"><span style="font-size:1.4rem">🥤</span><span class="icon-label">Bebidas</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-home" style="display:none">
+              <div class="icon-option" data-icon="emoji-🏠" onclick="selectCatIcon(this)" title="Moradia"><span style="font-size:1.4rem">🏠</span><span class="icon-label">Moradia</span></div>
+              <div class="icon-option" data-icon="emoji-⚡" onclick="selectCatIcon(this)" title="Energia"><span style="font-size:1.4rem">⚡</span><span class="icon-label">Energia</span></div>
+              <div class="icon-option" data-icon="emoji-💧" onclick="selectCatIcon(this)" title="Água"><span style="font-size:1.4rem">💧</span><span class="icon-label">Água</span></div>
+              <div class="icon-option" data-icon="emoji-🔥" onclick="selectCatIcon(this)" title="Gás"><span style="font-size:1.4rem">🔥</span><span class="icon-label">Gás</span></div>
+              <div class="icon-option" data-icon="emoji-📱" onclick="selectCatIcon(this)" title="Internet/Tel"><span style="font-size:1.4rem">📱</span><span class="icon-label">Internet</span></div>
+              <div class="icon-option" data-icon="emoji-🛋️" onclick="selectCatIcon(this)" title="Mobiliário"><span style="font-size:1.4rem">🛋️</span><span class="icon-label">Mobília</span></div>
+              <div class="icon-option" data-icon="emoji-🔧" onclick="selectCatIcon(this)" title="Manutenção"><span style="font-size:1.4rem">🔧</span><span class="icon-label">Manutenção</span></div>
+              <div class="icon-option" data-icon="emoji-🧹" onclick="selectCatIcon(this)" title="Limpeza"><span style="font-size:1.4rem">🧹</span><span class="icon-label">Limpeza</span></div>
+              <div class="icon-option" data-icon="emoji-🌿" onclick="selectCatIcon(this)" title="Jardim"><span style="font-size:1.4rem">🌿</span><span class="icon-label">Jardim</span></div>
+              <div class="icon-option" data-icon="emoji-🔐" onclick="selectCatIcon(this)" title="Segurança"><span style="font-size:1.4rem">🔐</span><span class="icon-label">Segurança</span></div>
+              <div class="icon-option" data-icon="emoji-🏢" onclick="selectCatIcon(this)" title="Condomínio"><span style="font-size:1.4rem">🏢</span><span class="icon-label">Condomínio</span></div>
+              <div class="icon-option" data-icon="emoji-🛁" onclick="selectCatIcon(this)" title="Higiene Casa"><span style="font-size:1.4rem">🛁</span><span class="icon-label">Higiene</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-transport" style="display:none">
+              <div class="icon-option" data-icon="emoji-🚗" onclick="selectCatIcon(this)" title="Carro"><span style="font-size:1.4rem">🚗</span><span class="icon-label">Carro</span></div>
+              <div class="icon-option" data-icon="emoji-⛽" onclick="selectCatIcon(this)" title="Combustível"><span style="font-size:1.4rem">⛽</span><span class="icon-label">Combustível</span></div>
+              <div class="icon-option" data-icon="emoji-🚌" onclick="selectCatIcon(this)" title="Ônibus/Metro"><span style="font-size:1.4rem">🚌</span><span class="icon-label">Ônibus</span></div>
+              <div class="icon-option" data-icon="emoji-✈️" onclick="selectCatIcon(this)" title="Viagem"><span style="font-size:1.4rem">✈️</span><span class="icon-label">Viagem</span></div>
+              <div class="icon-option" data-icon="emoji-🚕" onclick="selectCatIcon(this)" title="Táxi/Uber"><span style="font-size:1.4rem">🚕</span><span class="icon-label">Uber/Táxi</span></div>
+              <div class="icon-option" data-icon="emoji-🚲" onclick="selectCatIcon(this)" title="Bicicleta"><span style="font-size:1.4rem">🚲</span><span class="icon-label">Bicicleta</span></div>
+              <div class="icon-option" data-icon="emoji-🛵" onclick="selectCatIcon(this)" title="Moto"><span style="font-size:1.4rem">🛵</span><span class="icon-label">Moto</span></div>
+              <div class="icon-option" data-icon="emoji-🚢" onclick="selectCatIcon(this)" title="Navio"><span style="font-size:1.4rem">🚢</span><span class="icon-label">Navio</span></div>
+              <div class="icon-option" data-icon="emoji-🅿️" onclick="selectCatIcon(this)" title="Estacionamento"><span style="font-size:1.4rem">🅿️</span><span class="icon-label">Parking</span></div>
+              <div class="icon-option" data-icon="emoji-🔩" onclick="selectCatIcon(this)" title="Manutenção Veículo"><span style="font-size:1.4rem">🔩</span><span class="icon-label">Mecânica</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-health" style="display:none">
+              <div class="icon-option" data-icon="emoji-❤️" onclick="selectCatIcon(this)" title="Saúde"><span style="font-size:1.4rem">❤️</span><span class="icon-label">Saúde</span></div>
+              <div class="icon-option" data-icon="emoji-💊" onclick="selectCatIcon(this)" title="Remédios"><span style="font-size:1.4rem">💊</span><span class="icon-label">Remédios</span></div>
+              <div class="icon-option" data-icon="emoji-🏥" onclick="selectCatIcon(this)" title="Hospital"><span style="font-size:1.4rem">🏥</span><span class="icon-label">Hospital</span></div>
+              <div class="icon-option" data-icon="emoji-🦷" onclick="selectCatIcon(this)" title="Dentista"><span style="font-size:1.4rem">🦷</span><span class="icon-label">Dentista</span></div>
+              <div class="icon-option" data-icon="emoji-👁️" onclick="selectCatIcon(this)" title="Ótica"><span style="font-size:1.4rem">👁️</span><span class="icon-label">Ótica</span></div>
+              <div class="icon-option" data-icon="emoji-🏋️" onclick="selectCatIcon(this)" title="Academia"><span style="font-size:1.4rem">🏋️</span><span class="icon-label">Academia</span></div>
+              <div class="icon-option" data-icon="emoji-🧘" onclick="selectCatIcon(this)" title="Bem-estar"><span style="font-size:1.4rem">🧘</span><span class="icon-label">Bem-estar</span></div>
+              <div class="icon-option" data-icon="emoji-🩺" onclick="selectCatIcon(this)" title="Consulta"><span style="font-size:1.4rem">🩺</span><span class="icon-label">Consulta</span></div>
+              <div class="icon-option" data-icon="emoji-🧴" onclick="selectCatIcon(this)" title="Higiene Pessoal"><span style="font-size:1.4rem">🧴</span><span class="icon-label">Higiene</span></div>
+              <div class="icon-option" data-icon="emoji-✂️" onclick="selectCatIcon(this)" title="Salão/Barbearia"><span style="font-size:1.4rem">✂️</span><span class="icon-label">Salão</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-leisure" style="display:none">
+              <div class="icon-option" data-icon="emoji-🎭" onclick="selectCatIcon(this)" title="Entretenimento"><span style="font-size:1.4rem">🎭</span><span class="icon-label">Entret.</span></div>
+              <div class="icon-option" data-icon="emoji-🎬" onclick="selectCatIcon(this)" title="Cinema"><span style="font-size:1.4rem">🎬</span><span class="icon-label">Cinema</span></div>
+              <div class="icon-option" data-icon="emoji-🎮" onclick="selectCatIcon(this)" title="Games"><span style="font-size:1.4rem">🎮</span><span class="icon-label">Games</span></div>
+              <div class="icon-option" data-icon="emoji-📚" onclick="selectCatIcon(this)" title="Livros"><span style="font-size:1.4rem">📚</span><span class="icon-label">Livros</span></div>
+              <div class="icon-option" data-icon="emoji-🎵" onclick="selectCatIcon(this)" title="Música"><span style="font-size:1.4rem">🎵</span><span class="icon-label">Música</span></div>
+              <div class="icon-option" data-icon="emoji-🏖️" onclick="selectCatIcon(this)" title="Férias"><span style="font-size:1.4rem">🏖️</span><span class="icon-label">Férias</span></div>
+              <div class="icon-option" data-icon="emoji-⚽" onclick="selectCatIcon(this)" title="Esporte"><span style="font-size:1.4rem">⚽</span><span class="icon-label">Esporte</span></div>
+              <div class="icon-option" data-icon="emoji-🐾" onclick="selectCatIcon(this)" title="Pets"><span style="font-size:1.4rem">🐾</span><span class="icon-label">Pets</span></div>
+              <div class="icon-option" data-icon="emoji-🎁" onclick="selectCatIcon(this)" title="Presentes"><span style="font-size:1.4rem">🎁</span><span class="icon-label">Presentes</span></div>
+              <div class="icon-option" data-icon="emoji-👗" onclick="selectCatIcon(this)" title="Roupas"><span style="font-size:1.4rem">👗</span><span class="icon-label">Roupas</span></div>
+              <div class="icon-option" data-icon="emoji-🍿" onclick="selectCatIcon(this)" title="Streaming"><span style="font-size:1.4rem">🍿</span><span class="icon-label">Streaming</span></div>
+              <div class="icon-option" data-icon="emoji-🎲" onclick="selectCatIcon(this)" title="Jogos"><span style="font-size:1.4rem">🎲</span><span class="icon-label">Jogos</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-finance" style="display:none">
+              <div class="icon-option" data-icon="emoji-💰" onclick="selectCatIcon(this)" title="Dinheiro"><span style="font-size:1.4rem">💰</span><span class="icon-label">Dinheiro</span></div>
+              <div class="icon-option" data-icon="emoji-💳" onclick="selectCatIcon(this)" title="Cartão"><span style="font-size:1.4rem">💳</span><span class="icon-label">Cartão</span></div>
+              <div class="icon-option" data-icon="emoji-📈" onclick="selectCatIcon(this)" title="Investimentos"><span style="font-size:1.4rem">📈</span><span class="icon-label">Invest.</span></div>
+              <div class="icon-option" data-icon="emoji-📉" onclick="selectCatIcon(this)" title="Perdas"><span style="font-size:1.4rem">📉</span><span class="icon-label">Perdas</span></div>
+              <div class="icon-option" data-icon="emoji-🏦" onclick="selectCatIcon(this)" title="Banco"><span style="font-size:1.4rem">🏦</span><span class="icon-label">Banco</span></div>
+              <div class="icon-option" data-icon="emoji-🧾" onclick="selectCatIcon(this)" title="Impostos"><span style="font-size:1.4rem">🧾</span><span class="icon-label">Impostos</span></div>
+              <div class="icon-option" data-icon="emoji-💵" onclick="selectCatIcon(this)" title="Salário"><span style="font-size:1.4rem">💵</span><span class="icon-label">Salário</span></div>
+              <div class="icon-option" data-icon="emoji-💸" onclick="selectCatIcon(this)" title="Despesas"><span style="font-size:1.4rem">💸</span><span class="icon-label">Despesas</span></div>
+              <div class="icon-option" data-icon="emoji-🐷" onclick="selectCatIcon(this)" title="Poupança"><span style="font-size:1.4rem">🐷</span><span class="icon-label">Poupança</span></div>
+              <div class="icon-option" data-icon="emoji-💱" onclick="selectCatIcon(this)" title="Câmbio"><span style="font-size:1.4rem">💱</span><span class="icon-label">Câmbio</span></div>
+              <div class="icon-option" data-icon="emoji-🎰" onclick="selectCatIcon(this)" title="Sorte/Loteria"><span style="font-size:1.4rem">🎰</span><span class="icon-label">Loteria</span></div>
+              <div class="icon-option" data-icon="emoji-🏷️" onclick="selectCatIcon(this)" title="Desconto"><span style="font-size:1.4rem">🏷️</span><span class="icon-label">Desconto</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-work" style="display:none">
+              <div class="icon-option" data-icon="emoji-💼" onclick="selectCatIcon(this)" title="Trabalho"><span style="font-size:1.4rem">💼</span><span class="icon-label">Trabalho</span></div>
+              <div class="icon-option" data-icon="emoji-🖥️" onclick="selectCatIcon(this)" title="Tecnologia"><span style="font-size:1.4rem">🖥️</span><span class="icon-label">Tech</span></div>
+              <div class="icon-option" data-icon="emoji-📝" onclick="selectCatIcon(this)" title="Escritório"><span style="font-size:1.4rem">📝</span><span class="icon-label">Escritório</span></div>
+              <div class="icon-option" data-icon="emoji-🎓" onclick="selectCatIcon(this)" title="Educação"><span style="font-size:1.4rem">🎓</span><span class="icon-label">Educação</span></div>
+              <div class="icon-option" data-icon="emoji-📦" onclick="selectCatIcon(this)" title="Compras"><span style="font-size:1.4rem">📦</span><span class="icon-label">Compras</span></div>
+              <div class="icon-option" data-icon="emoji-🛠️" onclick="selectCatIcon(this)" title="Serviços"><span style="font-size:1.4rem">🛠️</span><span class="icon-label">Serviços</span></div>
+              <div class="icon-option" data-icon="emoji-📡" onclick="selectCatIcon(this)" title="Assinaturas"><span style="font-size:1.4rem">📡</span><span class="icon-label">Assinat.</span></div>
+              <div class="icon-option" data-icon="emoji-🏗️" onclick="selectCatIcon(this)" title="Construção"><span style="font-size:1.4rem">🏗️</span><span class="icon-label">Construção</span></div>
+            </div>
+            <div class="icon-grid" id="catIconGroup-other" style="display:none">
+              <div class="icon-option" data-icon="emoji-⭐" onclick="selectCatIcon(this)" title="Outros"><span style="font-size:1.4rem">⭐</span><span class="icon-label">Outros</span></div>
+              <div class="icon-option" data-icon="emoji-📌" onclick="selectCatIcon(this)" title="Marcador"><span style="font-size:1.4rem">📌</span><span class="icon-label">Marcador</span></div>
+              <div class="icon-option" data-icon="emoji-🎯" onclick="selectCatIcon(this)" title="Meta"><span style="font-size:1.4rem">🎯</span><span class="icon-label">Meta</span></div>
+              <div class="icon-option" data-icon="emoji-🔄" onclick="selectCatIcon(this)" title="Transferência"><span style="font-size:1.4rem">🔄</span><span class="icon-label">Transfer.</span></div>
+              <div class="icon-option" data-icon="emoji-❓" onclick="selectCatIcon(this)" title="Indefinido"><span style="font-size:1.4rem">❓</span><span class="icon-label">Indefinido</span></div>
+              <div class="icon-option" data-icon="emoji-🔖" onclick="selectCatIcon(this)" title="Categoria"><span style="font-size:1.4rem">🔖</span><span class="icon-label">Categoria</span></div>
+              <div class="icon-option" data-icon="emoji-🌐" onclick="selectCatIcon(this)" title="Internacional"><span style="font-size:1.4rem">🌐</span><span class="icon-label">Inter.</span></div>
+              <div class="icon-option" data-icon="emoji-🤝" onclick="selectCatIcon(this)" title="Doações"><span style="font-size:1.4rem">🤝</span><span class="icon-label">Doações</span></div>
+              <div class="icon-option" data-icon="emoji-🏛️" onclick="selectCatIcon(this)" title="Governo"><span style="font-size:1.4rem">🏛️</span><span class="icon-label">Governo</span></div>
+              <div class="icon-option" data-icon="emoji-👶" onclick="selectCatIcon(this)" title="Filhos"><span style="font-size:1.4rem">👶</span><span class="icon-label">Filhos</span></div>
+              <div class="icon-option" data-icon="emoji-👴" onclick="selectCatIcon(this)" title="Família"><span style="font-size:1.4rem">👴</span><span class="icon-label">Família</span></div>
+              <div class="icon-option" data-icon="emoji-🙏" onclick="selectCatIcon(this)" title="Religioso"><span style="font-size:1.4rem">🙏</span><span class="icon-label">Religião</span></div>
+            </div>
+            <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:.75rem;color:var(--muted)">Selecionado:</span>
+              <span id="categoryIconPreview" style="font-size:1.3rem;min-width:28px">📦</span>
+              <input type="text" id="categoryIcon" placeholder="ou digite" maxlength="4"
+                style="width:64px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:1rem;text-align:center"
+                oninput="document.getElementById('categoryIconPreview').textContent=this.value||'📦'">
+            </div>
+          </div>
+        </div>
         <div class="form-group"><label>Cor</label><input type="color" id="categoryColor" value="#2a6049"></div>
       </div>
     </div>
