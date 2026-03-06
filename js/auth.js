@@ -274,8 +274,15 @@ function updateUserUI() {
   }
 
 
-  // auditNav and settingsNav are always visible (display:flex set in HTML).
-  // Access is guarded by navigate() which checks can_admin before loading the page.
+  // Show/hide admin-only topbar buttons based on role
+  const _auditNav = document.getElementById('auditNav');
+  const _settingsNav = document.getElementById('settingsNav');
+  const _isAdmin = currentUser.can_admin;
+  if (_auditNav)    _auditNav.style.display    = _isAdmin ? 'flex' : 'none';
+  if (_settingsNav) _settingsNav.style.display = _isAdmin ? 'flex' : 'none';
+
+  // Show pending approvals badge on admin user management button
+  if (_isAdmin) _checkPendingApprovals();
 
   // Apply permission restrictions
   applyPermissions();
@@ -305,6 +312,26 @@ function applyPermissions() {
 }
 
 // ── Logout ──
+
+// ── Pending approvals badge ───────────────────────────────────────────────
+async function _checkPendingApprovals() {
+  try {
+    const { data, error } = await sb.from('app_users').select('id', { count: 'exact', head: true }).eq('approved', false);
+    const count = data?.length || 0;
+    const btn = document.getElementById('userMgmtBadgeBtn');
+    if (!btn) return;
+    const existing = btn.querySelector('.pending-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'pending-badge';
+      badge.textContent = count;
+      badge.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:999px;background:var(--red);color:#fff;font-size:.65rem;font-weight:700;padding:0 4px;margin-left:4px;vertical-align:middle';
+      btn.appendChild(badge);
+    }
+  } catch(e) {}
+}
+
 async function doLogout() {
   try { await sb?.auth?.signOut(); } catch(e) {}
   localStorage.removeItem('ft_session_token');
@@ -750,21 +777,25 @@ async function saveUser() {
 }
 
 async function approveUser(userId, userName) {
-  if (!confirm(`Aprovar acesso de ${userName}?`)) return;
+  if (!confirm(`Aprovar acesso de ${userName}?\n\nO usuário poderá fazer login imediatamente.`)) return;
   const { error } = await sb.from('app_users').update({
     active: true, approved: true
   }).eq('id', userId);
   if (error) { toast('Erro: '+error.message,'error'); return; }
-  toast(`✓ ${userName} aprovado! Já pode fazer login.`,'success');
+  // Also sync approval into user_profiles if the row exists (RLS auth path)
+  await sb.from('user_profiles').update({ active: true }).eq('email', (await sb.from('app_users').select('email').eq('id',userId).single()).data?.email || '').catch(()=>{});
+  toast(`✓ ${userName} aprovado! Já pode fazer login.`, 'success');
   await loadUsersList();
+  _checkPendingApprovals();
 }
 
 async function rejectUser(userId, userName) {
-  if (!confirm(`Rejeitar e excluir solicitação de ${userName}?`)) return;
+  if (!confirm(`Rejeitar solicitação de ${userName}?\n\nO registro será excluído permanentemente.`)) return;
   const { error } = await sb.from('app_users').delete().eq('id', userId);
   if (error) { toast('Erro: '+error.message,'error'); return; }
-  toast(`Solicitação de ${userName} removida.`,'success');
+  toast(`Solicitação de ${userName} rejeitada e removida.`, 'info');
   await loadUsersList();
+  _checkPendingApprovals();
 }
 
 async function toggleUserActive(userId, currentActive) {
@@ -775,12 +806,29 @@ async function toggleUserActive(userId, currentActive) {
 }
 
 async function resetUserPwd(userId, userName) {
-  const newPwd = prompt(`Nova senha para ${userName} (mín. 8 chars):`);
-  if (!newPwd || newPwd.length < 8) { if(newPwd!==null) toast('Senha muito curta','error'); return; }
-  const hash = await sha256(newPwd);
+  // Open the dedicated reset password modal
+  document.getElementById('resetPwdUserId').value  = userId;
+  document.getElementById('resetPwdUserName').textContent = userName;
+  document.getElementById('resetPwdNew1').value  = '';
+  document.getElementById('resetPwdNew2').value  = '';
+  document.getElementById('resetPwdError').style.display = 'none';
+  openModal('resetPwdModal');
+}
+
+async function doResetUserPwd() {
+  const userId   = document.getElementById('resetPwdUserId').value;
+  const userName = document.getElementById('resetPwdUserName').textContent;
+  const pwd1     = document.getElementById('resetPwdNew1').value;
+  const pwd2     = document.getElementById('resetPwdNew2').value;
+  const errEl    = document.getElementById('resetPwdError');
+  errEl.style.display = 'none';
+  if (pwd1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display = ''; return; }
+  if (pwd1 !== pwd2)   { errEl.textContent = 'As senhas não coincidem.';                  errEl.style.display = ''; return; }
+  const hash = await sha256(pwd1);
   const { error } = await sb.from('app_users').update({ password_hash: hash, must_change_pwd: true }).eq('id', userId);
-  if (error) { toast('Erro: '+error.message,'error'); return; }
-  toast(`✓ Senha de ${userName} redefinida. Usuário deve trocar no próximo login.`,'success');
+  if (error) { errEl.textContent = 'Erro: ' + error.message; errEl.style.display = ''; return; }
+  toast(`✓ Senha de ${userName} redefinida. Usuário deverá trocar no próximo login.`, 'success');
+  closeModal('resetPwdModal');
   await loadUsersList();
 }
 
