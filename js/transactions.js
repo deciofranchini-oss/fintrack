@@ -234,7 +234,9 @@ async function loadTransactions(){
       const y = f.month.split(':')[1];
       q=q.gte('date',`${y}-01-01`).lte('date',`${y}-12-31`);
     } else {
-      const[y,m]=f.month.split('-');q=q.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
+      const[y,m]=f.month.split('-');
+      const lastDay = new Date(+y, +m, 0).getDate(); // day 0 of next month = last day of this month
+      q=q.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-${String(lastDay).padStart(2,'0')}`);
     }
   }
   if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');

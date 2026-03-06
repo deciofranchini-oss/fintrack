@@ -1,5 +1,12 @@
 let forecastChartInstance = null;
 
+function _destroyForecastChart() {
+  if (forecastChartInstance) {
+    try { forecastChartInstance.destroy(); } catch(e) {}
+    forecastChartInstance = null;
+  }
+}
+
 async function loadForecast() {
   const fromStr = document.getElementById('forecastFrom').value;
   const toStr   = document.getElementById('forecastTo').value;
@@ -60,7 +67,7 @@ async function loadForecast() {
 
   if (!accounts.length && !allItems.length) {
     if (container) container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:2rem;margin-bottom:12px">📅</div><p>Nenhuma transação no período selecionado.</p></div>';
-    if (forecastChartInstance) { forecastChartInstance.destroy(); forecastChartInstance = null; }
+    _destroyForecastChart();
     return;
   }
 
@@ -74,7 +81,7 @@ async function loadForecast() {
 function renderForecastChart(allItems, accounts, fromStr, toStr) {
   const canvas = document.getElementById('forecastChart');
   if (!canvas) return;
-  if (forecastChartInstance) { forecastChartInstance.destroy(); forecastChartInstance = null; }
+  _destroyForecastChart();
 
   // Build date range (daily, downsampled to weekly if > 90 days)
   const dates = [];
