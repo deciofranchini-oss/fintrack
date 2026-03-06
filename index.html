@@ -588,20 +588,39 @@
     <!-- BUDGETS -->
 <div class="page" id="page-budgets">
 
-  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
-    <div class="page-header-left">
-      <input type="month" id="budgetMonth" onchange="loadBudgets()">
+  <!-- Header: tabs + period picker + new button -->
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab active" id="budgetTabMonthly" onclick="setBudgetView('monthly')">📅 Mensal</button>
+        <button class="tab" id="budgetTabAnnual"  onclick="setBudgetView('annual')">📆 Anual</button>
+      </div>
+      <div id="budgetMonthPicker">
+        <input type="month" id="budgetMonth" onchange="loadBudgets()" style="font-size:.85rem">
+      </div>
+      <div id="budgetYearPicker" style="display:none">
+        <select id="budgetYear" onchange="loadBudgets()" style="font-size:.85rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text)"></select>
+      </div>
     </div>
-
-    <div class="page-header-right">
-      <button class="btn btn-primary" onclick="openBudgetModal()">+ Novo</button>
-    </div>
+    <button class="btn btn-primary" onclick="openBudgetModal()">+ Novo orçamento</button>
   </div>
 
-  <!-- Espaço de uma linha -->
+  <!-- Budget cards grid -->
   <div style="height:16px;"></div>
+  <div class="budget-grid" id="budgetGrid"></div>
 
-  <div class="grid-2" id="budgetGrid"></div>
+  <!-- History panel -->
+  <div style="margin-top:32px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📊 Histórico por categoria</span>
+      <select id="budgetHistCat" onchange="loadBudgetHistory()" style="font-size:.82rem;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:240px">
+        <option value="">— Selecionar categoria —</option>
+      </select>
+    </div>
+    <div id="budgetHistContainer" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:4px;min-height:48px">
+      <div style="color:var(--muted);font-size:.83rem;padding:16px 12px">Selecione uma categoria para ver o histórico dos últimos 12 meses.</div>
+    </div>
+  </div>
 
 </div>
 
@@ -2567,17 +2586,114 @@
 </div>
 
 <div class="modal-overlay" id="budgetModal">
-  <div class="modal" style="max-width:400px"><div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Novo Orçamento</span><button class="modal-close" onclick="closeModal('budgetModal')">✕</button></div>
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="budgetModalTitle">Novo Orçamento</span>
+      <button class="modal-close" onclick="closeModal('budgetModal')">✕</button>
+    </div>
     <div class="modal-body">
       <input type="hidden" id="budgetId">
+      <!-- hidden tracker for current type -->
+      <div id="budgetModalTypeCurrent" data-type="monthly" style="display:none"></div>
+
       <div class="form-grid">
-        <div class="form-group full"><label>Categoria *</label><select id="budgetCategory"></select></div>
-        <div class="form-group"><label>Mês *</label><input type="month" id="budgetMonthInput"></div>
-        <div class="form-group"><label>Valor (R$) *</label><input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div>
+        <!-- Type tabs -->
+        <div class="form-group full">
+          <label>Tipo de orçamento</label>
+          <div class="tab-bar" style="margin-bottom:0">
+            <button type="button" class="tab active" id="budgetModalTypeMonthly" onclick="setBudgetModalType('monthly')">📅 Mensal</button>
+            <button type="button" class="tab" id="budgetModalTypeAnnual"  onclick="setBudgetModalType('annual')">📆 Anual</button>
+          </div>
+        </div>
+
+        <!-- Month picker (monthly) -->
+        <div class="form-group full" id="budgetModalMonthGroup">
+          <label>Mês *</label>
+          <input type="month" id="budgetModalMonth">
+        </div>
+
+        <!-- Year picker (annual) -->
+        <div class="form-group full" id="budgetModalYearGroup" style="display:none">
+          <label>Ano *</label>
+          <select id="budgetModalYear" style="width:100%"></select>
+        </div>
+
+        <!-- Category: parents + indented children -->
+        <div class="form-group full">
+          <label>Categoria *</label>
+          <select id="budgetCategory"></select>
+          <div id="budgetCatHint" style="font-size:.72rem;color:var(--muted);margin-top:4px;display:none">
+            💡 Orçamento de categoria pai inclui gastos de todas as subcategorias.
+          </div>
+        </div>
+
+        <!-- Amount -->
+        <div class="form-group full">
+          <label>Valor limite *</label>
+          <div class="amt-wrap">
+            <button type="button" class="amt-sign-btn" style="visibility:hidden">+</button>
+            <input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Auto-reset (monthly only) -->
+        <div class="form-group full" id="budgetAutoResetGroup">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="budgetAutoReset" checked style="width:16px;height:16px;margin-top:2px;cursor:pointer">
+            <div>
+              <div style="font-weight:600;font-size:.88rem">🔄 Resetar a cada mês</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:2px">O orçamento se repete automaticamente todo mês, contabilizando apenas as transações do período</div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Notes -->
+        <div class="form-group full">
+          <label>Observação</label>
+          <input type="text" id="budgetNotes" placeholder="Ex: Limite do cartão, verba de viagem...">
+        </div>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('budgetModal')">Cancelar</button><button class="btn btn-primary" onclick="saveBudget()">Salvar</button></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('budgetModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveBudget()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Reatribuir categoria antes de excluir ─────────────────── -->
+<div class="modal-overlay" id="catReassignModal">
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="catReassignTitle">Excluir Categoria</span>
+      <button class="modal-close" onclick="closeModal('catReassignModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="catReassignDeleteId">
+      <input type="hidden" id="catReassignChildIds" value="[]">
+
+      <!-- Resumo dos vínculos -->
+      <div id="catReassignSummary"
+        style="background:var(--amber-lt,#fef3e2);border:1px solid var(--amber);border-radius:var(--r-sm);padding:12px 14px;font-size:.84rem;color:var(--text);line-height:1.6;margin-bottom:16px">
+      </div>
+
+      <!-- Seleção da categoria destino -->
+      <div class="form-group">
+        <label>Transferir todos os registros para *</label>
+        <select id="catReassignTarget" style="width:100%">
+          <option value="">— Selecionar categoria destino —</option>
+        </select>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">
+          Somente categorias do mesmo tipo são listadas. Você pode criar uma nova categoria antes de excluir.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('catReassignModal')">Cancelar</button>
+      <button class="btn btn-primary" id="catReassignConfirmBtn"
+        style="background:var(--red);border-color:var(--red)"
+        onclick="confirmCatReassign()">✅ Transferir e Excluir</button>
+    </div>
   </div>
 </div>
 
