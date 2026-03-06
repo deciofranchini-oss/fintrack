@@ -453,7 +453,7 @@ function loadSettings() {
 
 function initLogoSettings() {
   // Admin-only section: show/hide
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
   const sec = document.getElementById('logoSettingsSection');
   if(sec) sec.style.display = isAdmin ? '' : 'none';
   if(!isAdmin) return;
@@ -482,7 +482,7 @@ function initLogoSettings() {
 }
 
 async function saveAppLogo() {
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
   if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
 
   const urlEl = document.getElementById('appLogoUrl');
@@ -497,7 +497,7 @@ async function saveAppLogo() {
 }
 
 async function resetAppLogo() {
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
   if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
 
   await saveAppSetting('app_logo_url', '');

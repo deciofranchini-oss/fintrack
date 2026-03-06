@@ -235,8 +235,11 @@ function updateUserUI() {
   const emailEl = document.getElementById('currentUserEmail');
   if (nameEl)  nameEl.textContent  = currentUser.name || currentUser.email;
   if (emailEl) {
-    const roleLabel = currentUser.role==='admin'?'Administrador':currentUser.role==='viewer'?'Visualizador':'Usuário';
-    const famLabel  = currentUser.family_id ? '' : (currentUser.role==='admin' ? ' · Admin global' : '');
+    const roleLabel =
+      currentUser.role === 'owner' ? 'Owner' :
+      currentUser.role === 'admin' ? 'Administrador' :
+      currentUser.role === 'viewer' ? 'Visualizador' : 'Usuário';
+    const famLabel  = currentUser.family_id ? '' : ((currentUser.role==='admin' || currentUser.role==='owner') ? ' · Admin global' : '');
     emailEl.textContent = currentUser.email + ' · ' + roleLabel + famLabel;
   }
 
@@ -277,7 +280,7 @@ function applyPermissions() {
   }
 
 // Hide admin-only screens for non-admin
-if (!(p.role==='admin' || p.can_admin)) {
+if (!(p.role==='admin' || p.role==='owner' || p.can_admin)) {
   const settingsNav = document.querySelector('.nav-item[onclick="navigate(\'settings\')"]');
   if (settingsNav) settingsNav.style.display='none';
   const auditNav = document.getElementById('auditNav');
@@ -716,7 +719,7 @@ async function saveUser() {
     can_delete: document.getElementById('pDelete').checked,
     can_export: document.getElementById('pExport').checked,
     can_import: document.getElementById('pImport').checked,
-    can_admin:  role === 'admin',
+    can_admin:  role === 'admin' || role === 'owner',
   };
   if (pwd) record.password_hash = await sha256(pwd);
   if (!userId) { record.must_change_pwd = false; record.active = true; record.approved = true; record.created_by = currentUser?.id; }
