@@ -1,36 +1,43 @@
 let forecastChartInstance = null;
 
-
 async function loadForecast() {
   const fromStr = document.getElementById('forecastFrom').value;
   const toStr   = document.getElementById('forecastTo').value;
   const accFilter = document.getElementById('forecastAccountFilter').value;
   const includeScheduled = document.getElementById('forecastIncludeScheduled').checked;
-  if(!fromStr || !toStr) return;
+  if (!fromStr || !toStr) return;
 
-  // 1. Load real future transactions (from today to toStr, including past with fromStr)
-  let q = sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,currency,balance,color,is_brazilian), categories(name,color), payees(name)')
-    .gte('date', fromStr).lte('date', toStr).order('date');
-  if(accFilter) q = q.eq('account_id', accFilter);
+  const container = document.getElementById('forecastAccountsContainer');
+  if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.5rem;margin-bottom:8px">⏳</div>Carregando previsão...</div>';
+
+  // ── 1. Real transactions in period ──────────────────────────────────────
+  let q = famQ(sb.from('transactions')
+    .select('id, date, description, amount, account_id, is_transfer, category_id, payee_id, categories(name,color), payees(name)')
+    .gte('date', fromStr)
+    .lte('date', toStr)
+    .order('date'));
+  if (accFilter) q = q.eq('account_id', accFilter);
   const { data: txData, error: txErr } = await q;
-  if(txErr) { toast(txErr.message,'error'); return; }
+  if (txErr) { toast(txErr.message, 'error'); return; }
 
-  // 2. Load scheduled occurrences for the period
+  // ── 2. Scheduled occurrences in period ──────────────────────────────────
   let scheduledItems = [];
-  if(includeScheduled && state.scheduled.length) {
-    const schToProcess = accFilter ? state.scheduled.filter(s=>s.account_id===accFilter) : state.scheduled;
-    schToProcess.forEach(sc=>{
-      if(sc.status==='paused') return;
-      const registered = new Set((sc.occurrences||[]).map(o=>o.scheduled_date));
+  if (includeScheduled && state.scheduled.length) {
+    const schToProcess = accFilter
+      ? state.scheduled.filter(s => s.account_id === accFilter)
+      : state.scheduled;
+
+    schToProcess.forEach(sc => {
+      if (sc.status === 'paused') return;
+      const registered = new Set((sc.occurrences || []).map(o => o.scheduled_date));
       const occ = generateOccurrences(sc, 200);
-      occ.forEach(date=>{
-        if(date >= fromStr && date <= toStr && !registered.has(date)) {
+      occ.forEach(date => {
+        if (date >= fromStr && date <= toStr && !registered.has(date)) {
           scheduledItems.push({
-            date, description: sc.description+'  📅',
+            date,
+            description: sc.description + ' 📅',
             amount: sc.amount,
             account_id: sc.account_id,
-            accounts: sc.accounts,
             categories: sc.categories,
             payees: sc.payees,
             isScheduled: true,
@@ -41,72 +48,84 @@ async function loadForecast() {
     });
   }
 
-  // 3. Merge and group by account
-  const allItems = [...(txData||[]), ...scheduledItems].sort((a,b)=>a.date.localeCompare(b.date));
-  const accountIds = [...new Set(allItems.map(t=>t.account_id))].filter(Boolean);
-  const accounts = state.accounts.filter(a=>accountIds.includes(a.id));
-  if(!accounts.length && !allItems.length) {
-    document.getElementById('forecastAccountsContainer').innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:2rem;margin-bottom:12px">📅</div><p>Nenhuma transação no período selecionado.</p></div>';
+  // ── 3. Merge and determine accounts involved ─────────────────────────────
+  const allItems = [...(txData || []), ...scheduledItems]
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const accountIds = [...new Set(allItems.map(t => t.account_id))].filter(Boolean);
+  // Look up accounts from state (has real balance, color, currency, icon)
+  const accounts = accFilter
+    ? state.accounts.filter(a => a.id === accFilter)
+    : state.accounts.filter(a => accountIds.includes(a.id));
+
+  if (!accounts.length && !allItems.length) {
+    if (container) container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:2rem;margin-bottom:12px">📅</div><p>Nenhuma transação no período selecionado.</p></div>';
+    if (forecastChartInstance) { forecastChartInstance.destroy(); forecastChartInstance = null; }
     return;
   }
 
-  // 4. Render chart: cumulative balance across all accounts
+  // ── 4. Chart ─────────────────────────────────────────────────────────────
   renderForecastChart(allItems, accounts, fromStr, toStr);
 
-  // 5. Render per-account tables
+  // ── 5. Per-account tables ─────────────────────────────────────────────────
   renderForecastTables(allItems, accounts);
 }
 
 function renderForecastChart(allItems, accounts, fromStr, toStr) {
   const canvas = document.getElementById('forecastChart');
-  if(!canvas) return;
-  // TD-2: use centralized helper instead of module-level forecastChartInstance variable
-  destroyChart('forecastChart');
+  if (!canvas) return;
+  if (forecastChartInstance) { forecastChartInstance.destroy(); forecastChartInstance = null; }
 
-  // Build date range
+  // Build date range (daily, downsampled to weekly if > 90 days)
   const dates = [];
-  let cur = new Date(fromStr+'T12:00:00');
-  const end = new Date(toStr+'T12:00:00');
-  while(cur <= end) {
-    dates.push(cur.toISOString().slice(0,10));
-    cur.setDate(cur.getDate()+1);
+  let cur = new Date(fromStr + 'T12:00:00');
+  const end = new Date(toStr + 'T12:00:00');
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setDate(cur.getDate() + 1);
   }
-  if(dates.length > 180) {
-    // Downsample to weekly
-    const weekly = dates.filter((_,i)=>i%7===0);
-    dates.length = 0; dates.push(...weekly);
-  }
+  const step = dates.length > 90 ? 7 : 1;
+  const sampledDates = dates.filter((_, i) => i % step === 0);
+  if (!sampledDates.includes(toStr) && dates.length) sampledDates.push(toStr);
 
-  // Per-account running balance
-  const datasets = accounts.slice(0,5).map(a=>{
-    let bal = a.balance || 0;
-    const txForAccount = allItems.filter(t=>t.account_id===a.id);
+  const colors = ['#2a6049','#1d4ed8','#b45309','#7c3aed','#dc2626','#059669'];
+  const datasets = accounts.slice(0, 6).map((a, idx) => {
+    const bal = parseFloat(a.balance) || 0;
+    const txForAccount = allItems.filter(t => t.account_id === a.id);
+    const color = a.color || colors[idx % colors.length];
     return {
       label: a.name,
-      data: dates.map(d=>{
-        txForAccount.filter(t=>t.date<=d).forEach(t=>{});
-        // compute balance up to this date
-        const sumUpToDate = txForAccount.filter(t=>t.date<=d).reduce((s,t)=>s+t.amount, 0);
+      data: sampledDates.map(d => {
+        const sumUpToDate = txForAccount
+          .filter(t => t.date <= d)
+          .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
         return { x: d, y: +(bal + sumUpToDate).toFixed(2) };
       }),
-      borderColor: a.color || '#2a6049',
-      backgroundColor: (a.color||'#2a6049')+'22',
-      fill: false, tension: 0.3, borderWidth: 2, pointRadius: 1,
+      borderColor: color,
+      backgroundColor: color + '18',
+      fill: false,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: sampledDates.length > 60 ? 0 : 2,
     };
   });
 
-  state.chartInstances['forecastChart'] = new Chart(canvas, {
+  forecastChartInstance = new Chart(canvas, {
     type: 'line',
     data: { datasets },
     options: {
-      responsive:true, maintainAspectRatio:false,
-      interaction: { mode:'index', intersect:false },
-      plugins: { legend:{ position:'bottom' }, tooltip:{ callbacks:{
-        label: ctx => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`
-      }}},
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: { callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`
+        }}
+      },
       scales: {
-        x: { type:'category', ticks:{ maxTicksLimit:12, color:'#8c8278' }, grid:{ color:'#e8e4de44' } },
-        y: { ticks:{ callback: v=>fmt(v), color:'#8c8278' }, grid:{ color:'#e8e4de44' } }
+        x: { type: 'category', ticks: { maxTicksLimit: 12, color: '#8c8278' }, grid: { color: '#e8e4de44' } },
+        y: { ticks: { callback: v => fmt(v), color: '#8c8278' }, grid: { color: '#e8e4de44' } }
       }
     }
   });
@@ -114,45 +133,62 @@ function renderForecastChart(allItems, accounts, fromStr, toStr) {
 
 function renderForecastTables(allItems, accounts) {
   const container = document.getElementById('forecastAccountsContainer');
-  if(!container) return;
-  const today = new Date().toISOString().slice(0,10);
+  if (!container) return;
+  const today = new Date().toISOString().slice(0, 10);
 
-  container.innerHTML = accounts.map(a=>{
-    const txs = allItems.filter(t=>t.account_id===a.id).sort((x,y)=>x.date.localeCompare(y.date));
-    let runningBalance = a.balance || 0;
+  if (!accounts.length) {
+    container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:2rem;margin-bottom:12px">📅</div><p>Nenhuma transação no período selecionado.</p></div>';
+    return;
+  }
+
+  container.innerHTML = accounts.map(a => {
+    const txs = allItems
+      .filter(t => t.account_id === a.id)
+      .sort((x, y) => x.date.localeCompare(y.date));
+
+    let runningBalance = parseFloat(a.balance) || 0;
     const accentColor = a.color || 'var(--accent)';
-    const rows = txs.map(t=>{
-      runningBalance += t.amount;
-      const isPast = t.date < today;
-      const isToday = t.date === today;
-      const isNeg = runningBalance < 0;
-      const balClass = isNeg ? 'forecast-row-negative' : '';
+    const finalBalance = runningBalance + txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+
+    const rows = txs.map(t => {
+      runningBalance += parseFloat(t.amount) || 0;
+      const isPast   = t.date < today;
+      const isToday  = t.date === today;
+      const isNeg    = runningBalance < 0;
       const rowClass = isPast ? 'forecast-row-past' : isToday ? 'forecast-row-today' : '';
-      const scheduledBadge = t.isScheduled ? '<span class="badge" style="background:var(--amber-lt);color:var(--amber);border:1px solid rgba(180,83,9,.2);font-size:.65rem">📅 prog.</span>' : '';
-      const catBadge = t.categories ? `<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}28;font-size:.65rem">${esc(t.categories.name)}</span>` : '';
+      const balClass = isNeg ? 'forecast-row-negative' : '';
+      const scheduledBadge = t.isScheduled
+        ? '<span class="badge" style="background:var(--amber-lt);color:var(--amber);border:1px solid rgba(180,83,9,.2);font-size:.65rem">📅 prog.</span>'
+        : '';
+      const catBadge = t.categories
+        ? `<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}28;font-size:.65rem">${esc(t.categories.name)}</span>`
+        : '';
+      const todayMarker = isToday ? '<span style="color:var(--accent);font-size:.65rem;margin-left:4px">●hoje</span>' : '';
       return `<tr class="${rowClass} ${balClass}">
-        <td style="white-space:nowrap;font-size:.8rem;color:${isToday?'var(--accent)':'var(--muted)'}">${fmtDate(t.date)}${isToday?'<span style="color:var(--accent);font-size:.65rem;margin-left:4px">●hoje</span>':''}</td>
+        <td style="white-space:nowrap;font-size:.8rem;color:${isToday ? 'var(--accent)' : 'var(--muted)'}">${fmtDate(t.date)}${todayMarker}</td>
         <td style="max-width:200px"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${esc(t.description)}</span>
+          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${esc(t.description || '')}</span>
           ${scheduledBadge}${catBadge}
         </div></td>
-        <td style="white-space:nowrap;font-size:.8rem;color:var(--muted)">${t.payees?.name||''}</td>
-        <td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap;font-weight:600">${t.amount>=0?'+':''}${fmt(t.amount)}</td>
-        <td class="forecast-balance ${isNeg?'amount-neg':''}" style="white-space:nowrap">${fmt(runningBalance)}</td>
+        <td style="white-space:nowrap;font-size:.8rem;color:var(--muted)">${t.payees?.name || ''}</td>
+        <td class="${(parseFloat(t.amount) || 0) >= 0 ? 'amount-pos' : 'amount-neg'}" style="white-space:nowrap;font-weight:600">${(parseFloat(t.amount)||0) >= 0 ? '+' : ''}${fmt(t.amount)}</td>
+        <td class="forecast-balance ${isNeg ? 'amount-neg' : ''}" style="white-space:nowrap">${fmt(runningBalance, a.currency)}</td>
       </tr>`;
     }).join('');
+
+    const periodSum = txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
 
     return `
     <div class="forecast-account-section" id="forecastAcc-${a.id}">
       <div class="forecast-account-header" onclick="toggleForecastSection('${a.id}')">
-        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:${accentColor}22;flex-shrink:0">${renderIconEl(a.icon,a.color,22)}</div>
-        <div style="flex:1">
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:${accentColor}22;flex-shrink:0">${renderIconEl(a.icon, a.color, 22)}</div>
+        <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:.95rem">${esc(a.name)}</div>
-          <div style="font-size:.75rem;color:var(--muted)">Saldo atual: <strong>${fmt(a.balance||0, a.currency)}</strong> · ${txs.length} transações no período</div>
+          <div style="font-size:.75rem;color:var(--muted)">Saldo atual: <strong>${fmt(a.balance || 0, a.currency)}</strong> · ${txs.length} transação${txs.length !== 1 ? 'ões' : ''} no período</div>
         </div>
-        <div style="font-family:var(--font-serif);font-weight:700;font-size:1rem;color:${(a.balance||0)+(txs.reduce((s,t)=>s+t.amount,0))>=0?'var(--green)':'var(--red)'}">
-          ${fmt((a.balance||0)+(txs.reduce((s,t)=>s+t.amount,0)), a.currency)}
-          <div style="font-size:.68rem;font-weight:400;color:var(--muted);text-align:right">saldo final prev.</div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:var(--font-serif);font-weight:700;font-size:1rem;color:${finalBalance >= 0 ? 'var(--green,#16a34a)' : 'var(--red)'}">${fmt(finalBalance, a.currency)}</div>
+          <div style="font-size:.68rem;color:var(--muted)">saldo final prev.</div>
         </div>
         <span id="forecastToggle-${a.id}" style="color:var(--muted);font-size:.75rem;margin-left:8px">▼</span>
       </div>
@@ -165,8 +201,8 @@ function renderForecastTables(allItems, accounts) {
             <tfoot>
               <tr style="background:var(--surface2);font-weight:600">
                 <td colspan="3" style="padding:10px 14px;font-size:.8rem">Total do período</td>
-                <td class="${txs.reduce((s,t)=>s+t.amount,0)>=0?'amount-pos':'amount-neg'}">${fmt(txs.reduce((s,t)=>s+t.amount,0))}</td>
-                <td class="forecast-balance ${((a.balance||0)+txs.reduce((s,t)=>s+t.amount,0))<0?'amount-neg':''}">${fmt((a.balance||0)+txs.reduce((s,t)=>s+t.amount,0))}</td>
+                <td class="${periodSum >= 0 ? 'amount-pos' : 'amount-neg'}">${periodSum >= 0 ? '+' : ''}${fmt(periodSum, a.currency)}</td>
+                <td class="forecast-balance ${finalBalance < 0 ? 'amount-neg' : ''}">${fmt(finalBalance, a.currency)}</td>
               </tr>
             </tfoot>
           </table>
@@ -177,14 +213,10 @@ function renderForecastTables(allItems, accounts) {
 }
 
 function toggleForecastSection(id) {
-  const body = document.getElementById('forecastBody-'+id);
-  const arrow = document.getElementById('forecastToggle-'+id);
-  if(!body) return;
+  const body  = document.getElementById('forecastBody-' + id);
+  const arrow = document.getElementById('forecastToggle-' + id);
+  if (!body) return;
   const isOpen = body.style.display !== 'none';
   body.style.display = isOpen ? 'none' : '';
-  if(arrow) arrow.textContent = isOpen ? '▶' : '▼';
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   EMAIL REPORT via EmailJS
-═══════════════════════════════════════════════════════════════ */
