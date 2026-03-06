@@ -247,6 +247,13 @@
         <span class="topbar-user-name" id="topbarUserName"></span>
       </div>
       
+      <!-- Family switcher — only shown when user has multiple families -->
+      <div id="familySwitcherWrap" style="display:none;align-items:center;gap:6px;margin-right:4px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <select id="familySwitcherSelect" onchange="switchFamily(this.value)"
+          style="font-size:.8rem;font-weight:600;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:4px 8px;cursor:pointer;max-width:160px;outline:none">
+        </select>
+      </div>
       <div class="topbar-quick-actions" style="display:flex;align-items:center;gap:6px;margin-right:6px">
         <a class="topbar-icon-btn" id="schoolPaymentsBtn" href="https://deciofranchini-oss.github.io/objetivo" target="_blank" rel="noopener noreferrer" title="Gerenciamento Escola"
            style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;text-decoration:none;color:var(--text);">
@@ -263,6 +270,10 @@
         <button class="topbar-icon-btn" id="settingsNav" onclick="navigate('settings')" title="Configurações"
            style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
           <span aria-hidden="true" style="font-size:16px;line-height:1">⚙️</span>
+        </button>
+        <button class="topbar-icon-btn" id="logoutTopbarBtn" onclick="doLogout()" title="Sair"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--red,#dc2626);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </div>
 <button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()" title="Nova Transação" aria-label="Nova Transação">+</button>
@@ -1329,9 +1340,33 @@
           Entrar
         </button>
         <div id="loginError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
-        <div style="text-align:center;margin-top:16px;font-size:.8rem;color:#6b7280">
+        <div style="text-align:center;margin-top:10px">
+          <button onclick="showForgotPwdForm()" style="background:none;border:none;color:#6b7280;font-size:.78rem;cursor:pointer;text-decoration:underline">Esqueci minha senha</button>
+        </div>
+        <div style="text-align:center;margin-top:10px;font-size:.8rem;color:#6b7280">
           Não tem conta?
           <button onclick="showRegisterForm()" style="background:none;border:none;color:#2a6049;font-weight:600;cursor:pointer;font-size:.8rem;text-decoration:underline">Solicitar acesso</button>
+        </div>
+      </div>
+
+      <!-- Forgot password form -->
+      <div id="forgotPwdArea" style="display:none">
+        <div style="font-size:1rem;font-weight:700;color:#1e5c42;text-align:center;margin-bottom:8px">🔑 Recuperar Senha</div>
+        <div style="font-size:.82rem;color:#6b7280;text-align:center;margin-bottom:20px">Informe seu e-mail e enviaremos um link de recuperação.</div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
+          <input type="email" id="forgotPwdEmail" placeholder="seu@email.com"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#2a6049'" onblur="this.style.borderColor='#e5e7eb'"
+            onkeydown="if(event.key==='Enter')doForgotPwd()">
+        </div>
+        <button onclick="doForgotPwd()" id="forgotPwdBtn"
+          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
+          Enviar Link de Recuperação
+        </button>
+        <div id="forgotPwdError" style="margin-top:12px;font-size:.8rem;text-align:center;display:none"></div>
+        <div style="text-align:center;margin-top:14px">
+          <button onclick="showLoginFormArea()" style="background:none;border:none;color:#6b7280;font-size:.8rem;cursor:pointer;text-decoration:underline">← Voltar ao login</button>
         </div>
       </div>
 
@@ -2333,6 +2368,57 @@
           <button class="btn btn-primary btn-sm" onclick="doResetUserPwd()">💾 Salvar Nova Senha</button>
         </div>
         <p style="font-size:.75rem;color:var(--muted);margin-top:12px">O usuário será solicitado a trocar a senha no próximo login.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Approval Modal — admin assigns family before approving a pending user -->
+  <div class="modal-overlay" id="approvalModal">
+    <div class="modal" style="max-width:440px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">✅ Aprovar Acesso</span>
+        <button class="modal-close" onclick="closeModal('approvalModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="approvalUserId">
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:18px">
+          Aprovando acesso para: <strong id="approvalUserName"></strong>
+        </p>
+
+        <div class="form-group" style="margin-bottom:14px">
+          <label style="font-size:.8rem;font-weight:600;color:var(--text);display:block;margin-bottom:4px">
+            Vincular à família existente
+          </label>
+          <select id="approvalFamilyId" style="width:100%">
+            <option value="">— Nenhuma (admin global) —</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:.75rem;color:var(--muted);white-space:nowrap">ou criar nova família</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:18px">
+          <label style="font-size:.8rem;font-weight:600;color:var(--text);display:block;margin-bottom:4px">
+            Nome da nova família <span style="font-size:.72rem;font-weight:400;color:var(--muted)">(deixe em branco para não criar)</span>
+          </label>
+          <input type="text" id="approvalNewFamilyName" placeholder="Ex: Família Silva"
+            style="width:100%;box-sizing:border-box">
+        </div>
+
+        <div id="approvalError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:12px;padding:8px 12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca"></div>
+
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:.78rem;color:#166534;margin-bottom:16px">
+          📧 Um e-mail de boas-vindas será enviado automaticamente ao usuário informando a liberação do acesso e a família vinculada.
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" onclick="closeModal('approvalModal')">Cancelar</button>
+          <button class="btn btn-primary btn-sm" onclick="doApproveUser()" style="background:#16a34a">✅ Aprovar e Notificar</button>
+        </div>
       </div>
     </div>
   </div>
