@@ -1081,16 +1081,32 @@ async function _checkPendingApprovals() {
   try {
     const { data } = await sb.from('app_users').select('id').eq('approved', false);
     const count = data?.length || 0;
+
+    // ── Topbar badge on the "Gerenciar" button ──
     const btn = document.getElementById('userMgmtBadgeBtn');
-    if (!btn) return;
-    const existing = btn.querySelector('.pending-badge');
-    if (existing) existing.remove();
-    if (count > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'pending-badge';
-      badge.textContent = count;
-      badge.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:999px;background:var(--red);color:#fff;font-size:.65rem;font-weight:700;padding:0 4px;margin-left:4px;vertical-align:middle';
-      btn.appendChild(badge);
+    if (btn) {
+      btn.querySelector('.pending-badge')?.remove();
+      if (count > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'pending-badge';
+        badge.textContent = count;
+        badge.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:999px;background:var(--red);color:#fff;font-size:.65rem;font-weight:700;padding:0 4px;margin-left:4px;vertical-align:middle';
+        btn.appendChild(badge);
+      }
+    }
+
+    // ── Settings page alert banner ──
+    const alert = document.getElementById('pendingApprovalsAlert');
+    if (alert) {
+      if (count > 0) {
+        const txt = document.getElementById('pendingApprovalsAlertText');
+        if (txt) txt.textContent = count === 1
+          ? '1 solicitação aguardando aprovação'
+          : `${count} solicitações aguardando aprovação`;
+        alert.style.display = 'flex';
+      } else {
+        alert.style.display = 'none';
+      }
     }
   } catch(e) {}
 }
