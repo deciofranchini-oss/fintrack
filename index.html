@@ -1061,7 +1061,20 @@
               <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()">Configurar</button>
             </div>
           </div>
-
+          <!-- IA / Anthropic -->
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#f5f3ff">🤖</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label" style="display:flex;align-items:center;gap:6px">
+                Leitura de Recibos com IA
+                <span id="aiStatusDot" style="width:8px;height:8px;border-radius:50%;background:#d1d5db;flex-shrink:0"></span>
+              </div>
+              <div class="settings-row-sub" id="aiSettingsSub">Configure para habilitar leitura automática de recibos</div>
+            </div>
+            <div class="settings-row-action">
+              <button class="btn btn-ghost btn-sm" onclick="showAiConfig()">Configurar</button>
+            </div>
+          </div>
 
         </div>
       </div>
@@ -1642,6 +1655,49 @@
     </div>
   </div>
 
+<!-- ── Modal: Configurar IA (Google Gemini API Key) ──────────────────────── -->
+<div class="modal-overlay" id="aiConfigModal">
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">🤖 Leitura de Recibos com IA</span>
+      <button class="modal-close" onclick="closeModal('aiConfigModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.85rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+        O app usa o <strong>Google Gemini 2.0 Flash</strong> para ler fotos de recibos,
+        notas fiscais e PDFs e preencher automaticamente os campos da transação.
+        A chave fica salva no banco, acessível apenas pela sua família.
+      </p>
+
+      <!-- Como obter a chave -->
+      <div style="background:var(--blue-lt,#eff6ff);border:1px solid #bfdbfe;border-radius:var(--r-sm);padding:12px 14px;font-size:.8rem;line-height:1.7;margin-bottom:16px">
+        <strong>Como obter sua chave (gratuita):</strong><br>
+        1. Acesse <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#2563eb">aistudio.google.com/app/apikey</a><br>
+        2. Clique em <em>Create API Key</em><br>
+        3. Cole a chave abaixo (começa com <code>AIza</code>)<br>
+        <span style="color:var(--green,#16a34a);font-weight:600">✓ Camada gratuita: 1.500 leituras/dia sem custo</span>
+      </div>
+
+      <div class="form-group" style="position:relative">
+        <label>Chave API Google Gemini</label>
+        <div style="display:flex;gap:6px">
+          <input type="password" id="anthropicApiKeyInput"
+            placeholder="AIzaSy…"
+            autocomplete="off" autocorrect="off" spellcheck="false"
+            style="flex:1;font-family:monospace;font-size:.82rem">
+          <button type="button" id="aiKeyToggle"
+            onclick="toggleAiKeyVisibility()"
+            class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:1rem;padding:0 10px">👁</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('aiConfigModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveAiConfig()">💾 Salvar chave</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="emailjsModal">
   <div class="modal" style="max-width:520px"><div class="modal-handle"></div>
     <div class="modal-header">
@@ -2180,6 +2236,22 @@
           <!-- Hidden fields persist attachment state between form resets -->
           <input type="hidden" id="txAttachUrl">
           <input type="hidden" id="txAttachNameHidden">
+
+          <!-- Botão IA (aparece automaticamente após selecionar arquivo) -->
+          <button type="button" id="receiptAiReadBtn"
+            onclick="readReceiptWithAI()"
+            style="display:none;align-items:center;gap:8px;margin-top:8px;width:100%;padding:10px 14px;background:linear-gradient(135deg,#6d28d9,#4f46e5);color:#fff;border:none;border-radius:var(--r-sm,8px);font-size:.85rem;font-weight:600;cursor:pointer;font-family:var(--font-serif);justify-content:center;transition:opacity .15s">
+            🤖 Ler com IA
+          </button>
+
+          <!-- Input oculto para câmera (aceita câmera em mobile) -->
+          <input type="file" id="receiptScanInput"
+            accept="image/*,application/pdf" capture="environment"
+            style="display:none"
+            onchange="onReceiptScanInput(this)">
+
+          <!-- Painel de resultado IA -->
+          <div id="receiptAiResultPanel" style="display:none;margin-top:10px"></div>
         </div>
       </div>
     </div>
@@ -2750,6 +2822,7 @@
   <script src="js/auth.js"></script>
   <script src="js/auto_register.js"></script>
 <script src="js/audit.js"></script>
+<script src="js/receipt_ai.js"></script>
 
   <!-- Approval Modal -->
   <div class="modal-overlay" id="approvalModal">
