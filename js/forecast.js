@@ -97,8 +97,15 @@ function renderForecastChart(allItems, accounts, fromStr, toStr) {
 
   const colors = ['#2a6049','#1d4ed8','#b45309','#7c3aed','#dc2626','#059669'];
   const datasets = accounts.slice(0, 6).map((a, idx) => {
-    const bal = parseFloat(a.balance) || 0;
     const txForAccount = allItems.filter(t => t.account_id === a.id);
+
+    // a.balance already includes ALL real txs ever. To avoid double-counting,
+    // subtract the real (non-scheduled) txs that fall inside this period —
+    // they will be re-added one by one as we walk the timeline.
+    const realTxsInPeriod = txForAccount.filter(t => !t.isScheduled);
+    const realSum = realTxsInPeriod.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const baseBal = (parseFloat(a.balance) || 0) - realSum;
+
     const color = a.color || colors[idx % colors.length];
     return {
       label: a.name,
@@ -106,7 +113,7 @@ function renderForecastChart(allItems, accounts, fromStr, toStr) {
         const sumUpToDate = txForAccount
           .filter(t => t.date <= d)
           .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-        return { x: d, y: +(bal + sumUpToDate).toFixed(2) };
+        return { x: d, y: +(baseBal + sumUpToDate).toFixed(2) };
       }),
       borderColor: color,
       backgroundColor: color + '18',
@@ -153,9 +160,17 @@ function renderForecastTables(allItems, accounts) {
       .filter(t => t.account_id === a.id)
       .sort((x, y) => x.date.localeCompare(y.date));
 
-    let runningBalance = parseFloat(a.balance) || 0;
+    // a.balance includes ALL real txs ever. Subtract real txs in this period
+    // so the running balance starts correctly and each tx is counted once only.
+    const realSum = txs
+      .filter(t => !t.isScheduled)
+      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    let runningBalance = (parseFloat(a.balance) || 0) - realSum;
+
     const accentColor = a.color || 'var(--accent)';
-    const finalBalance = runningBalance + txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const finalBalance = (parseFloat(a.balance) || 0) -
+      realSum +
+      txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
 
     const rows = txs.map(t => {
       runningBalance += parseFloat(t.amount) || 0;
