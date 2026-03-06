@@ -241,18 +241,18 @@ function updateUserUI() {
   }
 
   // Show admin sections
-  if (currentUser.role === 'admin') {
+  if (currentUser.can_admin) {
     document.getElementById('userMgmtSection')?.style && (document.getElementById('userMgmtSection').style.display = '');
     const sub = document.getElementById('userMgmtSub');
-    if (sub) sub.textContent = 'Controle de acesso · Perfil: Admin';
+    if (sub) sub.textContent = `Controle de acesso · Perfil: ${currentUser.role === 'owner' ? 'Owner' : 'Admin'}`;
   }
 
 
   // Admin-only nav items
   const auditNav = document.getElementById('auditNav');
   const settingsNav = document.getElementById('settingsNav');
-  if (auditNav) auditNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
-  if (settingsNav) settingsNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
+  if (auditNav) auditNav.style.display = currentUser.can_admin ? '' : 'none';
+  if (settingsNav) settingsNav.style.display = currentUser.can_admin ? '' : 'none';
 
   // Apply permission restrictions
   applyPermissions();
@@ -437,7 +437,7 @@ async function doRegister() {
 let _families = []; // cached families list
 
 async function openUserAdmin() {
-  if (currentUser?.role !== 'admin') { toast('Acesso restrito a administradores','error'); return; }
+  if (!(currentUser?.can_admin || currentUser?.role === 'owner' || currentUser?.role === 'admin')) { toast('Acesso restrito a administradores','error'); return; }
   await loadFamiliesList();
   // When using Supabase Auth + RLS, user management should happen in Supabase Dashboard.
   // Keep the Families tab usable, and make Users tab best-effort.
