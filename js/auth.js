@@ -3,6 +3,22 @@
 // currentUser is a lightweight projection used by the UI.
 let currentUser = null;  // { id, email, name, role, family_id, can_* }
 
+// Admin client (service_role key) — criado sob demanda, nunca exposto ao Supabase
+let sbAdmin = null;
+
+function initSbAdmin() {
+  const serviceKey = localStorage.getItem('sb_service_key') || '';
+  const url = localStorage.getItem('sb_url') || window.SUPABASE_URL || '';
+  if (serviceKey && url && typeof supabase !== 'undefined') {
+    sbAdmin = supabase.createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+  } else {
+    sbAdmin = null;
+  }
+  return sbAdmin;
+}
+
 // Returns a Supabase query with family_id filter applied.
 // With RLS enabled, the server will also enforce access.
 function famQ(query) {
@@ -1533,63 +1549,56 @@ async function doResetUserPwd() {
   errEl.style.display = 'none';
 
   if (pwd1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display = ''; return; }
-  if (pwd1 !== pwd2)   { errEl.textContent = 'As senhas não coincidem.';                  errEl.style.display = ''; return; }
+  if (pwd1 !== pwd2)   { errEl.textContent = 'As senhas não coincidem.'; errEl.style.display = ''; return; }
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
   try {
-    // 1. Buscar email do usuário alvo
+    // 1. Buscar email e auth_id do usuário alvo
     const { data: userRow, error: fetchErr } = await sb
-      .from('app_users').select('email').eq('id', userId).maybeSingle();
+      .from('app_users').select('email, auth_id').eq('id', userId).maybeSingle();
     if (fetchErr || !userRow) throw new Error(fetchErr?.message || 'Usuário não encontrado.');
     const targetEmail = userRow.email;
 
-    // 2. Tentar RPC admin_set_user_password (atualiza auth.users diretamente)
+    // 2. Tentar via Admin API (sbAdmin com service_role key)
     let authUpdated = false;
-    const { data: rpcResult, error: rpcErr } = await sb.rpc('admin_set_user_password', {
-      p_user_email:   targetEmail,
-      p_new_password: pwd1,
-    });
+    const admin = sbAdmin || initSbAdmin();
 
-    if (!rpcErr && rpcResult?.success === true) {
-      // RPC funcionou — senha atualizada no Supabase Auth
-      authUpdated = true;
-    } else {
-      // RPC não disponível ou retornou erro — logar aviso, continuar com fallback
-      const rpcErrMsg = rpcErr?.message || rpcResult?.error || 'RPC indisponível';
-      console.warn('[resetPwd] RPC admin_set_user_password:', rpcErrMsg);
+    if (admin) {
+      // Buscar auth.users.id pelo email via Admin API
+      const { data: listData, error: listErr } = await admin.auth.admin.listUsers();
+      if (!listErr && listData?.users) {
+        const authUser = listData.users.find(u => u.email?.toLowerCase() === targetEmail.toLowerCase());
+        if (authUser?.id) {
+          const { error: updErr } = await admin.auth.admin.updateUserById(authUser.id, { password: pwd1 });
+          if (updErr) throw new Error('Admin API: ' + updErr.message);
+          authUpdated = true;
+        } else {
+          throw new Error('Usuário não encontrado no Supabase Auth: ' + targetEmail);
+        }
+      } else {
+        throw new Error('Erro ao listar usuários: ' + (listErr?.message || 'desconhecido'));
+      }
     }
 
-    // 3. Sempre sincronizar app_users (hash + must_change_pwd)
-    const hash = await sha256(pwd1);
-    const { error: dbErr } = await sb
-      .from('app_users')
-      .update({ password_hash: hash, must_change_pwd: !authUpdated })
-      .eq('id', userId);
-    if (dbErr) console.warn('[resetPwd] app_users sync:', dbErr.message);
-
-    if (authUpdated) {
-      // Senha definida diretamente — usuário pode logar agora com a nova senha
-      // must_change_pwd=false: admin definiu a senha, não precisa trocar
-      await sb.from('app_users')
-        .update({ must_change_pwd: false })
-        .eq('id', userId);
-      toast(`✓ Senha de ${userName} redefinida com sucesso! Já pode fazer login com a nova senha.`, 'success');
-    } else {
+    if (!authUpdated) {
       // Fallback: enviar link de redefinição por email
-      // O usuário receberá um link para definir a própria senha
       const redirectTo = window.location.origin + window.location.pathname;
       const { error: resetErr } = await sb.auth.resetPasswordForEmail(targetEmail, { redirectTo });
-      if (resetErr) {
-        // Se nem o email funcionou, mostrar instrução manual
-        errEl.innerHTML = `⚠️ Não foi possível atualizar a senha diretamente.<br><br>
-          <strong>Para resolver:</strong> execute <code>migration_admin_set_password.sql</code> no SQL Editor do Supabase e tente novamente.<br><br>
-          <span style="font-size:.78rem;color:var(--muted)">Erro técnico: ${rpcErrMsg}</span>`;
-        errEl.style.display = '';
-        return;
-      }
-      toast(`📧 Link de redefinição enviado para ${targetEmail}. O usuário deve verificar o e-mail.`, 'info');
+      if (resetErr) throw new Error('Sem Service Role Key configurada. Vá em Configurações → Service Role Key.');
+      // Sincronizar app_users mesmo assim
+      const hash = await sha256(pwd1);
+      await sb.from('app_users').update({ password_hash: hash, must_change_pwd: true }).eq('id', userId);
+      toast(`📧 Link de redefinição enviado para ${targetEmail}. Configure a Service Role Key para definir senhas diretamente.`, 'warning');
+      closeModal('resetPwdModal');
+      await loadUsersList();
+      return;
     }
 
+    // 3. Sincronizar app_users
+    const hash = await sha256(pwd1);
+    await sb.from('app_users').update({ password_hash: hash, must_change_pwd: false }).eq('id', userId);
+
+    toast(`✓ Senha de ${userName} redefinida. Pode fazer login com a nova senha imediatamente.`, 'success');
     closeModal('resetPwdModal');
     await loadUsersList();
   } catch(e) {

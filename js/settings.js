@@ -466,6 +466,7 @@ function loadSettings() {
     // Admin: inicializar formulários das novas seções
     initSettingsVisibilityForm();
     initSchoolLinkForm();
+    initServiceRoleKeySection();
     // Mostrar menuVisibilitySection para admin sempre
     const mvSec = document.getElementById('menuVisibilitySection');
     if (mvSec) { mvSec.style.display = ''; _renderMenuVisibilityForm(); }
@@ -908,4 +909,55 @@ function applySchoolLink(cfg) {
   btn.title = cfg.title || 'Gerenciamento Escola';
   const iconEl = btn.querySelector('span[aria-hidden]');
   if (iconEl) iconEl.textContent = cfg.icon || '🎓';
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SERVICE ROLE KEY — armazenada só em localStorage, nunca no banco
+   Usada para criar sbAdmin client com auth.admin.updateUserById
+══════════════════════════════════════════════════════════════════ */
+
+function initServiceRoleKeySection() {
+  const isAdmin = (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.can_admin);
+  const row = document.getElementById('serviceRoleRow');
+  if (!row) return;
+  row.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin) return;
+
+  const saved = localStorage.getItem('sb_service_key') || '';
+  const inp   = document.getElementById('serviceRoleKeyInput');
+  const stat  = document.getElementById('serviceRoleKeyStatus');
+  if (inp)  inp.value = saved ? '•'.repeat(20) : '';
+  if (stat) {
+    if (saved) {
+      stat.textContent = '✓ Chave configurada — reset de senha funcionará diretamente.';
+      stat.style.color = 'var(--green)';
+    } else {
+      stat.textContent = 'Sem chave — reset de senha usará e-mail de recuperação como fallback.';
+      stat.style.color = 'var(--muted)';
+    }
+  }
+}
+
+function saveServiceRoleKey() {
+  const inp  = document.getElementById('serviceRoleKeyInput');
+  const stat = document.getElementById('serviceRoleKeyStatus');
+  const val  = (inp?.value || '').trim();
+  if (!val || val.includes('•')) { if (stat) { stat.textContent = 'Cole a chave completa antes de salvar.'; stat.style.color = 'var(--red)'; } return; }
+  if (!val.startsWith('eyJ')) { if (stat) { stat.textContent = 'Chave inválida — deve começar com eyJ...'; stat.style.color = 'var(--red)'; } return; }
+  localStorage.setItem('sb_service_key', val);
+  if (inp)  inp.value = '•'.repeat(20);
+  if (stat) { stat.textContent = '✓ Chave salva! Reset de senha funcionará diretamente.'; stat.style.color = 'var(--green)'; }
+  toast('✓ Service Role Key salva', 'success');
+  // Notificar auth.js para recriar sbAdmin
+  if (typeof initSbAdmin === 'function') initSbAdmin();
+}
+
+function clearServiceRoleKey() {
+  localStorage.removeItem('sb_service_key');
+  const inp  = document.getElementById('serviceRoleKeyInput');
+  const stat = document.getElementById('serviceRoleKeyStatus');
+  if (inp)  inp.value = '';
+  if (stat) { stat.textContent = 'Chave removida — reset de senha usará e-mail de recuperação.'; stat.style.color = 'var(--muted)'; }
+  toast('Service Role Key removida', 'info');
+  if (typeof initSbAdmin === 'function') initSbAdmin();
 }
