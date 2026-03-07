@@ -298,364 +298,864 @@ function setReportView(view) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   PDF CORE — _buildReportPDF(doc)
+   Captura TUDO que está na tela: filtros ativos, KPIs, gráficos
+   como imagem, tabelas completas e previsão.
+═══════════════════════════════════════════════════════════════════ */
+
+/* ── Helpers ── */
+function _getPeriodLabel() {
+  const p = document.getElementById('rptPeriod')?.value || 'month';
+  return { month:'Mês', custom:'Período', quarter:'Trimestre', year:'Ano', last12:'Últimos 12 meses' }[p] || p;
+}
+function _getActiveFiltersLabel() {
+  const parts = [];
+  const acc = document.getElementById('rptAccount');
+  if (acc?.value) parts.push('Conta: ' + (acc.options[acc.selectedIndex]?.text || acc.value));
+  const cat = document.getElementById('rptCategory');
+  if (cat?.value) parts.push('Cat: ' + (cat.options[cat.selectedIndex]?.text || cat.value));
+  const pay = document.getElementById('rptPayee');
+  if (pay?.value) parts.push('Ben: ' + (pay.options[pay.selectedIndex]?.text || pay.value));
+  const typ = document.getElementById('rptType');
+  if (typ?.value) parts.push(typ.value === 'expense' ? 'Só Despesas' : 'Só Receitas');
+  return parts.length ? parts.join(' · ') : 'Todos os dados';
+}
+
+/* ── Capture chart canvas → PNG base64, even when hidden ── */
+function _chartToImage(canvasId) {
+  try {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    // If canvas has zero dimensions (was in display:none), try via Chart.js resize
+    const chartInst = state.chartInstances?.[canvasId];
+    if (chartInst && (canvas.width === 0 || canvas.height === 0)) {
+      chartInst.resize(600, 300);
+    }
+    if (canvas.width === 0 || canvas.height === 0) return null;
+    return canvas.toDataURL('image/png', 0.95);
+  } catch (e) { return null; }
+}
+
+/* ── Ensure all report charts are rendered before PDF ── */
+async function _ensureChartsRendered() {
+  // If currently in regular view, charts should exist. If switching views for PDF, re-render.
+  if (rptState.view === 'regular') {
+    // Charts may not have rendered if view was just activated — re-run
+    if (!state.chartInstances?.['reportCatChart']) await loadReports();
+    return;
+  }
+  if (rptState.view === 'transactions') {
+    if (!rptState.txData?.length) await loadReportTx();
+    return;
+  }
+  if (rptState.view === 'forecast') {
+    if (!state.chartInstances?.['forecastChart']) await loadForecast();
+    return;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PDF DESIGN SYSTEM
+══════════════════════════════════════════════════════════════════ */
+const PDF_GREEN      = [34, 85, 60];
+const PDF_GREEN_DARK = [22, 58, 42];
+const PDF_GREEN_LT   = [42, 122, 74];
+const PDF_RED        = [192, 57, 43];
+const PDF_AMBER      = [180, 83, 9];
+const PDF_GRAY       = [100, 100, 100];
+const PDF_MUTED      = [140, 130, 120];
+const PDF_BG         = [248, 252, 249];
+const PDF_CARD       = [255, 255, 255];
+const PDF_BORDER     = [210, 225, 215];
+
+function _pdfNewPage(doc) {
+  doc.addPage();
+  return 18;
+}
+
+function _pdfCheckY(doc, y, needed) {
+  const H = doc.internal.pageSize.getHeight();
+  if (y + needed > H - 18) return _pdfNewPage(doc);
+  return y;
+}
+
+/* ── Cover / Header ── */
+function _pdfHeader(doc, from, to, viewLabel, familyName) {
+  const W = doc.internal.pageSize.getWidth();
+
+  // Deep green background
+  doc.setFillColor(...PDF_GREEN_DARK);
+  doc.rect(0, 0, W, 42, 'F');
+  // Accent stripe
+  doc.setFillColor(...PDF_GREEN_LT);
+  doc.rect(0, 0, 5, 42, 'F');
+  // Subtle diagonal stripe overlay (decorative)
+  doc.setFillColor(255, 255, 255);
+  doc.setGState && doc.setGState(new doc.GState({ opacity: 0.04 }));
+
+  // Logo mark
+  doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('JF', 13, 16);
+  doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(170, 215, 190);
+  doc.text('Family FinTrack', 11, 22);
+
+  // Main title
+  doc.setFontSize(15); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('Relatório Financeiro', 32, 13);
+  // Subtitle: view label
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(200, 235, 215);
+  doc.text(viewLabel, 32, 20);
+
+  // Period pill
+  const periodText = fmtDate(from) + ' → ' + fmtDate(to);
+  doc.setFontSize(8);
+  doc.setTextColor(180, 220, 200);
+  doc.text('📅  ' + periodText, 32, 28);
+
+  // Filters
+  const fl = _getActiveFiltersLabel();
+  if (fl !== 'Todos os dados') {
+    doc.setFontSize(7);
+    doc.setTextColor(150, 195, 175);
+    doc.text('Filtros: ' + fl, 32, 34);
+  }
+
+  // Right side: date + family
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(180, 220, 200);
+  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR'), W - 12, 28, { align: 'right' });
+  if (familyName) {
+    doc.text(familyName, W - 12, 35, { align: 'right' });
+  }
+
+  // Bottom accent line
+  doc.setDrawColor(...PDF_GREEN_LT);
+  doc.setLineWidth(0.5);
+  doc.line(0, 42, W, 42);
+
+  return 50; // next Y
+}
+
+/* ── Section title bar ── */
+function _pdfSectionTitle(doc, y, title) {
+  const W = doc.internal.pageSize.getWidth();
+  doc.setFillColor(242, 248, 244);
+  doc.rect(14, y - 2, W - 28, 11, 'F');
+  doc.setDrawColor(...PDF_BORDER);
+  doc.setLineWidth(0.25);
+  doc.line(14, y + 9, W - 14, y + 9);
+  // Left accent bar
+  doc.setFillColor(...PDF_GREEN);
+  doc.rect(14, y - 2, 3, 11, 'F');
+  doc.setFontSize(9.5); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...PDF_GREEN);
+  doc.text(title, 21, y + 5.5);
+  return y + 14;
+}
+
+/* ── KPI row ── */
+function _pdfKpis(doc, y, txs) {
+  const W = doc.internal.pageSize.getWidth();
+  const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const bal    = totInc - totExp;
+  const nExp   = txs.filter(t => t.amount < 0).length;
+  const avg    = nExp ? totExp / nExp : 0;
+
+  const kpis = [
+    { label: 'RECEITAS',     value: fmt(totInc), color: PDF_GREEN_LT, bg: [235, 250, 240] },
+    { label: 'DESPESAS',     value: fmt(totExp), color: PDF_RED,      bg: [252, 240, 238] },
+    { label: 'SALDO',        value: fmt(bal),    color: bal >= 0 ? PDF_GREEN_LT : PDF_RED, bg: bal >= 0 ? [235, 250, 240] : [252, 240, 238] },
+    { label: 'TRANSAÇÕES',   value: String(txs.length), color: PDF_GREEN, bg: [240, 248, 244] },
+    { label: 'TICKET MÉDIO', value: avg ? fmt(avg) : '—', color: PDF_GRAY, bg: [245, 245, 245] },
+  ];
+
+  const kw = (W - 28) / kpis.length;
+  kpis.forEach(({ label, value, color, bg }, i) => {
+    const x = 14 + i * kw;
+    // Card background
+    doc.setFillColor(...bg);
+    doc.roundedRect(x, y, kw - 2.5, 22, 2, 2, 'F');
+    // Top color bar
+    doc.setFillColor(...color);
+    doc.rect(x, y, kw - 2.5, 3, 'F');
+    // Label
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...PDF_MUTED);
+    doc.text(label, x + 4, y + 9);
+    // Value
+    doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...color);
+    doc.text(value, x + 4, y + 18, { maxWidth: kw - 8 });
+  });
+  return y + 28;
+}
+
+/* ── Health indicators ── */
+function _pdfHealthBar(doc, y, txs) {
+  const W = doc.internal.pageSize.getWidth();
+  const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  if (!totInc) return y;
+
+  const savingsRate = ((totInc - totExp) / totInc * 100);
+  const expenseRate = (totExp / totInc * 100);
+  const barW = W - 28;
+
+  doc.setFillColor(245, 248, 246);
+  doc.roundedRect(14, y, barW, 14, 2, 2, 'F');
+  doc.setDrawColor(...PDF_BORDER);
+  doc.setLineWidth(0.2);
+  doc.roundedRect(14, y, barW, 14, 2, 2, 'S');
+
+  // Left: savings rate
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(savingsRate >= 20 ? 42 : savingsRate >= 5 ? 180 : 192,
+                   savingsRate >= 20 ? 122 : savingsRate >= 5 ? 83 : 57,
+                   savingsRate >= 20 ? 74 : savingsRate >= 5 ? 9 : 43);
+  const srLabel = `Taxa de poupança: ${savingsRate.toFixed(1)}%`;
+  doc.text(srLabel, 18, y + 9);
+
+  // Center: expense bar
+  const barStart = 80, barLen = barW - 100;
+  doc.setFillColor(232, 236, 233);
+  doc.rect(barStart, y + 5, barLen, 4, 'F');
+  const fillLen = Math.min(expenseRate / 100, 1) * barLen;
+  const fillColor = expenseRate > 90 ? PDF_RED : expenseRate > 70 ? PDF_AMBER : PDF_GREEN_LT;
+  doc.setFillColor(...fillColor);
+  doc.rect(barStart, y + 5, fillLen, 4, 'F');
+
+  // Right: expense rate
+  doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...PDF_MUTED);
+  doc.text(`${expenseRate.toFixed(1)}% da receita gasto`, W - 18, y + 9, { align: 'right' });
+
+  return y + 18;
+}
+
+/* ── Render chart image into PDF ── */
+function _pdfAddChart(doc, y, canvasId, title, opts = {}) {
+  const W  = doc.internal.pageSize.getWidth();
+  const img = _chartToImage(canvasId);
+  if (!img) return y;
+  const h  = opts.h || 62;
+  const w  = opts.w || (W - 28);
+  const x  = opts.x || 14;
+  y = _pdfCheckY(doc, y, h + 20);
+  if (title) y = _pdfSectionTitle(doc, y, title);
+  // Card
+  doc.setFillColor(...PDF_CARD);
+  doc.setDrawColor(...PDF_BORDER);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(x, y, w, h, 2, 2, 'FD');
+  doc.addImage(img, 'PNG', x + 1, y + 1, w - 2, h - 2);
+  return y + h + 4;
+}
+
+/* ── Two charts side-by-side ── */
+function _pdfChartRow(doc, y, charts, rowH) {
+  const W  = doc.internal.pageSize.getWidth();
+  const h  = rowH || 64;
+  const cw = (W - 30) / 2;
+  y = _pdfCheckY(doc, y, h + 10);
+  charts.forEach(({ canvasId, label }, i) => {
+    const img = _chartToImage(canvasId);
+    const x   = 14 + i * (cw + 2);
+    doc.setFillColor(...PDF_CARD);
+    doc.setDrawColor(...PDF_BORDER);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(x, y, cw, h, 2, 2, 'FD');
+    if (label) {
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...PDF_MUTED);
+      doc.text(label, x + 4, y + 6);
+    }
+    if (img) {
+      doc.addImage(img, 'PNG', x + 1, y + (label ? 7 : 1), cw - 2, h - (label ? 8 : 2));
+    } else {
+      doc.setFontSize(8); doc.setTextColor(...PDF_MUTED);
+      doc.text('Gráfico indisponível', x + cw / 2, y + h / 2, { align: 'center' });
+    }
+  });
+  return y + h + 6;
+}
+
+/* ── Category breakdown table ── */
+function _pdfCatTable(doc, y, txs) {
+  y = _pdfCheckY(doc, y, 30);
+  y = _pdfSectionTitle(doc, y, 'Detalhamento por Categoria');
+
+  const allMap = {};
+  txs.forEach(t => {
+    const n  = t.categories?.name || 'Sem categoria';
+    const tp = t.amount < 0 ? 'Despesa' : 'Receita';
+    const k  = n + '|' + tp;
+    if (!allMap[k]) allMap[k] = { name: n, type: tp, total: 0, count: 0 };
+    allMap[k].total += Math.abs(t.amount); allMap[k].count++;
+  });
+  const rows  = Object.values(allMap).sort((a, b) => b.total - a.total);
+  const grand = rows.reduce((s, e) => s + e.total, 0);
+
+  doc.autoTable({
+    startY: y,
+    head: [['Categoria', 'Tipo', 'Qtd', 'Total', '% do Total']],
+    body: rows.map(v => [v.name, v.type, v.count, fmt(v.total),
+      grand > 0 ? (v.total / grand * 100).toFixed(1) + '%' : '0%']),
+    styles: { fontSize: 8, cellPadding: [3, 5] },
+    headStyles: { fillColor: PDF_GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: PDF_BG },
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 28, halign: 'center' },
+      2: { cellWidth: 16, halign: 'center' },
+      3: { cellWidth: 40, halign: 'right' },
+      4: { cellWidth: 25, halign: 'right' },
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell(data) {
+      if (data.column.index === 1 && data.section === 'body') {
+        data.cell.styles.textColor = data.cell.raw === 'Despesa' ? PDF_RED : PDF_GREEN_LT;
+        data.cell.styles.fontStyle = 'bold';
+      }
+      if (data.column.index === 3 && data.section === 'body') {
+        const row = rows[data.row.index];
+        data.cell.styles.textColor = row?.type === 'Despesa' ? PDF_RED : PDF_GREEN_LT;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+  return doc.lastAutoTable.finalY + 8;
+}
+
+/* ── Top payees table ── */
+function _pdfPayeeTable(doc, y, txs) {
+  const payMap = {};
+  txs.filter(t => t.amount < 0).forEach(t => {
+    const n = t.payees?.name || t.description || 'Sem beneficiário';
+    if (!payMap[n]) payMap[n] = { total: 0, count: 0 };
+    payMap[n].total += Math.abs(t.amount); payMap[n].count++;
+  });
+  const rows = Object.entries(payMap).sort((a,b) => b[1].total - a[1].total).slice(0, 15);
+  if (!rows.length) return y;
+
+  y = _pdfCheckY(doc, y, 30);
+  y = _pdfSectionTitle(doc, y, 'Top Beneficiários (Despesas)');
+  const grand = rows.reduce((s, [,v]) => s + v.total, 0);
+
+  doc.autoTable({
+    startY: y,
+    head: [['Beneficiário', 'Qtd', 'Total', '% do Total']],
+    body: rows.map(([name, v]) => [name, v.count, fmt(v.total),
+      grand > 0 ? (v.total / grand * 100).toFixed(1) + '%' : '0%']),
+    styles: { fontSize: 8, cellPadding: [3, 5] },
+    headStyles: { fillColor: PDF_GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: PDF_BG },
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 16, halign: 'center' },
+      2: { cellWidth: 40, halign: 'right', fontStyle: 'bold', textColor: PDF_RED },
+      3: { cellWidth: 25, halign: 'right' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+  return doc.lastAutoTable.finalY + 8;
+}
+
+/* ── Transactions table ── */
+function _pdfTxTable(doc, y, txs) {
+  y = _pdfCheckY(doc, y, 30);
+  y = _pdfSectionTitle(doc, y, 'Lista de Transações (' + txs.length + ')');
+
+  const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const bal    = totInc - totExp;
+
+  doc.autoTable({
+    startY: y,
+    head: [['Data', 'Descrição', 'Conta', 'Categoria', 'Beneficiário', 'Valor']],
+    body: txs.map(t => [fmtDate(t.date), t.description || '—', t.accounts?.name || '—',
+      t.categories?.name || '—', t.payees?.name || '—', fmt(t.amount)]),
+    foot: [['', '', '', '', 'TOTAL', fmt(bal)]],
+    styles: { fontSize: 7.5, cellPadding: [3, 5], overflow: 'ellipsize' },
+    headStyles: { fillColor: PDF_GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+    footStyles: { fillColor: [240, 248, 244], textColor: PDF_GREEN, fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: PDF_BG },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 30 },
+      4: { cellWidth: 30 },
+      5: { cellWidth: 32, halign: 'right' },
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell(data) {
+      if (data.column.index === 5 && data.section === 'body') {
+        const v = txs[data.row.index]?.amount;
+        data.cell.styles.textColor = (v < 0) ? PDF_RED : PDF_GREEN_LT;
+        data.cell.styles.fontStyle = 'bold';
+      }
+      if (data.column.index === 5 && data.section === 'foot') {
+        data.cell.styles.textColor = bal < 0 ? PDF_RED : PDF_GREEN_LT;
+      }
+    },
+  });
+  return doc.lastAutoTable.finalY + 8;
+}
+
+/* ── Summary box ── */
+function _pdfSummaryBox(doc, y, txs) {
+  const W = doc.internal.pageSize.getWidth();
+  const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const bal    = totInc - totExp;
+  y = _pdfCheckY(doc, y, 22);
+
+  doc.setFillColor(240, 248, 244);
+  doc.setDrawColor(...PDF_GREEN_LT);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(14, y, W - 28, 18, 2, 2, 'FD');
+
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_GREEN);
+  doc.text('Resumo do período', 19, y + 7);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_GRAY);
+  doc.text(
+    `Receitas: ${fmt(totInc)}     Despesas: ${fmt(totExp)}     Saldo: ${fmt(bal)}     Transações: ${txs.length}`,
+    19, y + 13
+  );
+  return y + 24;
+}
+
+/* ── Forecast section ── */
+function _pdfForecastSection(doc, y) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+
+  y = _pdfAddChart(doc, y, 'forecastChart', 'Saldo Previsto por Conta', { h: 65 });
+
+  const container = document.getElementById('forecastAccountsContainer');
+  if (!container) return y;
+
+  container.querySelectorAll('.forecast-account-section').forEach(section => {
+    const accName = section.querySelector('.forecast-account-header div > div:first-child')
+      ?.textContent?.trim() || 'Conta';
+    const rows = [];
+    section.querySelectorAll('tbody tr').forEach(tr => {
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.replace(/\s+/g,' ').trim());
+      if (cells.length >= 4) rows.push(cells.slice(0, 5));
+    });
+    if (!rows.length) return;
+    y = _pdfCheckY(doc, y, 30);
+    y = _pdfSectionTitle(doc, y, accName);
+
+    doc.autoTable({
+      startY: y,
+      head: [['Data', 'Descrição', 'Beneficiário', 'Valor', 'Saldo Prev.']],
+      body: rows,
+      styles: { fontSize: 7.5, cellPadding: [3,5] },
+      headStyles: { fillColor: PDF_GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_BG },
+      columnStyles: {
+        0: { cellWidth: 22 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35 },
+        3: { cellWidth: 30, halign: 'right' }, 4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell(data) {
+        if ((data.column.index === 3 || data.column.index === 4) && data.section === 'body') {
+          data.cell.styles.textColor = (data.cell.raw||'').trim().startsWith('-') ? PDF_RED : PDF_GREEN_LT;
+          data.cell.styles.fontStyle = 'bold';
+        }
+      },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  });
+  return y;
+}
+
+/* ── Footer on every page ── */
+function _pdfFooter(doc, from, to) {
+  const pages = doc.internal.getNumberOfPages();
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(240, 246, 242);
+    doc.rect(0, H - 11, W, 11, 'F');
+    doc.setDrawColor(...PDF_BORDER);
+    doc.setLineWidth(0.25);
+    doc.line(0, H - 11, W, H - 11);
+    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_MUTED);
+    doc.text('JF Family FinTrack  ·  Documento Confidencial', 14, H - 4);
+    doc.text(new Date().toLocaleDateString('pt-BR'), W / 2, H - 4, { align: 'center' });
+    doc.text(`Página ${i} / ${pages}`, W - 14, H - 4, { align: 'right' });
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   _buildReportPDF — master function
+   Reads EXACTLY what is on screen at the moment of the call.
+══════════════════════════════════════════════════════════════════ */
+async function _buildReportPDF() {
+  const { jsPDF } = window.jspdf;
+  const { from, to } = getRptDateRange();
+  const txs = rptState.txData;
+
+  // Make sure charts are rendered (re-render if canvas was zero-sized)
+  await _ensureChartsRendered();
+
+  const viewLabels = {
+    regular:      'Análise por Categoria',
+    transactions: 'Lista de Transações',
+    forecast:     'Previsão de Saldo',
+  };
+  const viewLabel = viewLabels[rptState.view] || 'Relatório';
+  const familyName = typeof currentUser !== 'undefined'
+    ? (currentUser?.name || currentUser?.email || '') : '';
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = _pdfHeader(doc, from, to, viewLabel, familyName);
+
+  /* ── KPIs + health bar ── */
+  if (rptState.view !== 'forecast' && txs.length) {
+    y = _pdfKpis(doc, y, txs);
+    y = _pdfHealthBar(doc, y, txs);
+    y += 4;
+  }
+
+  /* ── View: Análise ── */
+  if (rptState.view === 'regular') {
+
+    // Row 1: Expenses + Income doughnut charts
+    const hasExpChart = !!_chartToImage('reportCatChart');
+    const hasIncChart = !!_chartToImage('reportIncomeChart');
+    if (hasExpChart || hasIncChart) {
+      y = _pdfSectionTitle(doc, y, 'Distribuição de Gastos e Receitas');
+      y = _pdfChartRow(doc, y, [
+        { canvasId: 'reportCatChart',    label: 'Despesas por Categoria' },
+        { canvasId: 'reportIncomeChart', label: 'Receitas por Categoria' },
+      ], 68);
+    }
+
+    // Row 2: Account bar + Trend bar
+    const hasAccChart  = !!_chartToImage('reportAccountChart');
+    const hasTrendChart = !!_chartToImage('reportTrendChart');
+    if (hasAccChart || hasTrendChart) {
+      y = _pdfChartRow(doc, y, [
+        { canvasId: 'reportAccountChart', label: 'Por Conta' },
+        { canvasId: 'reportTrendChart',   label: 'Evolução no Período' },
+      ], 62);
+    }
+
+    // Category breakdown
+    if (txs.length) {
+      y = _pdfCatTable(doc, y, txs);
+      y = _pdfPayeeTable(doc, y, txs);
+      y = _pdfSummaryBox(doc, y, txs);
+    }
+
+  /* ── View: Transações ── */
+  } else if (rptState.view === 'transactions') {
+
+    if (txs.length) {
+      // Mini-breakdown charts (side by side)
+      const W  = doc.internal.pageSize.getWidth();
+      const cw = (W - 30) / 2;
+
+      // Rebuild inline mini-charts data for PDF context
+      // (these may not have separate canvases — use data to draw summary table instead)
+      y = _pdfCheckY(doc, y, 18);
+
+      // Quick stats by account
+      const accMap = {};
+      txs.forEach(t => {
+        const n = t.accounts?.name || '—';
+        if (!accMap[n]) accMap[n] = { inc: 0, exp: 0, count: 0 };
+        if (t.amount >= 0) accMap[n].inc += t.amount;
+        else accMap[n].exp += Math.abs(t.amount);
+        accMap[n].count++;
+      });
+      const accRows = Object.entries(accMap).sort((a,b)=>(b[1].inc+b[1].exp)-(a[1].inc+a[1].exp));
+
+      if (accRows.length > 1) {
+        y = _pdfSectionTitle(doc, y, 'Resumo por Conta');
+        doc.autoTable({
+          startY: y,
+          head: [['Conta', 'Qtd', 'Receitas', 'Despesas', 'Saldo']],
+          body: accRows.map(([name, v]) => [
+            name, v.count, fmt(v.inc), fmt(v.exp), fmt(v.inc - v.exp)
+          ]),
+          styles: { fontSize: 8, cellPadding: [3,5] },
+          headStyles: { fillColor: PDF_GREEN, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+          alternateRowStyles: { fillColor: PDF_BG },
+          columnStyles: {
+            0: { cellWidth: 'auto' },
+            1: { cellWidth: 16, halign: 'center' },
+            2: { cellWidth: 38, halign: 'right' },
+            3: { cellWidth: 38, halign: 'right' },
+            4: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
+          },
+          margin: { left: 14, right: 14 },
+          didParseCell(data) {
+            if (data.column.index === 4 && data.section === 'body') {
+              const v = accRows[data.row.index]?.[1];
+              const bal = (v?.inc||0) - (v?.exp||0);
+              data.cell.styles.textColor = bal < 0 ? PDF_RED : PDF_GREEN_LT;
+            }
+            if (data.column.index === 2 && data.section === 'body') data.cell.styles.textColor = PDF_GREEN_LT;
+            if (data.column.index === 3 && data.section === 'body') data.cell.styles.textColor = PDF_RED;
+          },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      }
+
+      y = _pdfTxTable(doc, y, txs);
+      y = _pdfSummaryBox(doc, y, txs);
+    } else {
+      const W = doc.internal.pageSize.getWidth();
+      doc.setFontSize(10); doc.setTextColor(...PDF_MUTED);
+      doc.text('Nenhuma transação no período selecionado.', W / 2, y + 20, { align: 'center' });
+    }
+
+  /* ── View: Previsão ── */
+  } else if (rptState.view === 'forecast') {
+    y = _pdfForecastSection(doc, y);
+  }
+
+  _pdfFooter(doc, from, to);
+  return { doc, from, to };
+}
+
 /* ═══ EXPORT: PDF ═══ */
 async function exportReportPDF() {
-  const btn = event.target;
-  const origText = btn.textContent;
-  btn.textContent='⏳ Gerando...'; btn.disabled=true;
+  const btn  = document.querySelector('[onclick="exportReportPDF()"]');
+  const orig = btn?.textContent || '📄 Baixar PDF';
+  if (btn) { btn.textContent = '⏳ Gerando...'; btn.disabled = true; }
   try {
-    const {jsPDF}=window.jspdf;
-    const {from,to}=getRptDateRange();
-    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const W=doc.internal.pageSize.getWidth();
-    const ACCENT=[42,96,73];
-
-    // Header — green banner with white text
-    doc.setFillColor(42,96,73); doc.rect(0,0,W,30,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(15); doc.setFont('helvetica','bold');
-    doc.text("J.F. Family FinTrack — Relatório", 14, 12);
-    doc.setFontSize(9); doc.setFont('helvetica','normal');
-    doc.text('Período: ' + fmtDate(from) + ' a ' + fmtDate(to), 14, 21);
-    doc.text('Gerado: ' + new Date().toLocaleString('pt-BR'), W-14, 21, {align:'right'});
-    doc.setTextColor(30,30,30); doc.setFillColor(255,255,255);
-
-    doc.setFillColor(255,255,255); // reset fill after header
-    let y=38;
-
-    // KPIs
-    const txs=rptState.txData;
-    const totExp=txs.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
-    const totInc=txs.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-    const bal=totInc-totExp;
-    const kpis=[
-      ['Receitas',fmt(totInc),[42,122,74]],
-      ['Despesas',fmt(totExp),[192,57,43]],
-      ['Saldo',fmt(bal),bal>=0?[42,122,74]:[192,57,43]],
-      ['Transações',String(txs.length),[42,96,73]],
-    ];
-    const kw=(W-28)/kpis.length;
-    kpis.forEach(([label,val,col],i)=>{
-      const x=14+i*kw;
-      doc.setFillColor(240,248,244); doc.roundedRect(x,y,kw-3,18,2,2,'F');
-      doc.setDrawColor(...col); doc.roundedRect(x,y,kw-3,18,2,2,'S');
-      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
-      doc.text(label, x+4, y+6);
-      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...col);
-      doc.text(val, x+4, y+14);
-    });
-    y+=26; doc.setTextColor(30,30,30);
-
-    // Category table
-    if(rptState.view==='regular' || rptState.view==='transactions') {
-      doc.setFontSize(11); doc.setFont('helvetica','bold');
-      doc.text(rptState.view==='transactions'?'Transações':'Detalhamento por Categoria', 14, y);
-      y+=4;
-
-      if(rptState.view==='transactions') {
-        const rows=txs.map(t=>[fmtDate(t.date),t.description||'',t.accounts?.name||'',t.categories?.name||'',t.payees?.name||'',fmt(t.amount)]);
-        doc.autoTable({startY:y,head:[['Data','Descrição','Conta','Categoria','Beneficiário','Valor']],body:rows,
-          styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[42,96,73],textColor:[255,255,255]},
-          columnStyles:{5:{halign:'right'}},margin:{left:14,right:14},
-          didParseCell(data){if(data.column.index===5&&data.section==='body'){const v=txs[data.row.index]?.amount;if(v<0)data.cell.styles.textColor=[192,57,43];else data.cell.styles.textColor=[42,122,74];}}
-        });
-      } else {
-        const allMap={};
-        txs.forEach(t=>{const n=t.categories?.name||'Sem categoria',tp=t.amount<0?'Despesa':'Receita',k=n+'|'+tp;
-          if(!allMap[k]) allMap[k]={name:n,type:tp,total:0,count:0};
-          allMap[k].total+=Math.abs(t.amount);allMap[k].count++;});
-        const allE=Object.values(allMap).sort((a,b)=>b.total-a.total);
-        const grand=allE.reduce((s,e)=>s+e.total,0);
-        const rows=allE.map(v=>[v.name,v.type,String(v.count),fmt(v.total),grand>0?(v.total/grand*100).toFixed(1)+'%':'0%']);
-        doc.autoTable({startY:y,head:[['Categoria','Tipo','Qtd','Total','%']],body:rows,
-          styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[42,96,73],textColor:[255,255,255]},
-          columnStyles:{3:{halign:'right'},4:{halign:'right'}},margin:{left:14,right:14}});
-      }
-    }
-
-    // Footer
-    const pages=doc.internal.getNumberOfPages();
-    for(let i=1;i<=pages;i++){
-      doc.setPage(i);doc.setFontSize(8);doc.setTextColor(150);
-      doc.text(`JF Family FinTrack  ·  Página ${i}/${pages}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'});
-    }
-
-    doc.save(`FinTrack_${from}_${to}.pdf`);
-    toast('PDF gerado e baixado!','success');
-  } catch(e){ toast('Erro ao gerar PDF: '+e.message,'error'); console.error(e); }
-  finally{ btn.textContent=origText; btn.disabled=false; }
+    const { doc, from, to } = await _buildReportPDF();
+    doc.save(`FinTrack_${from}_${to}_${rptState.view}.pdf`);
+    toast('✓ PDF gerado e baixado!', 'success');
+  } catch (e) {
+    toast('Erro ao gerar PDF: ' + e.message, 'error');
+    console.error('[PDF]', e);
+  } finally {
+    if (btn) { btn.textContent = orig; btn.disabled = false; }
+  }
 }
 
 /* ═══ EXPORT: PRINT ═══ */
 function printReport() {
   const area = document.getElementById('printArea');
-  const {from,to} = getRptDateRange();
+  const { from, to } = getRptDateRange();
   const txs = rptState.txData;
-  const totExp=txs.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
-  const totInc=txs.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const bal=totInc-totExp;
+  const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const bal = totInc - totExp;
+  const viewLabel = { regular:'Análise', transactions:'Transações', forecast:'Previsão' }[rptState.view] || '';
 
-  let body='';
-  if(rptState.view==='transactions') {
-    body=`<table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr style="background:#2a6049;color:#fff">
-        <th style="padding:8px;text-align:left">Data</th><th style="padding:8px;text-align:left">Descrição</th>
-        <th style="padding:8px;text-align:left">Conta</th><th style="padding:8px;text-align:left">Categoria</th>
-        <th style="padding:8px;text-align:left">Beneficiário</th><th style="padding:8px;text-align:right">Valor</th>
-      </tr></thead><tbody>
-      ${txs.map((t,i)=>`<tr style="background:${i%2?'#f9f9f9':'#fff'}">
-        <td style="padding:6px 8px">${fmtDate(t.date)}</td>
-        <td style="padding:6px 8px">${esc(t.description||'—')}</td>
-        <td style="padding:6px 8px">${esc(t.accounts?.name||'—')}</td>
-        <td style="padding:6px 8px">${esc(t.categories?.name||'—')}</td>
-        <td style="padding:6px 8px">${esc(t.payees?.name||'—')}</td>
-        <td style="padding:6px 8px;text-align:right;color:${t.amount>=0?'#2a7a4a':'#c0392b'};font-weight:600">${fmt(t.amount)}</td>
-      </tr>`).join('')}
-      <tr style="background:#f0f0f0;font-weight:700">
-        <td colspan="5" style="padding:8px">Total</td>
-        <td style="padding:8px;text-align:right;color:${bal>=0?'#2a7a4a':'#c0392b'}">${fmt(bal)}</td>
-      </tr></tbody></table>`;
-  } else {
-    const allMap={};
-    txs.forEach(t=>{const n=t.categories?.name||'Sem categoria',tp=t.amount<0?'Despesa':'Receita',k=n+'|'+tp;
-      if(!allMap[k]) allMap[k]={name:n,type:tp,color:t.categories?.color||'#666',total:0,count:0};
-      allMap[k].total+=Math.abs(t.amount);allMap[k].count++;});
-    const allE=Object.values(allMap).sort((a,b)=>b.total-a.total);
-    const grand=allE.reduce((s,e)=>s+e.total,0);
-    body=`<table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr style="background:#2a6049;color:#fff">
-        <th style="padding:8px;text-align:left">Categoria</th><th style="padding:8px">Tipo</th>
-        <th style="padding:8px;text-align:center">Qtd</th><th style="padding:8px;text-align:right">Total</th>
-        <th style="padding:8px;text-align:right">%</th>
-      </tr></thead><tbody>
-      ${allE.map((v,i)=>`<tr style="background:${i%2?'#f9f9f9':'#fff'}">
-        <td style="padding:6px 8px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px"></span>${esc(v.name)}</td>
-        <td style="padding:6px 8px;text-align:center;color:${v.type==='Despesa'?'#c0392b':'#2a7a4a'}">${v.type}</td>
-        <td style="padding:6px 8px;text-align:center">${v.count}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:600;color:${v.type==='Despesa'?'#c0392b':'#2a7a4a'}">${fmt(v.total)}</td>
-        <td style="padding:6px 8px;text-align:right;color:#888">${grand>0?(v.total/grand*100).toFixed(1):0}%</td>
-      </tr>`).join('')}
-      </tbody></table>`;
+  // Capture charts as images
+  const chartIds   = ['reportCatChart','reportIncomeChart','reportAccountChart','reportTrendChart','forecastChart'];
+  const chartTitles = ['Despesas por Categoria','Receitas por Categoria','Por Conta','Evolução Mensal','Saldo Previsto'];
+  const chartImgs  = chartIds.map((id, i) => {
+    const img = _chartToImage(id);
+    return img ? `<div style="background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 3px #0001">
+      <div style="font-size:10px;font-weight:700;color:#22553c;margin-bottom:8px">${chartTitles[i]}</div>
+      <img src="${img}" style="width:100%;height:auto;display:block">
+    </div>` : '';
+  }).filter(Boolean);
+
+  const kpiHtml = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      ${[
+        ['Receitas', fmt(totInc), '#2a7a4a', '#e8f5ee'],
+        ['Despesas', fmt(totExp), '#c0392b', '#fdf0ee'],
+        ['Saldo',    fmt(bal),    bal>=0?'#2a7a4a':'#c0392b', bal>=0?'#e8f5ee':'#fdf0ee'],
+        ['Transações', txs.length, '#22553c', '#f0f7f2'],
+      ].map(([label, val, color, bg]) => `
+        <div style="background:${bg};border-radius:8px;padding:12px;border-top:3px solid ${color}">
+          <div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px">${label}</div>
+          <div style="font-size:16px;font-weight:800;color:${color}">${val}</div>
+        </div>`).join('')}
+    </div>`;
+
+  let chartsHtml = '';
+  if (rptState.view === 'regular' && chartImgs.length) {
+    chartsHtml = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      ${chartImgs.slice(0, 4).join('')}
+    </div>`;
+  } else if (rptState.view === 'forecast' && chartImgs[4]) {
+    chartsHtml = chartImgs[4];
   }
 
-  area.innerHTML=`
-    <div style="font-family:Arial,sans-serif;max-width:900px;margin:0 auto">
-      <div style="background:#2a6049;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;margin-bottom:0">
-        <div style="font-size:20px;font-weight:700">JF Family FinTrack — Relatório</div>
-        <div style="font-size:13px;opacity:.85;margin-top:4px">Período: ${fmtDate(from)} a ${fmtDate(to)}  ·  Gerado: ${new Date().toLocaleString('pt-BR')}</div>
+  let bodyHtml = '';
+  if (rptState.view === 'transactions') {
+    bodyHtml = `<table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:#22553c;color:#fff">
+        <th style="padding:7px 8px;text-align:left">Data</th>
+        <th style="padding:7px 8px;text-align:left">Descrição</th>
+        <th style="padding:7px 8px;text-align:left">Conta</th>
+        <th style="padding:7px 8px;text-align:left">Categoria</th>
+        <th style="padding:7px 8px;text-align:left">Beneficiário</th>
+        <th style="padding:7px 8px;text-align:right">Valor</th>
+      </tr></thead><tbody>
+      ${txs.map((t, i) => `<tr style="background:${i%2?'#f8fcf9':'#fff'}">
+        <td style="padding:5px 8px;color:#666">${fmtDate(t.date)}</td>
+        <td style="padding:5px 8px">${esc(t.description||'—')}</td>
+        <td style="padding:5px 8px">${esc(t.accounts?.name||'—')}</td>
+        <td style="padding:5px 8px">${esc(t.categories?.name||'—')}</td>
+        <td style="padding:5px 8px">${esc(t.payees?.name||'—')}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:700;color:${t.amount>=0?'#2a7a4a':'#c0392b'}">${fmt(t.amount)}</td>
+      </tr>`).join('')}
+      <tr style="background:#e8f5ee;font-weight:800">
+        <td colspan="5" style="padding:8px 8px">TOTAL</td>
+        <td style="padding:8px;text-align:right;color:${bal>=0?'#2a7a4a':'#c0392b'}">${fmt(bal)}</td>
+      </tr></tbody></table>`;
+  } else if (rptState.view === 'regular') {
+    const allMap = {};
+    txs.forEach(t => {
+      const n = t.categories?.name||'Sem categoria', tp = t.amount<0?'Despesa':'Receita', k = n+'|'+tp;
+      if (!allMap[k]) allMap[k] = {name:n,type:tp,color:t.categories?.color||'#888',total:0,count:0};
+      allMap[k].total += Math.abs(t.amount); allMap[k].count++;
+    });
+    const rows = Object.values(allMap).sort((a,b)=>b.total-a.total);
+    const grand = rows.reduce((s,e)=>s+e.total,0);
+    bodyHtml = `<table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:#22553c;color:#fff">
+        <th style="padding:7px 8px;text-align:left">Categoria</th>
+        <th style="padding:7px 8px;text-align:center">Tipo</th>
+        <th style="padding:7px 8px;text-align:center">Qtd</th>
+        <th style="padding:7px 8px;text-align:right">Total</th>
+        <th style="padding:7px 8px;text-align:right">%</th>
+      </tr></thead><tbody>
+      ${rows.map((v,i)=>`<tr style="background:${i%2?'#f8fcf9':'#fff'}">
+        <td style="padding:5px 8px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${v.color};margin-right:5px;vertical-align:middle"></span>${esc(v.name)}</td>
+        <td style="padding:5px 8px;text-align:center;font-weight:700;color:${v.type==='Despesa'?'#c0392b':'#2a7a4a'}">${v.type}</td>
+        <td style="padding:5px 8px;text-align:center">${v.count}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:700;color:${v.type==='Despesa'?'#c0392b':'#2a7a4a'}">${fmt(v.total)}</td>
+        <td style="padding:5px 8px;text-align:right;color:#888">${grand>0?(v.total/grand*100).toFixed(1):0}%</td>
+      </tr>`).join('')}
+      </tbody></table>`;
+  } else if (rptState.view === 'forecast') {
+    bodyHtml = document.getElementById('forecastAccountsContainer')?.innerHTML || '';
+  }
+
+  area.innerHTML = `
+    <div style="font-family:Arial,sans-serif;max-width:960px;margin:0 auto;font-size:12px">
+      <div style="background:#163a2a;color:#fff;padding:20px 24px;border-left:5px solid #2a7a4a">
+        <div style="font-size:20px;font-weight:800">JF Family FinTrack — Relatório ${viewLabel}</div>
+        <div style="font-size:11px;opacity:.8;margin-top:6px">
+          Período: ${fmtDate(from)} até ${fmtDate(to)}
+          &nbsp;·&nbsp; Filtros: ${_getActiveFiltersLabel()}
+          &nbsp;·&nbsp; Gerado: ${new Date().toLocaleString('pt-BR')}
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px;background:#f5f5f5">
-        <div style="background:#fff;border-radius:6px;padding:12px;border-left:3px solid #2a7a4a"><div style="font-size:10px;color:#888;text-transform:uppercase">Receitas</div><div style="font-size:16px;font-weight:700;color:#2a7a4a">${fmt(totInc)}</div></div>
-        <div style="background:#fff;border-radius:6px;padding:12px;border-left:3px solid #c0392b"><div style="font-size:10px;color:#888;text-transform:uppercase">Despesas</div><div style="font-size:16px;font-weight:700;color:#c0392b">${fmt(totExp)}</div></div>
-        <div style="background:#fff;border-radius:6px;padding:12px;border-left:3px solid ${bal>=0?'#2a7a4a':'#c0392b'}"><div style="font-size:10px;color:#888;text-transform:uppercase">Saldo</div><div style="font-size:16px;font-weight:700;color:${bal>=0?'#2a7a4a':'#c0392b'}">${fmt(bal)}</div></div>
-        <div style="background:#fff;border-radius:6px;padding:12px;border-left:3px solid #2a6049"><div style="font-size:10px;color:#888;text-transform:uppercase">Transações</div><div style="font-size:16px;font-weight:700;color:#2a6049">${txs.length}</div></div>
+      <div style="background:#f0f7f2;padding:16px 24px">
+        ${rptState.view !== 'forecast' ? kpiHtml : ''}
+        ${chartsHtml}
+        ${bodyHtml ? `<div style="margin-top:14px">${bodyHtml}</div>` : ''}
       </div>
-      <div style="padding:16px">${body}</div>
     </div>`;
-  area.style.display='block';
+  area.style.display = 'block';
   window.print();
-  setTimeout(()=>{ area.style.display='none'; area.innerHTML=''; }, 1500);
+  setTimeout(() => { area.style.display = 'none'; area.innerHTML = ''; }, 1800);
 }
 
 /* ═══ EXPORT: CSV ═══ */
 function exportReportCSV() {
   const txs = rptState.txData;
-  if(!txs.length){toast('Nenhum dado para exportar','error');return;}
-  const {from,to}=getRptDateRange();
-  const BOM='\uFEFF';
-  const headers=['Data','Descrição','Conta','Moeda','Categoria','Subcategoria','Beneficiário','Valor','Tipo','Memo'];
-  const rows=txs.map(t=>[
+  if (!txs.length) { toast('Nenhum dado para exportar', 'error'); return; }
+  const { from, to } = getRptDateRange();
+  const BOM = '\uFEFF';
+  const headers = ['Data','Descrição','Conta','Moeda','Categoria','Beneficiário','Valor','Tipo','Memo'];
+  const rows = txs.map(t => [
     t.date,
     `"${(t.description||'').replace(/"/g,'""')}"`,
     `"${(t.accounts?.name||'').replace(/"/g,'""')}"`,
-    t.accounts?.currency||'BRL',
+    t.accounts?.currency || 'BRL',
     `"${(t.categories?.name||'').replace(/"/g,'""')}"`,
-    '',
     `"${(t.payees?.name||'').replace(/"/g,'""')}"`,
-    String(t.amount).replace('.',','),
-    t.amount<0?'Despesa':'Receita',
+    String(t.amount).replace('.', ','),
+    t.amount < 0 ? 'Despesa' : 'Receita',
     `"${(t.memo||'').replace(/"/g,'""')}"`,
   ]);
-  const csv=BOM+[headers.join(';'),...rows.map(r=>r.join(';'))].join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url;
-  a.download=`FinTrack_${from}_${to}.csv`; a.click();
+  const csv = BOM + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a'); a.href = url;
+  a.download = `FinTrack_${from}_${to}.csv`; a.click();
   URL.revokeObjectURL(url);
-  toast(`CSV exportado — ${txs.length} transações`,'success');
+  toast(`✓ CSV exportado — ${txs.length} transações`, 'success');
 }
 
 /* ═══ EMAIL POPUP ═══ */
 function showEmailPopup() {
-  const {from,to}=getRptDateRange();
-  document.getElementById('emailSubject').value=`Relatório FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
-  document.getElementById('emailPopup').style.display='flex';
+  const { from, to } = getRptDateRange();
+  document.getElementById('emailSubject').value = `Relatório FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
+  document.getElementById('emailPopup').style.display = 'flex';
 }
 function closeEmailPopup() {
-  document.getElementById('emailPopup').style.display='none';
+  document.getElementById('emailPopup').style.display = 'none';
 }
 
 async function sendReportByEmail() {
   const emailToEl = document.getElementById('emailTo');
-  // Read value directly from the DOM element — avoid browser email validation blocking .value
-  const toAddr = (emailToEl.value || '').trim();
+  const toAddr    = (emailToEl.value || '').trim();
   if (!toAddr) { toast('Informe o destinatário', 'error'); emailToEl.focus(); return; }
-  // Basic format check
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toAddr)) {
     toast('Endereço de e-mail inválido', 'error'); emailToEl.focus(); return;
   }
   if (!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.templateId || !EMAILJS_CONFIG.publicKey) {
     toast('Configure o EmailJS primeiro (botão ⚙️)', 'error'); showEmailConfig(); return;
   }
-  if (!sb) { toast('Supabase não conectado', 'error'); return; }
 
   const btn    = document.getElementById('emailSendBtn');
   const status = document.getElementById('emailStatus');
   btn.disabled = true; btn.textContent = '⏳ Gerando PDF...'; status.textContent = '';
 
   try {
-    // ── Step 1: Generate PDF (same as exportReportPDF) ─────────────────
-    const { jsPDF } = window.jspdf;
-    const { from, to } = getRptDateRange();
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const W   = doc.internal.pageSize.getWidth();
-
-    // Header banner
-    doc.setFillColor(42, 96, 73); doc.rect(0, 0, W, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(15); doc.setFont('helvetica', 'bold');
-    doc.text('J.F. Family FinTrack — Relatório', 14, 12);
-    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-    doc.text('Período: ' + fmtDate(from) + ' a ' + fmtDate(to), 14, 21);
-    doc.text('Gerado: ' + new Date().toLocaleString('pt-BR'), W - 14, 21, { align: 'right' });
-    doc.setTextColor(30, 30, 30);
-
-    let y = 38;
+    const { doc, from, to } = await _buildReportPDF();
     const txs    = rptState.txData;
     const totExp = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
     const totInc = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
     const bal    = totInc - totExp;
 
-    // KPI tiles
-    const kpis = [
-      ['Receitas',   fmt(totInc), [42, 122, 74]],
-      ['Despesas',   fmt(totExp), [192, 57, 43]],
-      ['Saldo',      fmt(bal),    bal >= 0 ? [42, 122, 74] : [192, 57, 43]],
-      ['Transações', String(txs.length), [42, 96, 73]],
-    ];
-    const kw = (W - 28) / kpis.length;
-    kpis.forEach(([label, val, col], i) => {
-      const x = 14 + i * kw;
-      doc.setFillColor(240, 248, 244); doc.roundedRect(x, y, kw - 3, 18, 2, 2, 'F');
-      doc.setDrawColor(...col);        doc.roundedRect(x, y, kw - 3, 18, 2, 2, 'S');
-      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
-      doc.text(label, x + 4, y + 6);
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...col);
-      doc.text(val, x + 4, y + 14);
-    });
-    y += 26; doc.setTextColor(30, 30, 30);
-
-    // Data table
-    if (rptState.view === 'regular' || rptState.view === 'transactions') {
-      doc.setFontSize(11); doc.setFont('helvetica', 'bold');
-      doc.text(rptState.view === 'transactions' ? 'Transações' : 'Detalhamento por Categoria', 14, y);
-      y += 4;
-      if (rptState.view === 'transactions') {
-        const rows = txs.map(t => [fmtDate(t.date), t.description || '', t.accounts?.name || '',
-          t.categories?.name || '', t.payees?.name || '', fmt(t.amount)]);
-        doc.autoTable({
-          startY: y,
-          head: [['Data', 'Descrição', 'Conta', 'Categoria', 'Beneficiário', 'Valor']],
-          body: rows,
-          styles: { fontSize: 8, cellPadding: 3 },
-          headStyles: { fillColor: [42, 96, 73], textColor: [255, 255, 255] },
-          columnStyles: { 5: { halign: 'right' } },
-          margin: { left: 14, right: 14 },
-          didParseCell(data) {
-            if (data.column.index === 5 && data.section === 'body') {
-              const v = txs[data.row.index]?.amount;
-              data.cell.styles.textColor = v < 0 ? [192, 57, 43] : [42, 122, 74];
-            }
-          }
-        });
-      } else {
-        const allMap = {};
-        txs.forEach(t => {
-          const n = t.categories?.name || 'Sem categoria';
-          const tp = t.amount < 0 ? 'Despesa' : 'Receita';
-          const k  = n + '|' + tp;
-          if (!allMap[k]) allMap[k] = { name: n, type: tp, total: 0, count: 0 };
-          allMap[k].total += Math.abs(t.amount); allMap[k].count++;
-        });
-        const allE  = Object.values(allMap).sort((a, b) => b.total - a.total);
-        const grand = allE.reduce((s, e) => s + e.total, 0);
-        const rows  = allE.map(v => [v.name, v.type, String(v.count), fmt(v.total),
-          grand > 0 ? (v.total / grand * 100).toFixed(1) + '%' : '0%']);
-        doc.autoTable({
-          startY: y,
-          head: [['Categoria', 'Tipo', 'Qtd', 'Total', '%']],
-          body: rows,
-          styles: { fontSize: 8, cellPadding: 3 },
-          headStyles: { fillColor: [42, 96, 73], textColor: [255, 255, 255] },
-          columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } },
-          margin: { left: 14, right: 14 }
-        });
-      }
-    }
-
-    // Page footer
-    const pages = doc.internal.getNumberOfPages();
-    for (let p = 1; p <= pages; p++) {
-      doc.setPage(p); doc.setFontSize(8); doc.setTextColor(150);
-      doc.text(`JF Family FinTrack  ·  Página ${p}/${pages}`,
-        W / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
-    }
-
-    // ── Step 2: Upload PDF to Supabase Storage ─────────────────────────
     btn.textContent = '⏳ Salvando PDF...';
-    const pdfBytes   = doc.output('arraybuffer');
-    const pdfBlob    = new Blob([pdfBytes], { type: 'application/pdf' });
-    const fileName   = `FinTrack_${from}_${to}_${Date.now()}.pdf`;
+    const pdfBytes    = doc.output('arraybuffer');
+    const pdfBlob     = new Blob([pdfBytes], { type: 'application/pdf' });
+    const fileName    = `FinTrack_${from}_${to}_${rptState.view}_${Date.now()}.pdf`;
     const storagePath = `reports/${fileName}`;
 
     const { error: upErr } = await sb.storage
       .from('fintrack-attachments')
       .upload(storagePath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
-
     if (upErr) throw new Error('Erro no upload: ' + upErr.message);
 
-    // Get the public URL for the uploaded file
-    const { data: urlData } = sb.storage
-      .from('fintrack-attachments')
-      .getPublicUrl(storagePath);
-
+    const { data: urlData } = sb.storage.from('fintrack-attachments').getPublicUrl(storagePath);
     const pdfUrl = urlData.publicUrl;
 
-    // ── Step 3: Send email via EmailJS with the download link ──────────
     btn.textContent = '⏳ Enviando e-mail...';
     emailjs.init(EMAILJS_CONFIG.publicKey);
 
-    const subject     = document.getElementById('emailSubject').value.trim() || `Relatório FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
-    const userMessage = document.getElementById('emailMsg').value.trim() ||
-      `Segue o relatório financeiro do período de ${fmtDate(from)} a ${fmtDate(to)}.`;
+    const subject     = document.getElementById('emailSubject').value.trim()
+      || `Relatório FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
+    const userMessage = document.getElementById('emailMsg').value.trim()
+      || `Segue o relatório financeiro do período de ${fmtDate(from)} a ${fmtDate(to)}.`;
+    const viewLabel   = { regular:'Análise por Categoria', transactions:'Lista de Transações', forecast:'Previsão' }[rptState.view] || '';
+    const filters     = _getActiveFiltersLabel();
 
-    const viewLabel = rptState.view === 'regular'       ? 'Análise por Categoria'
-                    : rptState.view === 'transactions'  ? 'Lista de Transações'
-                    : 'Previsão';
-
-    // Pass recipient under every common variable name templates might use
     const templateParams = {
-      to_email:       toAddr,
-      to:             toAddr,
-      email:          toAddr,
-      recipient:      toAddr,
-      dest_email:     toAddr,
-      reply_to:       toAddr,
-      from_name:      'J.F. Family FinTrack',
-      subject:        subject,
+      to_email: toAddr, to: toAddr, email: toAddr, recipient: toAddr,
+      dest_email: toAddr, reply_to: toAddr,
+      from_name:      'JF Family FinTrack',
+      subject,
       message:        userMessage,
       report_period:  `${fmtDate(from)} a ${fmtDate(to)}`,
       report_view:    viewLabel,
+      report_filters: filters,
       report_income:  fmt(totInc),
       report_expense: fmt(totExp),
       report_balance: fmt(bal),
@@ -666,46 +1166,37 @@ async function sendReportByEmail() {
 
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, templateParams);
-    } catch(ejErr) {
+    } catch (ejErr) {
       const errText = ejErr?.text || ejErr?.message || JSON.stringify(ejErr);
       if (/recipients|address|to email/i.test(errText)) {
         throw new Error(
-          `O campo "To Email" do template EmailJS precisa ser configurado como {{to_email}}.
-
-` +
-          `Acesse: emailjs.com → Email Templates → seu template → campo "To Email" → defina: {{to_email}}
-
-` +
-          `Erro: ${errText}`
+          `O campo "To Email" do template EmailJS precisa ser configurado como {{to_email}}.\n\n` +
+          `Acesse: emailjs.com → Email Templates → seu template → campo "To Email" → defina: {{to_email}}\n\nErro: ${errText}`
         );
       }
       throw new Error(errText);
     }
 
     status.textContent = '✓ Enviado!'; status.style.color = 'var(--green)';
-    toast('E-mail enviado com sucesso!', 'success');
+    toast('✓ E-mail enviado com sucesso!', 'success');
     setTimeout(closeEmailPopup, 1800);
 
-  } catch(e) {
+  } catch (e) {
     console.error('[Email]', e);
     const msg = e.message || e.text || 'Erro desconhecido';
-    status.textContent = '✗ Erro';
-    status.style.color = 'var(--red)';
-    // Show full actionable message in a more visible way
+    status.textContent = '✗ Erro'; status.style.color = 'var(--red)';
     toast(msg.split('\n')[0], 'error');
     if (msg.includes('To Email') || msg.includes('{{to_email}}')) {
-      // Show persistent helper message in the status area
-      const emailPopupBox = document.querySelector('.email-popup-box');
       let helperEl = document.getElementById('emailConfigHelper');
       if (!helperEl) {
         helperEl = document.createElement('div');
         helperEl.id = 'emailConfigHelper';
         helperEl.style.cssText = 'background:var(--amber-lt);border:1px solid var(--amber);border-radius:6px;padding:10px;font-size:.78rem;color:var(--text2);margin-top:8px;line-height:1.5';
-        emailPopupBox?.appendChild(helperEl);
+        document.querySelector('.email-popup-box')?.appendChild(helperEl);
       }
       helperEl.innerHTML = `⚠️ <strong>Configuração necessária no EmailJS:</strong><br>
         Acesse <a href="https://dashboard.emailjs.com/admin/templates" target="_blank" style="color:var(--accent)">emailjs.com → Email Templates</a>,
-        abra seu template, e no campo <strong>"To Email"</strong> defina: <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{{to_email}}</code>`;
+        abra seu template e no campo <strong>"To Email"</strong> defina: <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">{{to_email}}</code>`;
     }
   } finally {
     btn.disabled = false; btn.textContent = 'Enviar PDF';
