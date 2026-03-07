@@ -3,7 +3,7 @@
    - Enable notification display via reg.showNotification()
    - Provide a lightweight offline shell cache (best-effort)
 */
-const CACHE_NAME = 'fintrack-shell-v1';
+const CACHE_NAME = 'fintrack-shell-v2';
 const SHELL_FILES = [
   './',
   './index.html',
