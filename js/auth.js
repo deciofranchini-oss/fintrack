@@ -65,38 +65,16 @@ function _userAvatarFallback(role, name, size) {
 function _applyCurrentUserAvatar() {
   if (!currentUser) return;
 
-  // --- Topbar: substituir o div .topbar-user-avatar por avatar real ---
-  const topbarAvatar = document.getElementById('topbarUserAvatar');
-  if (topbarAvatar) {
-    const avatarEl = topbarAvatar.parentElement;
-    if (avatarEl) {
-      // Substituir o avatar interno
-      const newHtml = _userAvatarHtml(currentUser, 28);
-      const wrap = document.createElement('div');
-      wrap.innerHTML = newHtml;
-      topbarAvatar.replaceWith(wrap.firstChild);
-    }
-  }
+  // --- Topbar: avatar circular clicável ---
+  const topbarInner = document.getElementById('topbarUserAvatarInner');
+  if (topbarInner) topbarInner.outerHTML = _userAvatarHtml(currentUser, 32);
+  // fallback: se o elemento foi substituído, garantir que o wrap fica visível
+  const topbarBtn = document.getElementById('topbarUserBtn');
+  if (topbarBtn) topbarBtn.style.display = '';
 
-  // --- Topbar: avatar antes do logout (btn id=topbarAvatarCircle) ---
-  const logoutBtn = document.getElementById('logoutTopbarBtn');
-  if (logoutBtn && !document.getElementById('topbarAvatarCircle')) {
-    const avatarWrap = document.createElement('div');
-    avatarWrap.id = 'topbarAvatarCircle';
-    avatarWrap.style.cssText = 'display:flex;align-items:center;cursor:pointer';
-    avatarWrap.title = currentUser.name || currentUser.email;
-    avatarWrap.onclick = () => navigate('settings');
-    avatarWrap.innerHTML = _userAvatarHtml(currentUser, 30);
-    logoutBtn.before(avatarWrap);
-  } else if (document.getElementById('topbarAvatarCircle')) {
-    document.getElementById('topbarAvatarCircle').innerHTML = _userAvatarHtml(currentUser, 30);
-  }
-
-  // --- Settings: substituir ícone 👤 estático por avatar ---
-  const settingsIcon = document.getElementById('settingsUserAvatarWrap');
-  if (settingsIcon) {
-    settingsIcon.innerHTML = _userAvatarHtml(currentUser, 40);
-  }
+  // --- Settings: avatar no wrap clicável ---
+  const settingsWrap = document.getElementById('settingsUserAvatarWrap');
+  if (settingsWrap) settingsWrap.innerHTML = _userAvatarHtml(currentUser, 52);
 }
 
 // Returns a Supabase query with family_id filter applied.
@@ -559,6 +537,9 @@ function updateUserUI() {
   const nameEl  = document.getElementById('currentUserName');
   const emailEl = document.getElementById('currentUserEmail');
   if (nameEl)  nameEl.textContent  = currentUser.name || currentUser.email;
+  // Topbar user name (hidden on mobile, visible on wider screens)
+  const topbarName = document.getElementById('topbarUserName');
+  if (topbarName) topbarName.textContent = (currentUser.name || currentUser.email || '').split(' ')[0];
   if (emailEl) {
     const roleLabel =
       currentUser.role === 'owner' ? 'Owner' :
@@ -629,6 +610,232 @@ if (!(p.role==='admin' || p.role==='owner' || p.can_admin)) {
   if (auditNav) auditNav.style.display='';
 }
 
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   USER MENU DROPDOWN (topbar avatar)
+══════════════════════════════════════════════════════════════════ */
+
+function toggleUserMenu(e) {
+  e?.stopPropagation();
+  const dd = document.getElementById('userMenuDropdown');
+  if (!dd) return;
+  const isOpen = dd.style.display !== 'none';
+  if (isOpen) { closeUserMenu(); return; }
+
+  // Populate header
+  const nameEl  = document.getElementById('userMenuName');
+  const emailEl = document.getElementById('userMenuEmail');
+  const roleEl  = document.getElementById('userMenuRole');
+  const bigEl   = document.getElementById('userMenuAvatarBig');
+  if (nameEl)  nameEl.textContent  = currentUser?.name  || '';
+  if (emailEl) emailEl.textContent = currentUser?.email || '';
+  if (roleEl) {
+    const labels = { owner:'👑 Owner', admin:'🔧 Administrador', viewer:'👁 Visualizador', user:'👤 Usuário' };
+    const colors = { owner:'#92400e', admin:'#713f12', viewer:'#0369a1', user:'var(--accent)' };
+    const r = currentUser?.role || 'user';
+    roleEl.innerHTML = `<span style="font-size:.7rem;font-weight:600;color:${colors[r]||'var(--muted)'}">${labels[r]||r}</span>`;
+  }
+  if (bigEl) bigEl.innerHTML = _userAvatarHtml(currentUser, 44);
+
+  dd.style.display = '';
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', _closeUserMenuOutside), 10);
+}
+
+function _closeUserMenuOutside(e) {
+  const dd  = document.getElementById('userMenuDropdown');
+  const btn = document.getElementById('topbarUserBtn');
+  if (dd && btn && !btn.contains(e.target)) {
+    closeUserMenu();
+  }
+}
+
+function closeUserMenu() {
+  const dd = document.getElementById('userMenuDropdown');
+  if (dd) dd.style.display = 'none';
+  document.removeEventListener('click', _closeUserMenuOutside);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   MY PROFILE MODAL — avatar + senha num único lugar
+══════════════════════════════════════════════════════════════════ */
+
+function openMyProfile() {
+  closeUserMenu();
+  if (!currentUser) return;
+
+  // --- Avatar preview ---
+  const wrap = document.getElementById('myProfileAvatarWrap');
+  if (wrap) wrap.innerHTML = _userAvatarHtml(currentUser, 88);
+
+  // --- Info ---
+  const nameEl  = document.getElementById('myProfileName');
+  const emailEl = document.getElementById('myProfileEmail');
+  const roleEl  = document.getElementById('myProfileRoleBadge');
+  if (nameEl)  nameEl.textContent  = currentUser.name  || '';
+  if (emailEl) emailEl.textContent = currentUser.email || '';
+  if (roleEl) {
+    const labels = { owner:'👑 Owner', admin:'🔧 Admin', viewer:'👁 Visualizador', user:'👤 Usuário' };
+    const bgs    = { owner:'#fef3c7', admin:'#fef9c3', viewer:'#f0f9ff', user:'var(--accent-lt)' };
+    const colors = { owner:'#92400e', admin:'#713f12', viewer:'#0369a1', user:'var(--accent)' };
+    const r = currentUser.role || 'user';
+    roleEl.innerHTML = `<span style="font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;
+      background:${bgs[r]||'var(--bg2)'};color:${colors[r]||'var(--text)'}">${labels[r]||r}</span>`;
+  }
+
+  // --- Avatar state ---
+  const removeBtn = document.getElementById('myProfileRemoveAvatarBtn');
+  if (removeBtn) removeBtn.style.display = currentUser.avatar_url ? '' : 'none';
+  const fileInput = document.getElementById('myProfileAvatarFile');
+  if (fileInput)  fileInput.value = '';
+  const flagEl = document.getElementById('myProfileAvatarRemoveFlag');
+  if (flagEl) flagEl.value = '';
+
+  // --- Password fields ---
+  ['myProfilePwd1','myProfilePwd2'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const bar  = document.getElementById('myProfilePwdBar');
+  const hint = document.getElementById('myProfilePwdHint');
+  if (bar)  { bar.style.width = '0'; bar.style.background = 'var(--border)'; }
+  if (hint) hint.textContent = '';
+
+  // --- Errors ---
+  ['myProfileError','myProfileAvatarError'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+
+  openModal('myProfileModal');
+  setTimeout(() => document.getElementById('myProfilePwd1')?.focus(), 200);
+}
+
+function previewMyProfileAvatar(input) {
+  const file = input?.files?.[0];
+  const errEl = document.getElementById('myProfileAvatarError');
+  if (errEl) errEl.style.display = 'none';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    if (errEl) { errEl.textContent = 'Selecione uma imagem (JPG, PNG ou GIF).'; errEl.style.display = ''; }
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    if (errEl) { errEl.textContent = 'Imagem muito grande. Máximo: 2 MB.'; errEl.style.display = ''; }
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wrap = document.getElementById('myProfileAvatarWrap');
+    if (wrap) wrap.innerHTML = `<img src="${e.target.result}"
+      style="width:88px;height:88px;border-radius:50%;object-fit:cover;display:block">`;
+    const removeBtn = document.getElementById('myProfileRemoveAvatarBtn');
+    if (removeBtn) removeBtn.style.display = '';
+    // Clear remove flag
+    const flagEl = document.getElementById('myProfileAvatarRemoveFlag');
+    if (flagEl) flagEl.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeMyProfileAvatar() {
+  const wrap = document.getElementById('myProfileAvatarWrap');
+  if (wrap) wrap.innerHTML = _userAvatarHtml({ ...currentUser, avatar_url: null }, 88);
+  const removeBtn = document.getElementById('myProfileRemoveAvatarBtn');
+  if (removeBtn) removeBtn.style.display = 'none';
+  const fileInput = document.getElementById('myProfileAvatarFile');
+  if (fileInput) fileInput.value = '';
+  const flagEl = document.getElementById('myProfileAvatarRemoveFlag');
+  if (flagEl) flagEl.value = '1';
+}
+
+function updateMyProfilePwdStrength() {
+  const pwd  = document.getElementById('myProfilePwd1')?.value || '';
+  const bar  = document.getElementById('myProfilePwdBar');
+  const hint = document.getElementById('myProfilePwdHint');
+  if (!bar || !hint) return;
+  if (!pwd) { bar.style.width = '0'; hint.textContent = ''; return; }
+  let score = 0;
+  if (pwd.length >= 8)  score++;
+  if (pwd.length >= 12) score++;
+  if (/[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
+  const levels = [
+    { w:'15%', bg:'#ef4444', label:'Muito fraca' },
+    { w:'35%', bg:'#f97316', label:'Fraca' },
+    { w:'55%', bg:'#eab308', label:'Razoável' },
+    { w:'75%', bg:'#22c55e', label:'Boa' },
+    { w:'100%',bg:'#16a34a', label:'Forte' },
+  ];
+  const lv = levels[Math.min(score, 4)];
+  bar.style.width      = lv.w;
+  bar.style.background = lv.bg;
+  hint.style.color     = lv.bg;
+  hint.textContent     = lv.label;
+}
+
+async function saveMyProfile() {
+  const errEl   = document.getElementById('myProfileError');
+  const saveBtn = document.getElementById('myProfileSaveBtn');
+  if (errEl) errEl.style.display = 'none';
+
+  const avatarFile   = document.getElementById('myProfileAvatarFile')?.files?.[0];
+  const avatarRemove = document.getElementById('myProfileAvatarRemoveFlag')?.value === '1';
+  const pwd1 = document.getElementById('myProfilePwd1')?.value || '';
+  const pwd2 = document.getElementById('myProfilePwd2')?.value || '';
+
+  // Validations
+  if (pwd1 && pwd1.length < 8) {
+    if (errEl) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display = ''; }
+    return;
+  }
+  if (pwd1 && pwd1 !== pwd2) {
+    if (errEl) { errEl.textContent = 'As senhas não coincidem.'; errEl.style.display = ''; }
+    return;
+  }
+  if (!avatarFile && !avatarRemove && !pwd1) {
+    closeModal('myProfileModal');
+    return;
+  }
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Salvando...'; }
+
+  try {
+    // 1. Avatar
+    const { data: appRow } = await sb.from('app_users').select('id').eq('email', currentUser.email).maybeSingle();
+    if (!appRow) throw new Error('Usuário não encontrado.');
+
+    let newAvatarUrl = currentUser.avatar_url;
+    if (avatarFile) {
+      newAvatarUrl = await _uploadUserAvatar(appRow.id, avatarFile);
+    } else if (avatarRemove) {
+      newAvatarUrl = null;
+    }
+
+    if (newAvatarUrl !== currentUser.avatar_url) {
+      const { error: avErr } = await sb.from('app_users').update({ avatar_url: newAvatarUrl }).eq('id', appRow.id);
+      if (avErr) throw new Error('Erro ao salvar foto: ' + avErr.message);
+      currentUser.avatar_url = newAvatarUrl;
+      _applyCurrentUserAvatar();
+    }
+
+    // 2. Password
+    if (pwd1) {
+      const { error: pwdErr } = await sb.auth.updateUser({ password: pwd1 });
+      if (pwdErr) throw new Error('Erro ao alterar senha: ' + pwdErr.message);
+      // Sync app_users
+      const hash = await sha256(pwd1);
+      await sb.from('app_users').update({ password_hash: hash, must_change_pwd: false }).eq('id', appRow.id);
+    }
+
+    toast('✓ Perfil atualizado!', 'success');
+    closeModal('myProfileModal');
+  } catch(e) {
+    if (errEl) { errEl.textContent = 'Erro: ' + (e.message || e); errEl.style.display = ''; }
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Salvar'; }
+  }
 }
 
 // ── Logout ──
