@@ -2851,3 +2851,39 @@ html, body{
   width: 40px !important;
   height: 40px !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   USER MENU DROPDOWN & PROFILE AVATAR
+══════════════════════════════════════════════════════════════════ */
+
+/* Topbar user avatar button */
+.topbar-user {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .15s, border-color .15s;
+  flex-shrink: 0;
+}
+.topbar-user:hover { opacity: .8; border-color: var(--accent); }
+
+/* Dropdown menu item */
+.user-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px;
+  background: none; border: none; cursor: pointer;
+  font-size: .85rem; font-weight: 500; color: var(--text);
+  border-radius: 8px; text-align: left; transition: background .12s;
+}
+.user-menu-item:hover { background: var(--bg2); }
+.user-menu-item span:first-child { font-size: 1rem; flex-shrink: 0; }
+
+/* Settings avatar wrap */
+#settingsUserAvatarWrap img,
+#settingsUserAvatarWrap > div {
+  width: 100%; height: 100%;
+  border-radius: 50%; object-fit: cover;
+}
