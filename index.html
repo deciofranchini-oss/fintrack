@@ -1152,6 +1152,69 @@
         </div>
       </div>
 
+      <!-- ══ VISIBILIDADE DAS CONFIGURAÇÕES (admin only) ══ -->
+      <div class="settings-section" id="settingsVisibilitySection" style="display:none">
+        <div class="settings-group-label">🔒 Controle de Acesso — Configurações</div>
+        <div class="settings-card">
+          <div class="settings-row" style="align-items:flex-start">
+            <div class="settings-row-icon" style="background:#ede9fe">🔒</div>
+            <div class="settings-row-info" style="flex:1">
+              <div class="settings-row-label">Seções visíveis para usuários comuns</div>
+              <div class="settings-row-sub">Defina quais seções das Configurações aparecem para usuários que não são admin.</div>
+              <div id="settingsVisibilityForm" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
+              <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="saveSettingsVisibility()">💾 Salvar</button>
+                <button class="btn btn-ghost btn-sm" onclick="resetSettingsVisibility()">↺ Padrão</button>
+              </div>
+              <div id="settingsVisibilityHint" style="font-size:.75rem;color:var(--muted);margin-top:8px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ LINK DA ESCOLA (admin only) ══ -->
+      <div class="settings-section" id="schoolLinkSection" style="display:none">
+        <div class="settings-group-label">🎓 Link da Escola</div>
+        <div class="settings-card">
+          <div class="settings-row" style="align-items:flex-start">
+            <div class="settings-row-icon" style="background:#fef3c7">🎓</div>
+            <div class="settings-row-info" style="flex:1">
+              <div class="settings-row-label">Ícone de atalho para a escola</div>
+              <div class="settings-row-sub">Exibe um ícone 🎓 na barra superior com link para o sistema de gestão escolar.</div>
+              <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+                  <div style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0">
+                    <input type="checkbox" id="schoolLinkEnabled" onchange="saveSchoolLinkConfig()" style="opacity:0;width:0;height:0">
+                    <span id="schoolLinkToggle" style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:100px;transition:.3s"></span>
+                  </div>
+                  <span style="font-size:.85rem;font-weight:600">Exibir ícone na topbar</span>
+                </label>
+                <div id="schoolLinkUrlRow" style="display:flex;flex-direction:column;gap:6px">
+                  <label style="font-size:.8rem;font-weight:600;color:var(--text2)">URL do sistema da escola</label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input type="url" id="schoolLinkUrl" placeholder="https://..." 
+                      style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--surface);color:var(--text)"
+                      oninput="saveSchoolLinkConfig()">
+                    <button class="btn btn-ghost btn-sm" onclick="window.open(document.getElementById('schoolLinkUrl').value,'_blank')" title="Testar link">🔗 Testar</button>
+                  </div>
+                  <label style="font-size:.8rem;font-weight:600;color:var(--text2);margin-top:4px">Texto do tooltip</label>
+                  <input type="text" id="schoolLinkTitle" placeholder="Ex: Gerenciamento Escola"
+                    style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--surface);color:var(--text)"
+                    oninput="saveSchoolLinkConfig()">
+                  <label style="font-size:.8rem;font-weight:600;color:var(--text2);margin-top:4px">Ícone (emoji)</label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input type="text" id="schoolLinkIcon" placeholder="🎓" maxlength="4"
+                      style="width:70px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:1.1rem;background:var(--surface);color:var(--text);text-align:center"
+                      oninput="saveSchoolLinkConfig()">
+                    <span style="font-size:.76rem;color:var(--muted)">Cole um emoji ou deixe em branco para usar 🎓</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ AUTOMAÇÃO ══ -->
       <div class="settings-section">
         <div class="settings-group-label">⚙️ Automação de Programados</div>
