@@ -1734,7 +1734,7 @@ async function doResetUserPwd() {
   try {
     // 1. Buscar email e auth_id do usuário alvo
     const { data: userRow, error: fetchErr } = await sb
-      .from('app_users').select('email, auth_id').eq('id', userId).maybeSingle();
+      .from('app_users').select('email').eq('id', userId).maybeSingle();
     if (fetchErr || !userRow) throw new Error(fetchErr?.message || 'Usuário não encontrado.');
     const targetEmail = userRow.email;
 
