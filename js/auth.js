@@ -1738,19 +1738,45 @@ async function doResetUserPwd() {
     if (fetchErr || !userRow) throw new Error(fetchErr?.message || 'Usuário não encontrado.');
     const targetEmail = userRow.email;
 
-    // 2. Tentar via Admin API (sbAdmin com service_role key)
+    // 2. Tentar via Admin API usando fetch direto ao endpoint REST do Supabase
+    // O SDK JS v2 não tem getUserByEmail — usamos a Admin REST API diretamente.
     let authUpdated = false;
-    const admin = sbAdmin || initSbAdmin();
+    const serviceKey = localStorage.getItem('sb_service_key') || '';
+    const supabaseUrl = localStorage.getItem('sb_url') || window.SUPABASE_URL || '';
 
-    if (admin) {
-      // Buscar auth user diretamente pelo email — evita listUsers() que tem
-      // limitações de paginação e pode falhar com "Database error finding users"
-      const { data: userData, error: userErr } = await admin.auth.admin.getUserByEmail(targetEmail);
-      if (userErr) throw new Error('Admin API (getUserByEmail): ' + userErr.message);
-      if (!userData?.user?.id) throw new Error('Usuário não encontrado no Supabase Auth: ' + targetEmail);
+    if (serviceKey && supabaseUrl) {
+      // 2a. Buscar o auth.users.id pelo email via REST API
+      const searchResp = await fetch(
+        `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(targetEmail)}`,
+        { headers: { 'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey } }
+      );
+      if (!searchResp.ok) {
+        const errBody = await searchResp.text();
+        throw new Error('Busca de usuário falhou: ' + errBody);
+      }
+      const searchData = await searchResp.json();
+      // Resposta pode ser { users: [...] } ou um array direto
+      const usersList = Array.isArray(searchData) ? searchData : (searchData.users || []);
+      const authUser  = usersList.find(u => u.email?.toLowerCase() === targetEmail.toLowerCase());
+      if (!authUser?.id) throw new Error('Usuário não encontrado no Supabase Auth: ' + targetEmail);
 
-      const { error: updErr } = await admin.auth.admin.updateUserById(userData.user.id, { password: pwd1 });
-      if (updErr) throw new Error('Admin API (updateUserById): ' + updErr.message);
+      // 2b. Atualizar a senha via REST API
+      const updateResp = await fetch(
+        `${supabaseUrl}/auth/v1/admin/users/${authUser.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': 'Bearer ' + serviceKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ password: pwd1 })
+        }
+      );
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text();
+        throw new Error('Atualização de senha falhou: ' + errBody);
+      }
       authUpdated = true;
     }
 
