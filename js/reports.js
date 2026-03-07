@@ -79,8 +79,8 @@ async function fetchRptTransactions() {
   const catId  = document.getElementById('rptCategory')?.value  || '';
   const payId  = document.getElementById('rptPayee')?.value     || '';
 
-  let q = sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)')
+  let q = famQ(sb.from('transactions')
+    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)'))
     .gte('date',from).lte('date',to)
     .order('date',{ascending:false});
   if(accId) q = q.eq('account_id', accId);

@@ -188,7 +188,7 @@ async function renderCashflowChart(){
   });
   const incomes=[],expenses=[],balances=[];
   for(const{y,m}of months){
-    let q=sb.from('transactions').select('amount,is_transfer')
+    let q=famQ(sb.from('transactions').select('amount,is_transfer'))
       .gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
     if(accId) q=q.eq('account_id',accId);
     const{data}=await q;
@@ -206,7 +206,7 @@ async function renderCashflowChart(){
 }
 async function renderCategoryChart(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data}=await sb.from('transactions').select('amount,categories(name,color)').gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
+  const{data}=await famQ(sb.from('transactions').select('amount,categories(name,color)')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
   const catMap={};
   (data||[]).forEach(t=>{
     const n=t.categories?.name||'Outros';

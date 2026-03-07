@@ -102,8 +102,18 @@ function _applyCurrentUserAvatar() {
 // Returns a Supabase query with family_id filter applied.
 // With RLS enabled, the server will also enforce access.
 function famQ(query) {
-  if (currentUser?.family_id) return query.eq('family_id', currentUser.family_id);
-  return query;
+  // SEMPRE filtrar por family_id.
+  // Se o usuário não tem família definida E não é admin/owner, bloquear com
+  // um filtro impossível para não vazar dados de outras famílias.
+  if (currentUser?.family_id) {
+    return query.eq('family_id', currentUser.family_id);
+  }
+  // Admin/owner sem família = acesso global intencional (vê tudo)
+  if (currentUser?.role === 'admin' || currentUser?.role === 'owner') {
+    return query;
+  }
+  // Usuário sem família e sem role admin: retornar filtro impossível (sem dados)
+  return query.eq('family_id', '00000000-0000-0000-0000-000000000000');
 }
 
 // Returns the family_id to inject on inserts (null for admin without family)
