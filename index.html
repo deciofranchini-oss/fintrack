@@ -1013,9 +1013,7 @@
       <div class="settings-section" id="currentUserSection">
         <div class="settings-card">
           <div class="settings-row">
-            <div class="settings-row-icon" style="background:var(--accent-lt);overflow:hidden;padding:0;display:flex;align-items:center;justify-content:center" id="settingsUserAvatarWrap">
-              <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;font-size:1.2rem">👤</div>
-            </div>
+            <div class="settings-row-icon" style="background:var(--accent-lt)">👤</div>
             <div class="settings-row-info">
               <div class="settings-row-label" id="currentUserName">—</div>
               <div class="settings-row-sub" id="currentUserEmail">—</div>
@@ -1738,25 +1736,6 @@
           <div id="userFormArea" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px">
             <div style="font-size:.85rem;font-weight:600;margin-bottom:12px" id="userFormTitle">Novo Usuário</div>
             <input type="hidden" id="editUserId">
-            <input type="hidden" id="uAvatarRemoveFlag" value="">
-
-            <!-- Avatar upload row -->
-            <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;padding:12px;background:var(--bg2);border-radius:var(--r-sm);border:1px solid var(--border)">
-              <div id="uAvatarPreview" style="width:56px;height:56px;flex-shrink:0">
-                <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-lt);border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.4rem">👤</div>
-              </div>
-              <div style="flex:1;min-width:0">
-                <div style="font-size:.8rem;font-weight:600;color:var(--text2);margin-bottom:6px">Foto do perfil</div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-                  <label class="btn btn-ghost btn-sm" style="cursor:pointer;padding:4px 10px;font-size:.75rem">
-                    📷 Escolher foto
-                    <input type="file" id="uAvatarFile" accept="image/*" style="display:none" onchange="previewUserAvatar(this)">
-                  </label>
-                  <button type="button" class="btn btn-ghost btn-sm" id="uAvatarRemoveBtn" onclick="removeUserAvatar()" style="display:none;font-size:.75rem;color:var(--red)">✕ Remover</button>
-                  <span style="font-size:.7rem;color:var(--muted)">JPG, PNG · máx 2MB</span>
-                </div>
-              </div>
-            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div class="form-group">
                 <label>Nome</label>
