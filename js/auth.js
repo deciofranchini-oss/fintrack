@@ -646,6 +646,9 @@ function toggleUserMenu(e) {
   }
   if (bigEl) bigEl.innerHTML = _userAvatarHtml(currentUser, 44);
 
+  // ── Family switcher inside menu ──
+  _renderUserMenuFamilies();
+
   dd.style.display = '';
 
   // Close on outside click
@@ -2341,80 +2344,51 @@ async function doRecoveryPwd() {
 }
 
 
-// ── Family switcher picker ───────────────────────────────────────────────────
+// ── Family switcher — inside user menu dropdown ──────────────────────────────
 function _renderFamilySwitcher() {
-  const wrap = document.getElementById('familySwitcherWrap');
-  if (!wrap) return;
+  // Mantido para compatibilidade — a lógica real está em _renderUserMenuFamilies()
+  // chamada ao abrir o menu do usuário
+}
+
+function _renderUserMenuFamilies() {
   const families = currentUser?.families || [];
+  const section  = document.getElementById('userMenuFamilySection');
+  const list     = document.getElementById('userMenuFamilyList');
+  if (!section || !list) return;
 
-  // Hide if only 0 or 1 family
-  if (families.length <= 1) { wrap.style.display = 'none'; return; }
-  wrap.style.display = 'block';
+  // Ocultar se só tiver 0 ou 1 família
+  if (families.length <= 1) { section.style.display = 'none'; return; }
+  section.style.display = '';
 
-  // Update button label
-  const activeFam  = families.find(f => f.id === currentUser.family_id) || families[0];
-  const roleIcon   = { owner:'👑', admin:'🔧', user:'👤', viewer:'👁' }[activeFam?.role] || '👤';
-  const roleLabel  = { owner:'Owner', admin:'Admin', user:'Usuário', viewer:'Visualizador' }[activeFam?.role] || '';
-  const roleClass  = 'role-badge-' + (activeFam?.role || 'user');
+  const roleIcon  = r => ({ owner:'👑', admin:'🔧', user:'👤', viewer:'👁' }[r] || '👤');
+  const roleLabel = r => ({ owner:'Owner', admin:'Admin', user:'Usuário', viewer:'Visualizador' }[r] || r);
+  const roleBg    = r => ({ owner:'#fef3c7', admin:'#fef9c3', user:'var(--accent-lt)', viewer:'var(--bg2)' }[r] || 'var(--bg2)');
+  const roleColor = r => ({ owner:'#92400e', admin:'#b45309', user:'var(--accent)', viewer:'var(--muted)' }[r] || 'var(--muted)');
 
-  const nameEl  = document.getElementById('famSwitcherLabel');
-  const roleEl  = document.getElementById('famSwitcherRole');
-  if (nameEl)  nameEl.textContent = activeFam?.name || 'Família';
-  if (roleEl)  { roleEl.textContent = roleIcon + ' ' + roleLabel; roleEl.className = 'fam-switcher-role ' + roleClass; }
-
-  // Rebuild dropdown list
-  const list = document.getElementById('familyPickerList');
-  if (!list) return;
   list.innerHTML = families.map(f => {
-    const isActive  = f.id === currentUser.family_id;
-    const fRoleIcon = { owner:'👑', admin:'🔧', user:'👤', viewer:'👁' }[f.role] || '👤';
-    const fRoleLbl  = { owner:'Owner', admin:'Admin', user:'Usuário', viewer:'Visualizador' }[f.role] || f.role;
-    const fRoleCls  = 'role-badge-' + (f.role || 'user');
-    return `<button class="fam-picker-item${isActive ? ' active' : ''}"
-                    onclick="_pickFamily('${f.id}')">
-      <div class="fam-picker-item-icon">${isActive ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' : '🏠'}</div>
-      <div class="fam-picker-item-body">
-        <div class="fam-picker-item-name">${esc(f.name)}</div>
-        <div class="fam-picker-item-meta">
-          <span class="fam-switcher-role ${fRoleCls}" style="font-size:.64rem">${fRoleIcon} ${fRoleLbl}</span>
+    const isActive = f.id === currentUser.family_id;
+    return `
+      <button class="um-family-item${isActive ? ' um-family-item--active' : ''}"
+              onclick="_pickFamilyFromMenu('${f.id}')">
+        <div class="um-family-icon">
+          ${isActive
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="var(--accent)" stroke="none"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`
+          }
         </div>
-      </div>
-      <svg class="fam-picker-item-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-    </button>`;
+        <div class="um-family-body">
+          <div class="um-family-name">${esc(f.name)}</div>
+          <div class="um-family-role" style="background:${roleBg(f.role)};color:${roleColor(f.role)}">
+            ${roleIcon(f.role)} ${roleLabel(f.role)}
+          </div>
+        </div>
+        ${isActive ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+      </button>`;
   }).join('');
 }
 
-function toggleFamilyPicker(e) {
-  e?.stopPropagation();
-  const btn      = document.getElementById('familySwitcherBtn');
-  const dropdown = document.getElementById('familyPickerDropdown');
-  if (!dropdown) return;
-  const isOpen = dropdown.style.display !== 'none';
-  if (isOpen) {
-    _closeFamilyPicker();
-  } else {
-    dropdown.style.display = 'block';
-    btn?.classList.add('open');
-    // Close on outside click
-    setTimeout(() => document.addEventListener('click', _closeFamilyPickerOutside), 0);
-  }
-}
-
-function _closeFamilyPickerOutside(e) {
-  const wrap = document.getElementById('familySwitcherWrap');
-  if (!wrap?.contains(e.target)) _closeFamilyPicker();
-}
-
-function _closeFamilyPicker() {
-  const dropdown = document.getElementById('familyPickerDropdown');
-  const btn      = document.getElementById('familySwitcherBtn');
-  if (dropdown) dropdown.style.display = 'none';
-  btn?.classList.remove('open');
-  document.removeEventListener('click', _closeFamilyPickerOutside);
-}
-
-async function _pickFamily(familyId) {
-  _closeFamilyPicker();
+async function _pickFamilyFromMenu(familyId) {
+  closeUserMenu();
   await switchFamily(familyId);
 }
 
@@ -2423,13 +2397,7 @@ async function switchFamily(familyId) {
   const fam = (currentUser.families || []).find(f => f.id === familyId);
   if (!fam) return;
 
-  // Loading state on picker button
-  const btn     = document.getElementById('familySwitcherBtn');
-  const nameEl  = document.getElementById('famSwitcherLabel');
-  const roleEl  = document.getElementById('famSwitcherRole');
-  if (btn)    { btn.disabled = true; btn.style.opacity = '.55'; }
-  if (nameEl) nameEl.textContent = 'Carregando…';
-  if (roleEl) roleEl.textContent = '';
+  // (loading state handled by menu closing on click)
 
   currentUser.family_id = familyId;
   // Atualiza role para o perfil do usuário NESSA família
@@ -2455,7 +2423,7 @@ async function switchFamily(familyId) {
     populateSelects();
     navigate(state.currentPage || 'dashboard');
   } finally {
-    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    // nothing to restore
   }
 
   const roleIcon = { owner:'👑', admin:'🔧', user:'👤', viewer:'👁' }[currentUser.role] || '👤';
