@@ -1531,6 +1531,7 @@ async function doResetUserPwd() {
   const errEl    = document.getElementById('resetPwdError');
   const btn      = document.getElementById('resetPwdBtn');
   errEl.style.display = 'none';
+
   if (pwd1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display = ''; return; }
   if (pwd1 !== pwd2)   { errEl.textContent = 'As senhas não coincidem.';                  errEl.style.display = ''; return; }
 
@@ -1540,24 +1541,55 @@ async function doResetUserPwd() {
     const { data: userRow, error: fetchErr } = await sb
       .from('app_users').select('email').eq('id', userId).maybeSingle();
     if (fetchErr || !userRow) throw new Error(fetchErr?.message || 'Usuário não encontrado.');
+    const targetEmail = userRow.email;
 
-    // 2. Atualizar Supabase Auth via RPC SECURITY DEFINER
+    // 2. Tentar RPC admin_set_user_password (atualiza auth.users diretamente)
+    let authUpdated = false;
     const { data: rpcResult, error: rpcErr } = await sb.rpc('admin_set_user_password', {
-      p_user_email:   userRow.email,
+      p_user_email:   targetEmail,
       p_new_password: pwd1,
     });
-    if (rpcErr) throw new Error('Erro Auth: ' + rpcErr.message);
-    if (rpcResult?.error) throw new Error(rpcResult.error);
 
-    // 3. Sincronizar hash + marcar must_change_pwd no app_users
+    if (!rpcErr && rpcResult?.success === true) {
+      // RPC funcionou — senha atualizada no Supabase Auth
+      authUpdated = true;
+    } else {
+      // RPC não disponível ou retornou erro — logar aviso, continuar com fallback
+      const rpcErrMsg = rpcErr?.message || rpcResult?.error || 'RPC indisponível';
+      console.warn('[resetPwd] RPC admin_set_user_password:', rpcErrMsg);
+    }
+
+    // 3. Sempre sincronizar app_users (hash + must_change_pwd)
     const hash = await sha256(pwd1);
     const { error: dbErr } = await sb
       .from('app_users')
-      .update({ password_hash: hash, must_change_pwd: true })
+      .update({ password_hash: hash, must_change_pwd: !authUpdated })
       .eq('id', userId);
     if (dbErr) console.warn('[resetPwd] app_users sync:', dbErr.message);
 
-    toast(`✓ Senha de ${userName} redefinida. O usuário deve trocar no próximo login.`, 'success');
+    if (authUpdated) {
+      // Senha definida diretamente — usuário pode logar agora com a nova senha
+      // must_change_pwd=false: admin definiu a senha, não precisa trocar
+      await sb.from('app_users')
+        .update({ must_change_pwd: false })
+        .eq('id', userId);
+      toast(`✓ Senha de ${userName} redefinida com sucesso! Já pode fazer login com a nova senha.`, 'success');
+    } else {
+      // Fallback: enviar link de redefinição por email
+      // O usuário receberá um link para definir a própria senha
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error: resetErr } = await sb.auth.resetPasswordForEmail(targetEmail, { redirectTo });
+      if (resetErr) {
+        // Se nem o email funcionou, mostrar instrução manual
+        errEl.innerHTML = `⚠️ Não foi possível atualizar a senha diretamente.<br><br>
+          <strong>Para resolver:</strong> execute <code>migration_admin_set_password.sql</code> no SQL Editor do Supabase e tente novamente.<br><br>
+          <span style="font-size:.78rem;color:var(--muted)">Erro técnico: ${rpcErrMsg}</span>`;
+        errEl.style.display = '';
+        return;
+      }
+      toast(`📧 Link de redefinição enviado para ${targetEmail}. O usuário deve verificar o e-mail.`, 'info');
+    }
+
     closeModal('resetPwdModal');
     await loadUsersList();
   } catch(e) {
