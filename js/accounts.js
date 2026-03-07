@@ -273,14 +273,247 @@ async function saveAccount(){
   if(state.currentPage==='dashboard')loadDashboard();
 }
 
-async function deleteAccount(id){
-  if(!confirm('Excluir esta conta?'))return;
-  const{error}=await sb.from('accounts').update({active:false}).eq('id',id);
-  if(error){toast(error.message,'error');return;}
-  toast('Conta removida','success');
-  await loadAccounts();
-  populateSelects();
-  renderAccounts(_accountsViewMode);
+/* ════════════════════════════════════════════════════
+   DELETE ACCOUNT — modal flow
+════════════════════════════════════════════════════ */
+let _delAccId = null; // account being deleted
+
+async function deleteAccount(id) {
+  const acc = state.accounts.find(a => a.id === id);
+  if (!acc) return;
+  _delAccId = id;
+
+  // Populate summary
+  document.getElementById('delAccIcon').innerHTML =
+    typeof renderIconEl === 'function'
+      ? renderIconEl(acc.icon, acc.color, 28)
+      : `<span style="font-size:1.3rem">${acc.icon || '🏦'}</span>`;
+  document.getElementById('delAccName').textContent = acc.name;
+  document.getElementById('delAccMeta').textContent =
+    (accountTypeLabel ? accountTypeLabel(acc.type) : acc.type) + ' · ' + (acc.currency || 'BRL');
+  const balEl = document.getElementById('delAccBalance');
+  balEl.textContent = fmt(acc.balance, acc.currency);
+  balEl.style.color = acc.balance < 0 ? 'var(--red)' : 'var(--accent)';
+
+  // Count transactions + scheduled
+  const [{ count: txCount }, { count: scCount }] = await Promise.all([
+    famQ(sb.from('transactions').select('id', { count: 'exact', head: true })).eq('account_id', id),
+    famQ(sb.from('scheduled_transactions').select('id', { count: 'exact', head: true })).eq('account_id', id),
+  ]);
+  const total = (txCount || 0) + (scCount || 0);
+
+  const warnEl = document.getElementById('delAccWarning');
+  const warnTx = document.getElementById('delAccWarningText');
+  if (total > 0) {
+    warnTx.textContent = ` Esta conta possui ${txCount || 0} transação(ões) e ${scCount || 0} transação(ões) programada(s).`;
+    warnEl.style.display = '';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // Populate target account select (other active accounts)
+  const sel = document.getElementById('delAccTargetSelect');
+  sel.innerHTML = '<option value="">— Selecione a conta —</option>' +
+    state.accounts
+      .filter(a => a.id !== id && a.active !== false)
+      .map(a => `<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`)
+      .join('');
+
+  // Reset options
+  document.querySelectorAll('input[name="delAccAction"]').forEach(r => r.checked = false);
+  ['delAccTransferTarget','delAccNewAccountForm','delAccConfirmWrap'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('delAccNewName').value = '';
+  document.getElementById('delAccConfirmInput').value = '';
+  document.getElementById('delAccError').style.display = 'none';
+  document.getElementById('delAccConfirmBtn').disabled = true;
+
+  openModal('deleteAccountModal');
+}
+
+function onDelAccOptionChange() {
+  const val = document.querySelector('input[name="delAccAction"]:checked')?.value;
+  document.getElementById('delAccTransferTarget').style.display  = val === 'transfer'    ? '' : 'none';
+  document.getElementById('delAccNewAccountForm').style.display  = val === 'new_account' ? '' : 'none';
+  document.getElementById('delAccConfirmWrap').style.display     = val === 'delete_all'  ? '' : 'none';
+  // Enable button for transfer/new, wait for confirm text for delete_all
+  const btn = document.getElementById('delAccConfirmBtn');
+  if (val === 'transfer' || val === 'new_account') btn.disabled = false;
+  else if (val === 'delete_all') btn.disabled = true;
+  else btn.disabled = true;
+}
+
+function onDelAccConfirmType() {
+  const val = document.getElementById('delAccConfirmInput').value.trim().toUpperCase();
+  document.getElementById('delAccConfirmBtn').disabled = val !== 'EXCLUIR';
+}
+
+async function confirmDeleteAccount() {
+  const action  = document.querySelector('input[name="delAccAction"]:checked')?.value;
+  const errEl   = document.getElementById('delAccError');
+  const btn     = document.getElementById('delAccConfirmBtn');
+  errEl.style.display = 'none';
+
+  if (!action) {
+    errEl.textContent = 'Selecione uma opção antes de continuar.';
+    errEl.style.display = '';
+    return;
+  }
+  if (!_delAccId) return;
+
+  const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = ''; };
+  btn.disabled = true;
+  btn.textContent = '⏳ Processando...';
+
+  try {
+    let targetAccountId = null;
+
+    // ── Option A: Transfer to existing account ──────────────────────
+    if (action === 'transfer') {
+      targetAccountId = document.getElementById('delAccTargetSelect').value;
+      if (!targetAccountId) { showErr('Selecione a conta destino.'); return; }
+    }
+
+    // ── Option B: Create new account ────────────────────────────────
+    if (action === 'new_account') {
+      const newName = document.getElementById('delAccNewName').value.trim();
+      const newType = document.getElementById('delAccNewType').value;
+      if (!newName) { showErr('Informe o nome da nova conta.'); return; }
+
+      const srcAcc = state.accounts.find(a => a.id === _delAccId);
+      const { data: newAcc, error: cErr } = await sb.from('accounts').insert({
+        name:            newName,
+        type:            newType,
+        currency:        srcAcc?.currency || 'BRL',
+        color:           srcAcc?.color    || '#6b7280',
+        icon:            srcAcc?.icon     || null,
+        initial_balance: 0,
+        active:          true,
+        family_id:       famId(),
+      }).select().single();
+      if (cErr) throw new Error('Erro ao criar conta: ' + cErr.message);
+      targetAccountId = newAcc.id;
+      toast(`✓ Conta "${newName}" criada`, 'success');
+    }
+
+    // ── Migrate / delete records ─────────────────────────────────────
+    if (action === 'transfer' || action === 'new_account') {
+
+      // 1. Move transactions (including their linked transfer pairs)
+      const { data: txs, error: txErr } = await famQ(
+        sb.from('transactions').select('id, linked_transfer_id, is_transfer')
+      ).eq('account_id', _delAccId);
+      if (txErr) throw new Error('Erro ao buscar transações: ' + txErr.message);
+
+      if (txs?.length) {
+        const { error: mvErr } = await sb.from('transactions')
+          .update({ account_id: targetAccountId })
+          .eq('account_id', _delAccId);
+        if (mvErr) throw new Error('Erro ao mover transações: ' + mvErr.message);
+      }
+
+      // 2. Move scheduled_transactions (both account_id and transfer_to_account_id)
+      const { error: scErr1 } = await famQ(
+        sb.from('scheduled_transactions').update({ account_id: targetAccountId })
+      ).eq('account_id', _delAccId);
+      if (scErr1) throw new Error('Erro ao mover programadas: ' + scErr1.message);
+
+      // Also update transfer_to_account_id references
+      const { error: scErr2 } = await famQ(
+        sb.from('scheduled_transactions').update({ transfer_to_account_id: targetAccountId })
+      ).eq('transfer_to_account_id', _delAccId);
+      if (scErr2) throw new Error('Erro ao mover destinos de transferência: ' + scErr2.message);
+
+      toast(`✓ Registros transferidos para a conta destino`, 'success');
+
+    } else if (action === 'delete_all') {
+
+      // 1. Delete scheduled_occurrences for scheduled_transactions of this account
+      const { data: scs } = await famQ(
+        sb.from('scheduled_transactions').select('id')
+      ).eq('account_id', _delAccId);
+      const scIds = (scs || []).map(s => s.id);
+
+      if (scIds.length) {
+        // Delete occurrences first (FK constraint)
+        for (let i = 0; i < scIds.length; i += 100) {
+          await sb.from('scheduled_occurrences')
+            .delete().in('scheduled_id', scIds.slice(i, i + 100));
+        }
+        // Delete scheduled_transactions
+        const { error: scDelErr } = await famQ(
+          sb.from('scheduled_transactions').delete()
+        ).eq('account_id', _delAccId);
+        if (scDelErr) throw new Error('Erro ao excluir programadas: ' + scDelErr.message);
+      }
+
+      // 2. Delete linked transfer pair transactions first
+      const { data: txsToDelete } = await famQ(
+        sb.from('transactions').select('id, linked_transfer_id')
+      ).eq('account_id', _delAccId);
+
+      const linkedIds = (txsToDelete || [])
+        .map(t => t.linked_transfer_id).filter(Boolean);
+
+      if (linkedIds.length) {
+        // Detach occurrences referencing linked transactions
+        for (let i = 0; i < linkedIds.length; i += 100) {
+          await sb.from('scheduled_occurrences')
+            .update({ transaction_id: null })
+            .in('transaction_id', linkedIds.slice(i, i + 100));
+        }
+        // Delete the paired transfer transactions
+        for (let i = 0; i < linkedIds.length; i += 100) {
+          await sb.from('transactions')
+            .delete().in('id', linkedIds.slice(i, i + 100));
+        }
+      }
+
+      // 3. Delete attachments for transactions of this account
+      const txIds = (txsToDelete || []).map(t => t.id);
+      if (txIds.length) {
+        for (let i = 0; i < txIds.length; i += 100) {
+          await sb.from('attachments')
+            .delete().in('transaction_id', txIds.slice(i, i + 100));
+        }
+      }
+
+      // 4. Delete all transactions of this account
+      const { error: txDelErr } = await famQ(
+        sb.from('transactions').delete()
+      ).eq('account_id', _delAccId);
+      if (txDelErr) throw new Error('Erro ao excluir transações: ' + txDelErr.message);
+
+      // 5. Also delete scheduled_transactions where this account is the transfer destination
+      await famQ(
+        sb.from('scheduled_transactions').delete()
+      ).eq('transfer_to_account_id', _delAccId);
+
+      toast('✓ Todos os registros excluídos', 'success');
+    }
+
+    // ── Finally: deactivate the account ─────────────────────────────
+    const { error: deactErr } = await sb.from('accounts')
+      .update({ active: false }).eq('id', _delAccId);
+    if (deactErr) throw new Error('Erro ao desativar conta: ' + deactErr.message);
+
+    closeModal('deleteAccountModal');
+    toast('✓ Conta excluída com sucesso', 'success');
+    _delAccId = null;
+
+    await loadAccounts();
+    populateSelects();
+    renderAccounts(_accountsViewMode);
+    if (state.currentPage === 'transactions') loadTransactions();
+
+  } catch (e) {
+    showErr('Erro: ' + (e.message || e));
+    console.error('[deleteAccount]', e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Confirmar Exclusão';
+  }
 }
 
 // ── Account Groups ────────────────────────────────────────
