@@ -2,24 +2,10 @@ async function loadPayees(){const{data,error}=await famQ(sb.from('payees').selec
 function payeeTypeBadge(t){const m={beneficiario:'badge-blue',fonte_pagadora:'badge-green',ambos:'badge-amber'};const l={beneficiario:'Beneficiário',fonte_pagadora:'Fonte Pagadora',ambos:'Ambos'};return`<span class="badge ${m[t]||'badge-muted'}">${l[t]||t}</span>`;}
 
 function payeeRow(p) {
-  const initials = p.name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-  return `<tr class="payee-row">
-    <td>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="payee-row-avatar">${initials}</div>
-        <div>
-          <div style="font-weight:600;font-size:.875rem">${esc(p.name)}</div>
-          ${p.notes?`<div style="font-size:.72rem;color:var(--muted);margin-top:1px">${esc(p.notes)}</div>`:''}
-        </div>
-      </div>
-    </td>
+  return `<tr>
+    <td><strong>${esc(p.name)}</strong>${p.notes?`<div style="font-size:.72rem;color:var(--muted);margin-top:1px">${esc(p.notes)}</div>`:''}</td>
     <td class="text-muted" style="font-size:.82rem">${p.categories?.name||'—'}</td>
-    <td>
-      <div style="display:flex;gap:5px;justify-content:flex-end">
-        <button class="btn-icon" onclick="openPayeeModal('${p.id}')" title="Editar">✏️</button>
-        <button class="btn-icon" onclick="deletePayee('${p.id}')" title="Excluir">🗑️</button>
-      </div>
-    </td>
+    <td><div style="display:flex;gap:5px"><button class="btn-icon" onclick="openPayeeModal('${p.id}')">✏️</button><button class="btn-icon" onclick="deletePayee('${p.id}')">🗑️</button></div></td>
   </tr>`;
 }
 
@@ -41,14 +27,14 @@ function renderPayees(filter='', typeFilter='') {
     const all = typeFilter ? [] : PAYEE_GROUP_DEF.map(g => {
       const cnt = ps.filter(p => p.type === g.key).length;
       if(!cnt) return '';
-      return `<div class="payee-stat-chip" onclick="scrollPayeeGroup('${g.key}')">
+      return `<div class="payee-summary-chip" onclick="scrollPayeeGroup('${g.key}')" style="border-left:3px solid ${g.color}">
         <span>${g.icon}</span>
-        <span class="stat-val">${cnt}</span>
-        <span>${g.label}</span>
+        <span style="font-weight:600;color:var(--text)">${g.label}</span>
+        <span class="badge" style="background:${g.colorLt};color:${g.color};border:1px solid ${g.color}30">${cnt}</span>
       </div>`;
     });
     bar.innerHTML = all.join('');
-    bar.style.display = ps.length ? 'flex' : 'none';
+    bar.style.display = ps.length && !typeFilter ? 'flex' : 'none';
   }
 
   const container = document.getElementById('payeeGroups');
