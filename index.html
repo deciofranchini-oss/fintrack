@@ -323,44 +323,70 @@
 
     <!-- TRANSACTIONS -->
     <div class="page" id="page-transactions">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <button class="btn btn-ghost btn-sm" onclick="openTxClipboardImport()">📋 Importar do Clipboard</button>
-        <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
-      </div>
-      <div class="filters">
-        <div class="search-wrap">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="text" id="txSearch" placeholder="Buscar transações..." oninput="filterTransactions()">
+      <!-- Header row: title + actions -->
+      <div class="tx-page-header">
+        <div class="tx-page-title-area">
+          <span id="txCount" class="tx-page-count">Transações</span>
+          <div class="tx-page-totals">
+            <span id="txTotalIncome"  class="badge badge-green"></span>
+            <span id="txTotalExpense" class="badge badge-red"></span>
+          </div>
         </div>
-        <select id="txMonth" onchange="filterTransactions()" style="max-width:175px"></select>
-        <select id="txAccount" onchange="filterTransactions()" style="max-width:170px"><option value="">Todas as contas</option></select>
-        <select id="txType" onchange="filterTransactions()" style="max-width:140px">
-          <option value="">Todos os tipos</option><option value="income">Receitas</option><option value="expense">Despesas</option><option value="transfer">Transferências</option><option value="card_payment">💳 Pgto. Cartão</option>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" onclick="openTxClipboardImport()">📋 Clipboard</button>
+          <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova</button>
+        </div>
+      </div>
+
+      <!-- Filter bar: single dense row on desktop -->
+      <div class="tx-filter-bar">
+        <div class="search-wrap tx-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="txSearch" placeholder="Buscar..." oninput="filterTransactions()">
+        </div>
+        <select id="txMonth"        onchange="filterTransactions()" class="tx-filter-select"></select>
+        <select id="txAccount"      onchange="filterTransactions()" class="tx-filter-select"><option value="">Todas as contas</option></select>
+        <select id="txType"         onchange="filterTransactions()" class="tx-filter-select">
+          <option value="">Todos os tipos</option>
+          <option value="income">💰 Receitas</option>
+          <option value="expense">💸 Despesas</option>
+          <option value="transfer">🔄 Transferências</option>
+          <option value="card_payment">💳 Pgto. Cartão</option>
         </select>
-        <select id="txStatusFilter" onchange="filterTransactions()" style="max-width:160px">
+        <select id="txStatusFilter" onchange="filterTransactions()" class="tx-filter-select">
           <option value="">Todos os status</option>
           <option value="pending">⏳ Pendentes</option>
           <option value="confirmed">✅ Confirmadas</option>
         </select>
-        <div class="view-toggle">
-          <button class="view-btn active" id="viewBtnFlat" onclick="setTxView('flat')" title="Lista simples">☰ Lista</button>
-          <button class="view-btn" id="viewBtnGroup" onclick="setTxView('group')" title="Agrupado por conta">⊞ Por Conta</button>
+        <div class="view-toggle tx-view-toggle">
+          <button class="view-btn active" id="viewBtnFlat"  onclick="setTxView('flat')"  title="Lista">☰</button>
+          <button class="view-btn"        id="viewBtnGroup" onclick="setTxView('group')" title="Por conta">⊞</button>
         </div>
       </div>
+
       <div id="txSummaryBar" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
-      <div class="card" id="txFlatCard">
-        <div class="card-header">
-          <span class="card-title" id="txCount">Transações</span>
-          <div style="display:flex;gap:5px"><span id="txTotalIncome" class="badge badge-green"></span><span id="txTotalExpense" class="badge badge-red"></span></div>
-        </div>
+
+      <!-- Flat table card -->
+      <div class="card tx-table-card" id="txFlatCard">
         <div class="table-wrap">
-          <table>
-            <thead><tr><th onclick="sortTx('date')">Data ⇅</th><th>Conta</th><th>Descrição</th><th>Beneficiário</th><th>Categoria</th><th onclick="sortTx('amount')">Valor ⇅</th><th style="width:60px"></th></tr></thead>
-            <tbody id="txBody"><tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Carregando...</td></tr></tbody>
+          <table class="tx-table">
+            <thead><tr>
+              <th class="tx-th-date"   onclick="sortTx('date')">Data ⇅</th>
+              <th class="tx-th-acct">Conta</th>
+              <th class="tx-th-desc">Descrição</th>
+              <th class="tx-th-pay">Beneficiário</th>
+              <th class="tx-th-cat">Categoria</th>
+              <th class="tx-th-amt" onclick="sortTx('amount')">Valor ⇅</th>
+              <th class="tx-th-act"></th>
+            </tr></thead>
+            <tbody id="txBody">
+              <tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Carregando...</td></tr>
+            </tbody>
           </table>
         </div>
-        <div id="txPagination" style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-top:1px solid var(--border);font-size:.78rem;color:var(--muted)"></div>
+        <div id="txPagination" class="tx-pagination"></div>
       </div>
+
       <div id="txGroupContainer" style="display:none"></div>
     </div>
 
