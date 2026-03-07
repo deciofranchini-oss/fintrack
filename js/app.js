@@ -291,7 +291,7 @@ function navigate(page){
   else if(page==='reports'){populateReportFilters();loadCurrentReport();}
   else if(page==='budgets')initBudgetsPage();
   else if(page==='categories')initCategoriesPage();
-  else if(page==='payees')renderPayees();
+  else if(page==='payees'){_loadPayeeTxCounts().then(()=>renderPayees());}
   else if(page==='scheduled')loadScheduled();
   else if(page==='import')initImportPage();
   else if(page==='settings')loadSettings();

@@ -1,4 +1,18 @@
 async function loadPayees(){const{data,error}=await famQ(sb.from('payees').select('*, categories(name)')).order('name');if(error){toast(error.message,'error');return;}state.payees=data||[];}
+
+// ── Contagem de transações por payee ──────────────────────────────────────
+let _payeeTxCounts = {};
+
+async function _loadPayeeTxCounts() {
+  const { data } = await famQ(
+    sb.from('transactions').select('payee_id')
+  ).not('payee_id', 'is', null);
+  _payeeTxCounts = {};
+  (data || []).forEach(t => {
+    _payeeTxCounts[t.payee_id] = (_payeeTxCounts[t.payee_id] || 0) + 1;
+  });
+}
+
 function payeeTypeBadge(t){const m={beneficiario:'badge-blue',fonte_pagadora:'badge-green',ambos:'badge-amber'};const l={beneficiario:'Beneficiário',fonte_pagadora:'Fonte Pagadora',ambos:'Ambos'};return`<span class="badge ${m[t]||'badge-muted'}">${l[t]||t}</span>`;}
 
 function payeeRow(p) {
@@ -6,6 +20,10 @@ function payeeRow(p) {
   const colors = ['#2a6049','#1e5ba8','#b45309','#6d28d9','#0e7490','#be185d','#047857','#7c3aed'];
   const colorIdx = (p.name||'').charCodeAt(0) % colors.length;
   const avatarColor = colors[colorIdx];
+  const txCount = _payeeTxCounts[p.id] || 0;
+  const txBadge = txCount > 0
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:.72rem;font-weight:600;color:var(--accent);background:var(--accent-lt);border:1px solid var(--accent)30;border-radius:20px;padding:1px 7px">${txCount} tx</span>`
+    : `<span style="font-size:.72rem;color:var(--muted)">—</span>`;
   return `<tr class="payee-row">
     <td>
       <div style="display:flex;align-items:center;gap:10px">
@@ -17,6 +35,7 @@ function payeeRow(p) {
       </div>
     </td>
     <td style="font-size:.82rem;color:var(--text2)">${p.categories?.name||'<span style="color:var(--muted)">—</span>'}</td>
+    <td style="text-align:center">${txBadge}</td>
     <td>
       <div style="display:flex;gap:5px;justify-content:flex-end">
         <button class="btn-icon" onclick="openPayeeModal('${p.id}')" title="Editar">✏️</button>
@@ -81,7 +100,7 @@ function renderPayees(filter='', typeFilter='') {
       <div class="payee-group-body${expanded?'':' collapsed'}" id="payeeGroupBody-${g.key}">
         <div class="table-wrap" style="margin:0">
           <table style="border-radius:0">
-            <thead><tr><th>Nome</th><th>Categoria Padrão</th><th style="width:70px"></th></tr></thead>
+            <thead><tr><th>Nome</th><th>Categoria Padrão</th><th style="width:80px;text-align:center">Transações</th><th style="width:70px"></th></tr></thead>
             <tbody>${g.items.map(p=>payeeRow(p)).join('')}</tbody>
           </table>
         </div>
@@ -121,7 +140,120 @@ async function savePayee(){
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('payees').update(data).eq('id',id));}else{({error:err}=await sb.from('payees').insert(data));}
   if(err){toast(err.message,'error');return;}toast('Salvo!','success');closeModal('payeeModal');await loadPayees();populateSelects();renderPayees();
 }
-async function deletePayee(id){if(!confirm('Excluir?'))return;const{error}=await sb.from('payees').delete().eq('id',id);if(error){toast(error.message,'error');return;}toast('Removido','success');await loadPayees();renderPayees();}
+async function deletePayee(id) {
+  const payee = state.payees.find(p => p.id === id);
+  if (!payee) return;
+
+  const txCount = _payeeTxCounts[id] || 0;
+
+  // Contar transações programadas vinculadas
+  const { count: schedCount } = await famQ(
+    sb.from('scheduled_transactions').select('id', { count: 'exact', head: true })
+  ).eq('payee_id', id);
+
+  const totalLinked = txCount + (schedCount || 0);
+
+  if (totalLinked > 0) {
+    _openPayeeReassignModal(payee, txCount, schedCount || 0);
+    return;
+  }
+
+  if (!confirm(`Excluir "${payee.name}"?`)) return;
+  await _doDeletePayee(id);
+}
+
+function _openPayeeReassignModal(payee, txCount, schedCount) {
+  document.getElementById('payeeReassignTitle').textContent = `Excluir: ${payee.name}`;
+  document.getElementById('payeeReassignDeleteId').value = payee.id;
+
+  // Resumo
+  const parts = [];
+  if (txCount  > 0) parts.push(`<strong>${txCount}</strong> transação(ões)`);
+  if (schedCount > 0) parts.push(`<strong>${schedCount}</strong> transação(ões) programada(s)`);
+  document.getElementById('payeeReassignSummary').innerHTML =
+    `⚠️ Este beneficiário possui ${parts.join(' e ')} vinculado(s). ` +
+    `Selecione um beneficiário destino ou crie um novo antes de excluir.`;
+
+  // Popular select — todos os payees exceto o que está sendo deletado
+  const options = state.payees
+    .filter(p => p.id !== payee.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const sel = document.getElementById('payeeReassignTarget');
+  sel.innerHTML = '<option value="">— Selecionar beneficiário destino —</option>' +
+    options.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  // Reset create-new fields
+  document.getElementById('payeeReassignNewArea').style.display = 'none';
+  document.getElementById('payeeReassignNewName').value = '';
+  document.getElementById('payeeReassignUseNew').checked = false;
+  sel.disabled = false;
+
+  openModal('payeeReassignModal');
+}
+
+function togglePayeeReassignNew(checked) {
+  document.getElementById('payeeReassignNewArea').style.display = checked ? '' : 'none';
+  document.getElementById('payeeReassignTarget').disabled = checked;
+  if (checked) setTimeout(() => document.getElementById('payeeReassignNewName').focus(), 100);
+}
+
+async function confirmPayeeReassign() {
+  const fromId   = document.getElementById('payeeReassignDeleteId').value;
+  const useNew   = document.getElementById('payeeReassignUseNew').checked;
+  const targetId = document.getElementById('payeeReassignTarget').value;
+  const newName  = document.getElementById('payeeReassignNewName').value.trim();
+
+  const btn = document.getElementById('payeeReassignConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Transferindo...'; }
+
+  try {
+    let toId = targetId;
+
+    if (useNew) {
+      if (!newName) { toast('Informe o nome do novo beneficiário', 'error'); return; }
+      const { data: created, error: createErr } = await sb.from('payees')
+        .insert({ name: newName, type: 'beneficiario', family_id: famId() })
+        .select().single();
+      if (createErr) throw new Error('Erro ao criar beneficiário: ' + createErr.message);
+      toId = created.id;
+    } else {
+      if (!toId) { toast('Selecione o beneficiário destino', 'error'); return; }
+    }
+
+    // 1. Reatribuir transações
+    const { error: e1 } = await sb.from('transactions')
+      .update({ payee_id: toId })
+      .eq('payee_id', fromId)
+      .eq('family_id', famId());
+    if (e1) throw new Error('Erro ao atualizar transações: ' + e1.message);
+
+    // 2. Reatribuir transações programadas
+    await sb.from('scheduled_transactions')
+      .update({ payee_id: toId })
+      .eq('payee_id', fromId)
+      .eq('family_id', famId());
+
+    // 3. Excluir
+    await _doDeletePayee(fromId);
+    closeModal('payeeReassignModal');
+    toast('Beneficiário excluído e registros transferidos!', 'success');
+
+  } catch(err) {
+    toast(err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Transferir e Excluir'; }
+  }
+}
+
+async function _doDeletePayee(id) {
+  const { error } = await sb.from('payees').delete().eq('id', id);
+  if (error) { toast(error.message, 'error'); return; }
+  toast('Beneficiário excluído', 'success');
+  await loadPayees();
+  await _loadPayeeTxCounts();
+  renderPayees();
+}
 
 /* ─── Payee Clipboard Import ─── */
 let _payeeClipboardItems = []; // { name, exists, selected }
