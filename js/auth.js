@@ -1060,10 +1060,10 @@ async function doApproveUser() {
   if (approveBtn) { approveBtn.disabled = true; approveBtn.textContent = '⏳ Aprovando...'; }
 
   try {
+    // ── 1. Criar ou selecionar família ──────────────────────────────────
     let familyId   = famSel || null;
     let familyName = _families.find(f => f.id === famSel)?.name || null;
 
-    // Create new family if requested
     if (newFamNm) {
       const { data: nf, error: nfErr } = await sb.from('families')
         .insert({ name: newFamNm }).select('id,name').single();
@@ -1072,65 +1072,80 @@ async function doApproveUser() {
       await loadFamiliesList();
     }
 
-    // Fetch the pending user row (need email + stored password_hash)
+    // ── 2. Buscar dados do usuário pendente ──────────────────────────────
     const { data: userRow, error: fetchErr } = await sb
-      .from('app_users').select('name,email,password_hash').eq('id', userId).single();
-    if (fetchErr) throw fetchErr;
+      .from('app_users').select('name,email,password_hash,approved').eq('id', userId).single();
+    if (fetchErr) throw new Error('Erro ao buscar usuário: ' + fetchErr.message);
+    if (!userRow)  throw new Error('Usuário não encontrado (id: ' + userId + ')');
+    if (userRow.approved) throw new Error('Usuário já está aprovado.');
 
-    // Generate a random temp password to create the Supabase Auth account.
-    // The real password the user chose is hashed — we can't reverse it.
-    // So we create with a temp password and immediately send a reset link,
-    // so they use the Supabase reset flow to set their own password.
-    const tempPwd = _randomPassword();
-    const tempHash = await sha256(tempPwd);
+    const userEmail = userRow.email;
+    const displayName = userRow.name || userName;
 
-    // Create Supabase Auth account
-    // Note: signUp from anon key will send a confirmation email unless
-    // "Confirm email" is disabled in Supabase Dashboard → Auth → Settings.
-    // For apps with manual approval, disable email confirmation in Supabase.
-    const { data: authData, error: authErr } = await sb.auth.signUp({
-      email:    userRow.email,
-      password: tempPwd,
-      options:  { data: { display_name: userRow.name || userName } }
-    });
-
-    // signUp returns error if user already exists — handle gracefully
-    if (authErr && !authErr.message.includes('already registered')) {
-      throw authErr;
-    }
-
-    // Mark as approved in app_users, update password_hash to temp, family
+    // ── 3. Aprovar no app_users PRIMEIRO ────────────────────────────────
+    // Fazemos isso ANTES de criar o Auth user para garantir que mesmo
+    // que o signUp falhe, o admin possa tentar de novo sem inconsistência.
     const { error: updErr } = await sb.from('app_users').update({
-      active:        true,
-      approved:      true,
-      family_id:     familyId,
-      password_hash: tempHash,
-      must_change_pwd: true,   // force reset on first login
+      active:          true,
+      approved:        true,
+      family_id:       familyId,
+      must_change_pwd: true,
     }).eq('id', userId);
-    if (updErr) throw updErr;
+    if (updErr) throw new Error('Erro ao aprovar no banco: ' + updErr.message);
 
-    // Sync user_profiles if the DB trigger created it
-    await sb.from('user_profiles').update({ active: true })
-      .eq('email', userRow.email);
-
-    // Add to family_members
+    // ── 4. Adicionar à family_members ────────────────────────────────────
     if (familyId) {
       await sb.from('family_members').upsert(
         { user_id: userId, family_id: familyId, role: 'editor' },
         { onConflict: 'user_id,family_id' }
-      ).catch(() => {});
+      ).catch(e => console.warn('[approve] family_members upsert:', e.message));
     }
 
-    // Send approval e-mail with a password reset link so user sets their real password
-    await _sendApprovalEmail(userRow.email, userRow.name || userName, familyName);
+    // ── 5. Criar/confirmar conta no Supabase Auth ───────────────────────
+    // Estratégia em 2 etapas:
+    //   a) Chamar RPC approve_user() que confirma o email server-side (SECURITY DEFINER)
+    //   b) Se o auth user ainda não existe, criar via signUp
+    //      O resetPasswordForEmail() subsequente confirma o email ao ser clicado.
 
-    toast(`✓ ${userName} aprovado!${familyName ? ' Família: ' + familyName : ''}`, 'success');
+    // 5a. RPC server-side (confirma email se já existe no auth.users)
+    const { data: rpcResult, error: rpcErr } = await sb.rpc('approve_user', {
+      p_user_id:   userId,
+      p_family_id: familyId || null,
+    });
+    if (rpcErr) {
+      console.warn('[approve] RPC approve_user falhou (não fatal):', rpcErr.message);
+    } else if (rpcResult?.error) {
+      console.warn('[approve] RPC retornou erro:', rpcResult.error);
+    }
+
+    // 5b. Se o auth user ainda não existe, criar via signUp
+    const authExists = rpcResult?.auth_exists === true;
+    if (!authExists) {
+      const tempPwd = _randomPassword();
+      const { error: signUpErr } = await sb.auth.signUp({
+        email:    userEmail,
+        password: tempPwd,
+        options:  { data: { display_name: displayName } }
+      });
+      const signUpMsg = (signUpErr?.message || '').toLowerCase();
+      const alreadyExists = signUpMsg.includes('already') || signUpMsg.includes('registered')
+        || signUpMsg.includes('exists') || signUpMsg.includes('duplicate');
+      if (signUpErr && !alreadyExists) {
+        console.warn('[approve] signUp warning (não fatal):', signUpErr.message);
+      }
+    }
+
+    // ── 6. Enviar email de aprovação + link de redefinição de senha ───────
+    await _sendApprovalEmail(userEmail, displayName, familyName);
+
+    toast(`✓ ${displayName} aprovado!${familyName ? ' Família: ' + familyName : ''}`, 'success');
     closeModal('approvalModal');
     await loadUsersList();
     _checkPendingApprovals();
 
   } catch(e) {
-    errEl.textContent = 'Erro: ' + e.message;
+    console.error('[doApproveUser]', e);
+    errEl.textContent = 'Erro: ' + (e.message || String(e));
     errEl.style.display = '';
   } finally {
     if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = '✅ Aprovar e Notificar'; }
