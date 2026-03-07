@@ -781,7 +781,6 @@ async function _renderPendingTab() {
     pendingUsers = data || [];
   }
 
-  // Atualizar badge na aba
   const badge = document.getElementById('uaPendingBadge');
   if (badge) {
     badge.textContent = pendingUsers.length;
@@ -797,13 +796,14 @@ async function _renderPendingTab() {
     return;
   }
 
-  const famById = {};
-  (_families || []).forEach(f => { famById[f.id] = f.name; });
+  // Montar opções de família para o select inline
+  const famOptions = '<option value="">— Nenhuma (admin global) —</option>'
+    + (_families || []).map(f => '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>').join('');
 
-  let html = '<div style="margin-bottom:12px;font-size:.82rem;color:var(--muted)">'
-    + pendingUsers.length + ' solicitação(ões) aguardando aprovação</div>';
+  let html = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">'
+    + pendingUsers.length + ' solicitação(ões) aguardando aprovação</div>'
+    + '<div style="display:flex;flex-direction:column;gap:12px">';
 
-  html += '<div style="display:flex;flex-direction:column;gap:10px">';
   pendingUsers.forEach(u => {
     const daysAgo  = Math.floor((Date.now() - new Date(u.created_at)) / 86400000);
     const ageLabel = daysAgo === 0 ? 'Hoje' : daysAgo === 1 ? '1 dia' : daysAgo + ' dias';
@@ -812,23 +812,95 @@ async function _renderPendingTab() {
     const initials = (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
     const uid      = esc(u.id);
     const uname    = esc(u.name || u.email || '');
-    html += '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">'
-      + '<div style="width:38px;height:38px;border-radius:50%;background:#fef3c7;border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#92400e;flex-shrink:0">' + initials + '</div>'
+
+    html += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">'
+      // — Linha superior: avatar + nome + idade
+      + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+      + '<div style="width:40px;height:40px;border-radius:50%;background:#fef3c7;border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;color:#92400e;flex-shrink:0">' + initials + '</div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:.88rem;font-weight:600;color:var(--text)">' + esc(u.name || '—') + '</div>'
-      + '<div style="font-size:.75rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(u.email) + '</div>'
+      + '<div style="font-size:.9rem;font-weight:700;color:var(--text)">' + esc(u.name || '—') + '</div>'
+      + '<div style="font-size:.76rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(u.email) + '</div>'
       + '</div>'
-      + '<span style="font-size:.74rem;color:' + ageColor + ';font-weight:600;white-space:nowrap;flex-shrink:0">' + ageLabel + '</span>'
-      + '<div style="display:flex;gap:6px;flex-shrink:0">'
-      + '<button class="btn btn-primary btn-sm" data-uid="' + uid + '" data-uname="' + uname + '" onclick="approveUser(this.dataset.uid,this.dataset.uname)" style="background:#16a34a">✅ Aprovar</button>'
-      + '<button class="btn btn-ghost btn-sm" data-uid="' + uid + '" data-uname="' + uname + '" onclick="rejectUser(this.dataset.uid,this.dataset.uname)" style="color:#dc2626">✕ Rejeitar</button>'
-      + '</div></div>';
+      + '<span style="font-size:.74rem;color:' + ageColor + ';font-weight:600;flex-shrink:0">' + ageLabel + '</span>'
+      + '</div>'
+      // — Linha inferior: select família + botões
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      + '<select id="pendingFam_' + uid + '" style="flex:1;min-width:140px;height:32px;font-size:.8rem;border:1px solid var(--border);border-radius:6px;padding:0 8px;background:var(--surface);color:var(--text)">'
+      + famOptions
+      + '</select>'
+      + '<button class="btn btn-primary btn-sm" data-uid="' + uid + '" data-uname="' + uname + '" onclick="_inlineApprove(this.dataset.uid,this.dataset.uname)" style="background:#16a34a;height:32px;white-space:nowrap">&#9989; Aprovar</button>'
+      + '<button class="btn btn-ghost btn-sm" data-uid="' + uid + '" data-uname="' + uname + '" onclick="_inlineReject(this.dataset.uid,this.dataset.uname)" style="color:#dc2626;height:32px">&#10005; Rejeitar</button>'
+      + '</div>'
+      + '</div>';
   });
+
   html += '</div>';
   el.innerHTML = html;
 }
 
-// ── FAMILIES ──────────────────────────────────────────────────────
+// Aprovação direta da aba Pendentes (sem abrir approvalModal)
+async function _inlineApprove(userId, userName) {
+  const famSel = document.getElementById('pendingFam_' + userId);
+  const familyId   = famSel?.value || null;
+  const familyName = _families?.find(f => f.id === familyId)?.name || null;
+
+    document.querySelectorAll('[data-uid="' + userId + '"]').forEach(b => { b.disabled = true; });
+
+  try {
+    const { data: userRow, error: fetchErr } = await sb
+      .from('app_users').select('name,email,approved').eq('id', userId).single();
+    if (fetchErr) throw new Error('Erro ao buscar usuário: ' + fetchErr.message);
+    if (!userRow)  throw new Error('Usuário não encontrado.');
+
+    const userEmail   = userRow.email;
+    const displayName = userRow.name || userName;
+
+    // Aprovar no app_users
+    const { error: updErr } = await sb.from('app_users').update({
+      active: true, approved: true, family_id: familyId, must_change_pwd: true,
+    }).eq('id', userId);
+    if (updErr) throw new Error('Erro ao aprovar: ' + updErr.message);
+
+    // family_members
+    if (familyId) {
+      await sb.from('family_members').upsert(
+        { user_id: userId, family_id: familyId, role: 'editor' },
+        { onConflict: 'user_id,family_id' }
+      ).catch(e => console.warn('[approve] family_members:', e.message));
+    }
+
+    // RPC confirma email no Supabase Auth
+    await sb.rpc('approve_user', { p_user_id: userId, p_family_id: familyId || null })
+      .catch(e => console.warn('[approve] RPC:', e.message));
+
+    // signUp se não existe no Auth
+    const tempPwd = _randomPassword();
+    await sb.auth.signUp({ email: userEmail, password: tempPwd,
+      options: { data: { display_name: displayName } } })
+      .catch(() => {});
+
+    // Email de boas-vindas
+    await _sendApprovalEmail(userEmail, displayName, familyName);
+
+    toast('✓ ' + displayName + ' aprovado!' + (familyName ? ' Família: ' + familyName : ''), 'success');
+    await _checkPendingApprovals();
+    await _renderPendingTab();
+
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+    document.querySelectorAll('[data-uid="' + userId + '"]').forEach(b => { b.disabled = false; });
+  }
+}
+
+async function _inlineReject(userId, userName) {
+  if (!confirm('Rejeitar e excluir solicitação de ' + userName + '?')) return;
+  const { error } = await sb.from('app_users').delete().eq('id', userId);
+  if (error) { toast('Erro: ' + error.message, 'error'); return; }
+  toast('Solicitação de ' + userName + ' removida.', 'info');
+  await _checkPendingApprovals();
+  await _renderPendingTab();
+}
+
 
 async function loadFamiliesList() {
   let families = [];
