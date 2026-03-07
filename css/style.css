@@ -2929,3 +2929,23 @@ html, body{
 }
 .btn-danger:disabled { opacity: .4; cursor: not-allowed; }
 .btn-danger:not(:disabled):hover { opacity: .88; }
+
+/* ══════════════════════════════════════════════════════════════════
+   MULTI-FAMILY — family members panel
+══════════════════════════════════════════════════════════════════ */
+.fm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.fm-row:last-child { border-bottom: none; }
+.fm-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
