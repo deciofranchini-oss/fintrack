@@ -2887,3 +2887,45 @@ html, body{
   width: 100%; height: 100%;
   border-radius: 50%; object-fit: cover;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   DELETE ACCOUNT MODAL — option cards
+══════════════════════════════════════════════════════════════════ */
+.del-acc-option {
+  display: block;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--surface);
+}
+.del-acc-option:hover { border-color: var(--accent); background: var(--accent-lt); }
+.del-acc-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+  box-shadow: 0 0 0 2px rgba(42,96,73,.12);
+}
+.del-acc-option-danger:has(input:checked) {
+  border-color: var(--red);
+  background: #fef2f2;
+  box-shadow: 0 0 0 2px rgba(192,57,43,.10);
+}
+.del-acc-option input[type="radio"] { display: none; }
+.del-acc-option-body {
+  display: flex; align-items: center; gap: 12px; pointer-events: none;
+}
+.del-acc-option-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem; flex-shrink: 0;
+}
+.del-acc-option-title { font-size: .86rem; font-weight: 700; color: var(--text); }
+.del-acc-option-sub   { font-size: .75rem; color: var(--muted); margin-top: 1px; }
+.btn-danger {
+  background: var(--red); color: #fff; border: none;
+  opacity: 1; transition: opacity .15s;
+}
+.btn-danger:disabled { opacity: .4; cursor: not-allowed; }
+.btn-danger:not(:disabled):hover { opacity: .88; }
