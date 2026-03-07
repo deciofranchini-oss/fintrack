@@ -627,27 +627,49 @@
 
     <!-- CATEGORIES -->
     <div class="page" id="page-categories">
+      <!-- Header -->
       <div class="section-header mb-6">
-        <span class="section-title">Categorias de Transações</span>
+        <span class="section-title">Categorias</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','despesa')">+ Despesa</button>
-          <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','receita')">+ Receita</button>
+          <button class="btn btn-primary btn-sm" onclick="openCategoryModal('','','receita')">+ Receita</button>
         </div>
       </div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Despesas</span>
-            <span id="catCountExpense" class="badge badge-red"></span>
-          </div>
-          <div id="catEditorExpense"></div>
+
+      <!-- Summary bar -->
+      <div class="cat-summary-bar">
+        <div class="cat-summary-item cat-summary-expense">
+          <span class="cat-summary-icon">💸</span>
+          <span class="cat-summary-label">Despesas</span>
+          <span id="catCountExpense" class="cat-summary-count"></span>
         </div>
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Receitas</span>
-            <span id="catCountIncome" class="badge badge-green"></span>
+        <div class="cat-summary-sep"></div>
+        <div class="cat-summary-item cat-summary-income">
+          <span class="cat-summary-icon">💰</span>
+          <span class="cat-summary-label">Receitas</span>
+          <span id="catCountIncome" class="cat-summary-count"></span>
+        </div>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="grid-2">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="cat-col-header cat-col-expense">
+            <span class="cat-col-icon">💸</span>
+            <span class="cat-col-title">Despesas</span>
+            <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','despesa')" style="margin-left:auto;font-size:.75rem;padding:3px 10px">+ Nova</button>
           </div>
-          <div id="catEditorIncome"></div>
+          <div id="catEditorExpense" style="padding:10px 12px"></div>
+          <div class="cat-add-root" onclick="openCategoryModal('','','despesa')">+ Nova categoria de despesa</div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="cat-col-header cat-col-income">
+            <span class="cat-col-icon">💰</span>
+            <span class="cat-col-title">Receitas</span>
+            <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','receita')" style="margin-left:auto;font-size:.75rem;padding:3px 10px">+ Nova</button>
+          </div>
+          <div id="catEditorIncome" style="padding:10px 12px"></div>
+          <div class="cat-add-root" onclick="openCategoryModal('','','receita')">+ Nova categoria de receita</div>
         </div>
       </div>
     </div>
@@ -1029,7 +1051,7 @@
 
       <!-- Conexão -->
       <div class="settings-section">
-        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">🔗 Conexão</div>
+        <div class="settings-group-label">🔗 Conexão &amp; Integrações</div>
         <div class="settings-card">
           <div class="settings-row">
             <div class="settings-row-icon" style="background:var(--blue-lt)">🗄️</div>
@@ -1122,7 +1144,7 @@
 
       <!-- ══ AUTOMAÇÃO ══ -->
       <div class="settings-section">
-        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">⚙️ Automação de Programados</div>
+        <div class="settings-group-label">⚙️ Automação de Programados</div>
         <div class="settings-card">
           <!-- Enable/disable auto check -->
           <div class="settings-row">
@@ -1259,7 +1281,7 @@
 
       <!-- ══ BACKUP NO BANCO (admin only) ══ -->
       <div class="settings-section" id="dbBackupSection" style="display:none">
-        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">🗄️ Backup no Banco de Dados</div>
+        <div class="settings-group-label">🗄️ Backup no Banco de Dados</div>
         <div class="settings-card">
           <!-- Header / create -->
           <div class="settings-row">
@@ -1308,36 +1330,61 @@
 
     <!-- AUDIT PAGE (admin) -->
     <div class="page" id="page-audit">
-      <div class="card">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <h3 style="margin:0">🧾 Auditoria: Auto-registros</h3>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-            <select id="auditStatusFilter" class="input" style="max-width:180px" onchange="loadAuditLogs()">
-              <option value="">Todos</option>
-              <option value="confirmed">✅ Confirmadas</option>
-              <option value="pending">⏳ Pendentes</option>
-            </select>
-            <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs()">↻ Atualizar</button>
-          </div>
+      <div class="section-header mb-6">
+        <span class="section-title">Auditoria de Auto-registros</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs()">&#8635; Atualizar</button>
+      </div>
+      <div class="audit-counters">
+        <div class="audit-counter audit-counter-total">
+          <div class="audit-counter-value" id="auditCntTotal">—</div>
+          <div class="audit-counter-label">Total</div>
         </div>
-        <div class="text-muted" style="margin-top:6px;font-size:.82rem">
-          Mostra execuções automáticas de transações programadas (registro diário e timers).
+        <div class="audit-counter audit-counter-ok">
+          <div class="audit-counter-value" id="auditCntConfirmed">—</div>
+          <div class="audit-counter-label">Confirmadas</div>
         </div>
-        <div style="margin-top:12px;overflow:auto">
-          <table class="table tx-table" style="min-width:720px">
+        <div class="audit-counter audit-counter-pending">
+          <div class="audit-counter-value" id="auditCntPending">—</div>
+          <div class="audit-counter-label">Pendentes</div>
+        </div>
+        <div class="audit-counter audit-counter-error">
+          <div class="audit-counter-value" id="auditCntError">—</div>
+          <div class="audit-counter-label">Erros</div>
+        </div>
+      </div>
+      <div class="filters" style="margin-bottom:14px">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="auditSearch" placeholder="Buscar descricao..." oninput="filterAuditLogs()">
+        </div>
+        <select id="auditStatusFilter" onchange="filterAuditLogs()" style="max-width:180px">
+          <option value="">Todos os status</option>
+          <option value="confirmed">Confirmadas</option>
+          <option value="pending">Pendentes</option>
+          <option value="error">Erros</option>
+        </select>
+        <span id="auditCount" style="font-size:.78rem;color:var(--muted);align-self:center;white-space:nowrap"></span>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="table tx-table" style="min-width:700px">
             <thead>
               <tr>
                 <th>Data</th>
-                <th>Descrição</th>
+                <th>Descricao</th>
                 <th>Status</th>
                 <th style="text-align:right">Valor</th>
-                <th>Transação</th>
+                <th>Registrado em</th>
+                <th style="text-align:center">Transacao</th>
               </tr>
             </thead>
             <tbody id="auditBody">
-              <tr><td colspan="5" class="text-muted" style="text-align:center;padding:18px">Carregando…</td></tr>
+              <tr><td colspan="6" style="text-align:center;padding:28px;color:var(--muted);font-size:.85rem">Carregando...</td></tr>
             </tbody>
           </table>
+        </div>
+        <div style="padding:10px 18px;border-top:1px solid var(--border);font-size:.75rem;color:var(--muted)">
+          Mostra ate 300 execucoes automaticas de transacoes programadas.
         </div>
       </div>
     </div>
