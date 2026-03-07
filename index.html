@@ -2953,6 +2953,55 @@
 
 <div id="toast-container"></div>
 
+<!-- PAYEE REASSIGN MODAL -->
+<div class="modal-overlay" id="payeeReassignModal">
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="payeeReassignTitle">Excluir Beneficiário</span>
+      <button class="modal-close" onclick="closeModal('payeeReassignModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="payeeReassignDeleteId">
+
+      <!-- Resumo dos vínculos -->
+      <div id="payeeReassignSummary"
+        style="background:var(--amber-lt,#fef3e2);border:1px solid var(--amber);border-radius:var(--r-sm);padding:12px 14px;font-size:.84rem;color:var(--text);line-height:1.6;margin-bottom:16px">
+      </div>
+
+      <!-- Toggle: criar novo -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:.83rem;color:var(--text2)">
+        <input type="checkbox" id="payeeReassignUseNew" onchange="togglePayeeReassignNew(this.checked)" style="width:16px;height:16px;cursor:pointer">
+        <label for="payeeReassignUseNew" style="cursor:pointer;user-select:none">Criar um novo beneficiário para receber os registros</label>
+      </div>
+
+      <!-- Campo novo beneficiário (condicional) -->
+      <div id="payeeReassignNewArea" style="display:none;margin-bottom:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Nome do novo beneficiário *</label>
+          <input type="text" id="payeeReassignNewName" placeholder="Nome do beneficiário" style="width:100%">
+        </div>
+      </div>
+
+      <!-- Select beneficiário destino -->
+      <div class="form-group">
+        <label>Transferir todos os registros para *</label>
+        <select id="payeeReassignTarget" style="width:100%">
+          <option value="">— Selecionar beneficiário destino —</option>
+        </select>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">
+          Ou marque a opção acima para criar um novo beneficiário destino.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('payeeReassignModal')">Cancelar</button>
+      <button class="btn btn-primary" id="payeeReassignConfirmBtn"
+        style="background:var(--red);border-color:var(--red)"
+        onclick="confirmPayeeReassign()">✅ Transferir e Excluir</button>
+    </div>
+  </div>
+</div>
+
   <script src="js/settings.js"></script>
   <script src="js/config.js"></script>
   <script src="js/app.js"></script>
