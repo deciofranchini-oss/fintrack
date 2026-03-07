@@ -1739,7 +1739,7 @@ async function doResetUserPwd() {
     const targetEmail = userRow.email;
 
     // 2. Tentar via Admin API (sbAdmin com service_role key)
-    let authUpdated = false;
+    let authUpdated = false; // patched: without service role we will only send reset email
     const admin = sbAdmin || initSbAdmin();
 
     if (admin) {

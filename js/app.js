@@ -115,13 +115,15 @@ async function tryAutoConnect(){
     const hasLegacyHash   = window.location.hash.includes('type=recovery');
     const mightBeRecovery = hasCodeParam || hasLegacyHash;
 
-    // Strip ?code from URL now so a page-refresh doesn't re-trigger
-    if (hasCodeParam) {
-      history.replaceState(null, '', window.location.pathname + window.location.hash);
-    }
-
-    // Create client — this triggers the ?code exchange internally
+    // Create client first so Supabase can process ?code recovery parameter
     sb = supabase.createClient(url, key);
+
+    // After client is created, we can safely clean the URL
+    if (hasCodeParam) {
+      setTimeout(()=>{
+        try{ history.replaceState(null, '', window.location.pathname + window.location.hash); }catch(e){}
+      }, 1500);
+    }
 
     if (mightBeRecovery) {
       // Supabase JS v2 event order when ?code= is a recovery link:
