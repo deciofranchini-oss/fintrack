@@ -3218,6 +3218,132 @@
     </div>
   </div>
 
+  <!-- Delete Account Modal -->
+  <div class="modal-overlay" id="deleteAccountModal">
+    <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">🗑️ Excluir Conta</span>
+        <button class="modal-close" onclick="closeModal('deleteAccountModal')">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Account summary -->
+        <div id="delAccSummary" style="display:flex;align-items:center;gap:14px;
+          padding:14px 16px;border-radius:10px;background:var(--bg2);
+          border:1px solid var(--border);margin-bottom:20px">
+          <div id="delAccIcon" style="width:42px;height:42px;border-radius:50%;
+            display:flex;align-items:center;justify-content:center;font-size:1.3rem;
+            flex-shrink:0;background:var(--surface)"></div>
+          <div style="min-width:0">
+            <div id="delAccName" style="font-size:.95rem;font-weight:700;color:var(--text)"></div>
+            <div id="delAccMeta" style="font-size:.78rem;color:var(--muted);margin-top:1px"></div>
+          </div>
+          <div id="delAccBalance" style="margin-left:auto;font-size:1rem;font-weight:800;flex-shrink:0"></div>
+        </div>
+
+        <!-- Warning banner if transactions exist -->
+        <div id="delAccWarning" style="display:none;padding:10px 14px;border-radius:8px;
+          background:#fef3c7;border:1px solid #fbbf24;margin-bottom:18px;font-size:.82rem;color:#92400e">
+          <span style="font-weight:700">⚠️ Atenção:</span>
+          <span id="delAccWarningText"></span>
+        </div>
+
+        <!-- Options -->
+        <div style="font-size:.8rem;font-weight:700;color:var(--muted);
+          text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">
+          O que fazer com os registros?
+        </div>
+
+        <!-- Option 1: Transfer to existing account -->
+        <label class="del-acc-option" id="delAccOpt1Label">
+          <input type="radio" name="delAccAction" value="transfer" id="delAccOptTransfer"
+                 onchange="onDelAccOptionChange()">
+          <div class="del-acc-option-body">
+            <div class="del-acc-option-icon" style="background:#e8f2ee;color:var(--accent)">🔄</div>
+            <div>
+              <div class="del-acc-option-title">Transferir para outra conta</div>
+              <div class="del-acc-option-sub">Todos os registros migram para a conta selecionada</div>
+            </div>
+          </div>
+          <div id="delAccTransferTarget" style="display:none;margin-top:10px;padding-top:10px;
+            border-top:1px solid var(--border)">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text2)">Conta destino</label>
+            <select id="delAccTargetSelect" style="width:100%;margin-top:4px">
+              <option value="">— Selecione a conta —</option>
+            </select>
+          </div>
+        </label>
+
+        <!-- Option 2: Create new account -->
+        <label class="del-acc-option" id="delAccOpt2Label">
+          <input type="radio" name="delAccAction" value="new_account" id="delAccOptNew"
+                 onchange="onDelAccOptionChange()">
+          <div class="del-acc-option-body">
+            <div class="del-acc-option-icon" style="background:#e8f0fb;color:#1e5ba8">➕</div>
+            <div>
+              <div class="del-acc-option-title">Criar nova conta e transferir</div>
+              <div class="del-acc-option-sub">Uma nova conta será criada e receberá todos os registros</div>
+            </div>
+          </div>
+          <div id="delAccNewAccountForm" style="display:none;margin-top:10px;padding-top:10px;
+            border-top:1px solid var(--border)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="form-group" style="margin:0">
+                <label>Nome da nova conta</label>
+                <input type="text" id="delAccNewName" placeholder="Ex: Arquivo Histórico">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label>Tipo</label>
+                <select id="delAccNewType">
+                  <option value="corrente">Conta Corrente</option>
+                  <option value="poupanca">Poupança</option>
+                  <option value="cartao_credito">Cartão de Crédito</option>
+                  <option value="investimento">Investimento</option>
+                  <option value="carteira">Carteira</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </label>
+
+        <!-- Option 3: Delete all records -->
+        <label class="del-acc-option del-acc-option-danger" id="delAccOpt3Label">
+          <input type="radio" name="delAccAction" value="delete_all" id="delAccOptDelete"
+                 onchange="onDelAccOptionChange()">
+          <div class="del-acc-option-body">
+            <div class="del-acc-option-icon" style="background:#fdf0ee;color:var(--red)">🗑️</div>
+            <div>
+              <div class="del-acc-option-title">Excluir todos os registros</div>
+              <div class="del-acc-option-sub">Todas as transações e agendamentos serão apagados permanentemente</div>
+            </div>
+          </div>
+          <!-- Confirmation input appears when this option is chosen -->
+          <div id="delAccConfirmWrap" style="display:none;margin-top:10px;padding-top:10px;
+            border-top:1px solid #fecaca">
+            <label style="font-size:.78rem;font-weight:600;color:var(--red)">
+              Digite <strong>EXCLUIR</strong> para confirmar
+            </label>
+            <input type="text" id="delAccConfirmInput"
+                   placeholder="EXCLUIR"
+                   style="margin-top:4px;border-color:#fca5a5"
+                   oninput="onDelAccConfirmType()">
+          </div>
+        </label>
+
+        <div id="delAccError" style="display:none;color:var(--red);font-size:.82rem;margin-top:12px;
+          padding:8px 12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('deleteAccountModal')">Cancelar</button>
+        <button class="btn btn-danger" id="delAccConfirmBtn" onclick="confirmDeleteAccount()" disabled>
+          Confirmar Exclusão
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Change My Password Modal (from settings) -->
   <div class="modal-overlay" id="changeMyPwdModal">
     <div class="modal" style="max-width:380px"><div class="modal-handle"></div>
