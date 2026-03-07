@@ -1089,6 +1089,20 @@
               <button class="btn btn-ghost btn-sm" onclick="document.getElementById('setupScreen').style.display='flex'">Reconfigurar</button>
             </div>
           </div>
+          <div class="settings-row" id="serviceRoleRow" style="display:none">
+            <div class="settings-row-icon" style="background:#fef3c7">🔑</div>
+            <div class="settings-row-info" style="flex:1;min-width:0">
+              <div class="settings-row-label">Service Role Key <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;margin-left:4px">Admin</span></div>
+              <div class="settings-row-sub">Necessária para redefinir senhas de outros usuários. Guardada só neste browser.</div>
+              <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+                <input type="password" id="serviceRoleKeyInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." autocomplete="off"
+                  style="flex:1;font-size:.78rem;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font-family:monospace;min-width:0">
+                <button class="btn btn-ghost btn-sm" onclick="saveServiceRoleKey()" style="white-space:nowrap;flex-shrink:0">Salvar</button>
+                <button class="btn btn-ghost btn-sm" onclick="clearServiceRoleKey()" style="white-space:nowrap;flex-shrink:0;color:var(--muted)">Remover</button>
+              </div>
+              <div id="serviceRoleKeyStatus" style="font-size:.72rem;margin-top:4px;color:var(--muted)"></div>
+            </div>
+          </div>
           <div class="settings-row">
             <div class="settings-row-icon" style="background:#fff7ed">🗑️</div>
             <div class="settings-row-info">
