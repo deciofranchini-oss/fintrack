@@ -236,10 +236,6 @@ async function bootApp(){
   if (typeof runScheduledAutoRegister === 'function') { await runScheduledAutoRegister(); }
 
   populateSelects();
-
-  // Apply dynamic feature flags after user context + settings are loaded
-  try { if (typeof applyPricesFeature === 'function') await applyPricesFeature(); } catch (e) { console.warn('[prices feature]', e.message); }
-
   // Start auto-check timer if configured
   const _cfg = getAutoCheckConfig();
   if(_cfg.enabled && _cfg.method === 'browser') applyAutoCheckTimer(_cfg);

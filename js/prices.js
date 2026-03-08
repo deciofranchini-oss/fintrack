@@ -57,7 +57,7 @@ async function initPricesPage() {
   }
   _px.search    = '';
   _px.catFilter = '';
-  const searchEl = document.getElementById('pricesSearch');
+  const searchEl = document.getElementById('pricesSearchInput');
   const catEl    = document.getElementById('pricesCatFilter');
   if (searchEl) searchEl.value = '';
   _populatePricesCatFilter();
@@ -176,17 +176,16 @@ async function openPriceItemDetail(itemId) {
   const item = _px.items.find(i => i.id === itemId);
   if (!item) return;
 
-  const titleEl = document.getElementById('pidModalTitle');
-  const avgEl   = document.getElementById('pidAvgPrice');
-  const lastEl  = document.getElementById('pidLastPrice');
-  const countEl = document.getElementById('pidCount');
-  const histEl  = document.getElementById('pidHistoryList');
+  document.getElementById('pidItemName').textContent  = item.name;
+  document.getElementById('pidItemCat').textContent   = item.categories?.name || '—';
+  document.getElementById('pidItemDesc').textContent  = item.description || '';
+  document.getElementById('pidItemUnit').textContent  = item.unit ? '/' + item.unit : '';
+  document.getElementById('pidAvg').textContent   = item.avg_price  != null ? fmt(item.avg_price)  : '—';
+  document.getElementById('pidLast').textContent  = item.last_price != null ? fmt(item.last_price) : '—';
+  document.getElementById('pidCount').textContent = item.record_count || '0';
 
-  if (titleEl) titleEl.textContent = `📦 ${item.name}`;
-  if (avgEl)   avgEl.textContent   = item.avg_price  != null ? fmt(item.avg_price)  : '—';
-  if (lastEl)  lastEl.textContent  = item.last_price != null ? fmt(item.last_price) : '—';
-  if (countEl) countEl.textContent = item.record_count || '0';
-  if (histEl) histEl.innerHTML = '<div class="pid-loading">⏳ Carregando histórico...</div>';
+  const histEl = document.getElementById('pidHistory');
+  histEl.innerHTML = '<div class="pid-loading">⏳ Carregando histórico...</div>';
   openModal('priceItemDetailModal');
 
   const { data: hist, error } = await sb
@@ -196,7 +195,6 @@ async function openPriceItemDetail(itemId) {
     .order('purchased_at', { ascending: false })
     .limit(60);
 
-  if (!histEl) return;
   if (error || !hist?.length) {
     histEl.innerHTML = '<div class="pid-empty">Nenhum registro encontrado.</div>';
     return;
@@ -257,44 +255,34 @@ async function deletePriceItem() {
 function openNewPriceItem() { _openItemForm(null); }
 
 function _openItemForm(item) {
-  const idEl    = document.getElementById('pifItemId');
-  const nameEl  = document.getElementById('pifName');
-  const descEl  = document.getElementById('pifDesc');
-  const unitEl  = document.getElementById('pifUnit');
-  const titleEl = document.getElementById('pifModalTitle');
-  const catSel  = document.getElementById('pifCategory');
+  document.getElementById('pifId').value          = item?.id || '';
+  document.getElementById('pifName').value        = item?.name || '';
+  document.getElementById('pifDescription').value = item?.description || '';
+  document.getElementById('pifUnit').value        = item?.unit || 'un';
+  document.getElementById('pifFormTitle').textContent = item ? '✏️ Editar Item' : '🏷️ Novo Item';
 
-  if (idEl)    idEl.value = item?.id || '';
-  if (nameEl)  nameEl.value = item?.name || '';
-  if (descEl)  descEl.value = item?.description || '';
-  if (unitEl)  unitEl.value = item?.unit || 'un';
-  if (titleEl) titleEl.textContent = item ? '✏️ Editar Item' : '🏷️ Novo Item';
-  if (!catSel) return;
-
+  const catSel = document.getElementById('pifCategory');
   catSel.innerHTML = '<option value="">— Sem categoria —</option>' +
     (state.categories || [])
       .filter(c => c.type !== 'income')
       .map(c => `<option value="${c.id}"${item?.category_id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`)
       .join('');
 
+  document.getElementById('pifError').style.display = 'none';
   openModal('priceItemFormModal');
   setTimeout(() => document.getElementById('pifName')?.focus(), 150);
 }
 
 async function savePriceItem() {
-  const idEl   = document.getElementById('pifItemId');
-  const nameEl = document.getElementById('pifName');
-  const descEl = document.getElementById('pifDesc');
-  const unitEl = document.getElementById('pifUnit');
-  const catEl  = document.getElementById('pifCategory');
-
-  const id    = idEl?.value || '';
-  const name  = nameEl?.value?.trim() || '';
-  const desc  = descEl?.value?.trim() || '';
-  const unit  = unitEl?.value?.trim() || 'un';
-  const catId = catEl?.value || null;
+  const id    = document.getElementById('pifId').value;
+  const name  = document.getElementById('pifName').value.trim();
+  const desc  = document.getElementById('pifDescription').value.trim();
+  const unit  = document.getElementById('pifUnit').value.trim() || 'un';
+  const catId = document.getElementById('pifCategory').value || null;
+  const errEl = document.getElementById('pifError');
 
   if (!name) { _pifErr('Informe o nome do item.'); return; }
+  errEl.style.display = 'none';
 
   const payload = { name, description: desc || null, unit, category_id: catId, family_id: _famId() };
   const { error } = id
@@ -311,12 +299,7 @@ async function savePriceItem() {
 
 function _pifErr(msg) {
   const el = document.getElementById('pifError');
-  if (el) {
-    el.textContent = msg;
-    el.style.display = '';
-  } else {
-    toast(msg, 'error');
-  }
+  if (el) { el.textContent = msg; el.style.display = ''; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
