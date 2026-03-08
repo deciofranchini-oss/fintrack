@@ -114,7 +114,7 @@ async function _loadCurrentUserContext() {
   // app_users: fonte de verdade para dados pessoais e role global
   const { data: appUserRow } = await sb
     .from('app_users')
-    .select('id, family_id, avatar_url, role, name')
+    .select('id, family_id, avatar_url, role, name, preferred_family_id')
     .eq('email', user.email)
     .maybeSingle();
 
@@ -142,11 +142,13 @@ async function _loadCurrentUserContext() {
     userFamilies = [{ id: appUserRow.family_id, name: appUserRow.family_id, role: appRole }];
   }
 
-  // Respeitar última família ativa salva pelo usuário
-  const savedFamilyId = localStorage.getItem('ft_active_family_' + user.id);
-  const activeFam     = (savedFamilyId && userFamilies.find(f => f.id === savedFamilyId))
-    ? userFamilies.find(f => f.id === savedFamilyId)
-    : userFamilies[0] || null;
+  // Prioridade: 1) preferência salva no banco, 2) última usada (localStorage), 3) primeira da lista
+  const preferredFamId = appUserRow?.preferred_family_id || null;
+  const savedFamilyId  = localStorage.getItem('ft_active_family_' + user.id);
+  const activeFam =
+    (preferredFamId && userFamilies.find(f => f.id === preferredFamId)) ||
+    (savedFamilyId  && userFamilies.find(f => f.id === savedFamilyId))  ||
+    userFamilies[0] || null;
   const activeFamId   = activeFam?.id || appUserRow?.family_id || null;
 
   // Role efetivo: admins/owners globais mantêm role global;
@@ -166,13 +168,14 @@ async function _loadCurrentUserContext() {
   };
 
   currentUser = {
-    id:         user.id,
-    email:      user.email || '',
-    name:       appUserRow?.name || user.email || 'Usuário',
-    role:       activeRole,
-    family_id:  activeFamId,
-    families:   userFamilies,
-    avatar_url: appUserRow?.avatar_url || null,
+    id:                   user.id,
+    email:                user.email || '',
+    name:                 appUserRow?.name || user.email || 'Usuário',
+    role:                 activeRole,
+    family_id:            activeFamId,
+    families:             userFamilies,
+    avatar_url:           appUserRow?.avatar_url || null,
+    preferred_family_id:  appUserRow?.preferred_family_id || null,
     ...caps
   };
 
@@ -718,6 +721,19 @@ function openMyProfile() {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
 
+  // --- Família preferida ---
+  const prefSel = document.getElementById('myProfilePreferredFamily');
+  if (prefSel && (currentUser.families || []).length > 1) {
+    const families = currentUser.families || [];
+    prefSel.innerHTML = '<option value="">— Automática (última usada) —</option>' +
+      families.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+    // Ler do banco (via app_users.preferred_family_id armazenado no currentUser)
+    prefSel.value = currentUser.preferred_family_id || '';
+    document.getElementById('myProfileFamilyRow')?.style.setProperty('display', '');
+  } else {
+    document.getElementById('myProfileFamilyRow')?.style.setProperty('display', 'none');
+  }
+
   openModal('myProfileModal');
   setTimeout(() => document.getElementById('myProfilePwd1')?.focus(), 200);
 }
@@ -805,7 +821,10 @@ async function saveMyProfile() {
     if (errEl) { errEl.textContent = 'As senhas não coincidem.'; errEl.style.display = ''; }
     return;
   }
-  if (!avatarFile && !avatarRemove && !pwd1) {
+  const prefFamId = document.getElementById('myProfilePreferredFamily')?.value || null;
+  const prefFamChanged = prefFamId !== (currentUser.preferred_family_id || null);
+
+  if (!avatarFile && !avatarRemove && !pwd1 && !prefFamChanged) {
     closeModal('myProfileModal');
     return;
   }
@@ -824,11 +843,25 @@ async function saveMyProfile() {
       newAvatarUrl = null;
     }
 
-    if (newAvatarUrl !== currentUser.avatar_url) {
-      const { error: avErr } = await sb.from('app_users').update({ avatar_url: newAvatarUrl }).eq('id', appRow.id);
-      if (avErr) throw new Error('Erro ao salvar foto: ' + avErr.message);
-      currentUser.avatar_url = newAvatarUrl;
-      _applyCurrentUserAvatar();
+    // Build update payload (avatar + preferred family in one call)
+    const updatePayload = {};
+    if (newAvatarUrl !== currentUser.avatar_url) updatePayload.avatar_url = newAvatarUrl;
+    if (prefFamChanged) updatePayload.preferred_family_id = prefFamId || null;
+
+    if (Object.keys(updatePayload).length > 0) {
+      const { error: avErr } = await sb.from('app_users').update(updatePayload).eq('id', appRow.id);
+      if (avErr) throw new Error('Erro ao salvar perfil: ' + avErr.message);
+      if ('avatar_url' in updatePayload) {
+        currentUser.avatar_url = newAvatarUrl;
+        _applyCurrentUserAvatar();
+      }
+      if ('preferred_family_id' in updatePayload) {
+        currentUser.preferred_family_id = prefFamId || null;
+        // Se escolheu uma família específica, já mudar agora
+        if (prefFamId && prefFamId !== currentUser.family_id) {
+          await switchFamily(prefFamId);
+        }
+      }
     }
 
     // 2. Password
