@@ -221,6 +221,7 @@
       <div class="nav-label">Cadastros</div>
       <button class="nav-item" onclick="navigate('categories')" id=\"categoriesNav\"><span class="ni-icon">🏷</span>Categorias</button>
       <button class="nav-item" onclick="navigate('payees')" id=\"payeesNav\"><span class="ni-icon">👥</span>Beneficiários</button>
+      <button class="nav-item" id="pricesNav" style="display:none" onclick="navigate('prices')"><span class="ni-icon">🏷️</span>Preços</button>
     </div>
 </div>
   <div class="sidebar-footer" style="display:flex;flex-direction:column;gap:3px">
@@ -1018,6 +1019,1094 @@
       </div>
 
     </div>
+
+
+    <!-- ══ PRICES PAGE ════════════════════════════════════════════════════════ -->
+    <div class="page" id="page-prices">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--text)">🏷️ Preços</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:2px">Histórico de preços pagos por item</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openNewPriceItem()">+ Novo Item</button>
+          <button class="btn btn-primary btn-sm" onclick="openPricesReceiptScan()"
+                  style="display:flex;align-items:center;gap:6px">
+            📷 Importar Recibo
+          </button>
+        </div>
+      </div>
+
+      <!-- Receipt scan drop zone -->
+      <div id="pricesReceiptZone"
+           style="display:none;border:2px dashed var(--accent);border-radius:var(--r);padding:18px;margin-bottom:16px;background:var(--accent-lt);position:relative"
+           ondragover="event.preventDefault()" ondrop="onPricesReceiptDrop(event)">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="font-size:2rem;flex-shrink:0">📋</div>
+          <div style="flex:1;min-width:160px">
+            <div style="font-weight:600;font-size:.88rem;color:var(--accent);margin-bottom:3px">Analisar recibo com IA</div>
+            <div style="font-size:.76rem;color:var(--muted)">Selecione ou arraste uma foto ou PDF de nota fiscal para registrar os preços automaticamente</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <label class="btn btn-primary btn-sm" style="cursor:pointer;gap:6px;display:flex;align-items:center">
+              📷 Selecionar arquivo
+              <input type="file" id="pricesReceiptInput" accept="image/*,application/pdf"
+                     style="display:none" onchange="onPricesReceiptSelected(this)">
+            </label>
+            <span id="pricesReceiptFileName" style="font-size:.76rem;color:var(--muted);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+            <button id="pricesReadAiBtn" class="btn btn-ghost btn-sm"
+                    style="display:none;border-color:var(--accent);color:var(--accent)"
+                    onclick="readPricesReceiptWithAI()">🤖 Analisar com IA</button>
+          </div>
+        </div>
+        <div id="pricesAiStatus" style="display:none;margin-top:10px;font-size:.8rem;color:var(--muted);text-align:center">⏳ Analisando recibo...</div>
+        <button onclick="closePricesReceiptZone()" title="Fechar"
+                style="position:absolute;top:8px;right:10px;background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--muted)">✕</button>
+      </div>
+
+      <!-- Filters -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <div style="flex:1;min-width:160px;position:relative">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none">🔍</span>
+          <input type="text" id="pricesSearchInput" placeholder="Buscar item..."
+                 style="padding-left:30px;width:100%;box-sizing:border-box"
+                 oninput="pricesSearch(this.value)">
+        </div>
+        <select id="pricesCatFilter" style="min-width:150px"
+                onchange="pricesCatFilter(this.value)">
+          <option value="">Todas as categorias</option>
+        </select>
+        <span id="pricesCount" style="font-size:.78rem;color:var(--muted)"></span>
+      </div>
+
+      <!-- Items list -->
+      <div id="pricesItemList"></div>
+    </div>TYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f7f6f3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<title>Family Fintrack · Gerenciador Financeiro da Família</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- SETUP -->
+<!-- PIN LOCK SCREEN -->
+<!-- ══════ LOGIN SCREEN ══════ -->
+<div class="auth-screen" id="authScreen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img id="authLogoImg" src="https://deciofranchini-oss.github.io/fintrack/logo.png" alt="FinTrack" onerror="this.style.display='none'">
+    </div>
+    <div class="auth-title">Family FinTrack</div>
+    <div class="auth-sub" id="authSubtitle">O Gerenciador de Finanças da Fanmília</div>
+
+    <!-- Change password banner -->
+    <div class="auth-change-pw" id="authChangePwBanner" style="display:none">
+      ⚠️ Por segurança, altere sua senha no primeiro acesso.
+    </div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <div id="authLoginForm">
+      <div class="auth-field">
+        <label>E-mail</label>
+        <input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email"
+          onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()">
+      </div>
+      <div class="auth-field">
+        <label>Senha</label>
+        <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="auth-btn" onclick="doLogin()" id="authLoginBtn">Entrar</button>
+    </div>
+
+    <!-- Change password form (shown when must_change_pw) -->
+    <div id="authChangePwForm" style="display:none">
+      <div class="auth-change-pw">🔐 Defina uma nova senha para continuar.</div>
+      <div class="auth-field">
+        <label>Nova Senha</label>
+        <input type="password" id="authNewPw1" placeholder="Mínimo 8 caracteres">
+      </div>
+      <div class="auth-field">
+        <label>Confirmar Nova Senha</label>
+        <input type="password" id="authNewPw2" placeholder="Repita a nova senha">
+      </div>
+      <button class="auth-btn" onclick="doChangePw()">Salvar Nova Senha</button>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;font-size:.72rem;color:#c0b9b0">
+      JF Family FinTrack · Powered by Supabase
+    </div>
+  </div>
+</div>
+
+<!-- ══════ USER MANAGEMENT MODAL ══════ -->
+<div class="modal-overlay" id="userMgmtModal">
+  <div class="modal" style="max-width:600px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">👥 Gerenciar Usuários</span>
+      <button class="modal-close" onclick="closeModal('userMgmtModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:.82rem;color:var(--muted)" id="userMgmtCount"></div>
+        <button class="btn btn-primary btn-sm" onclick="showAddUserForm()">+ Novo Usuário</button>
+      </div>
+
+      <!-- Add user form -->
+      <div id="addUserForm" style="display:none;background:var(--accent-lt);border:1.5px solid rgba(42,96,73,.2);border-radius:var(--r);padding:16px;margin-bottom:14px">
+        <div style="font-size:.85rem;font-weight:600;margin-bottom:10px">Novo Usuário</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="form-group" style="margin:0"><label>E-mail</label><input type="email" id="newUserEmail" placeholder="email@dominio.com"></div>
+          <div class="form-group" style="margin:0"><label>Nome</label><input type="text" id="newUserName" placeholder="Nome completo"></div>
+          <div class="form-group" style="margin:0"><label>Senha Inicial</label><input type="password" id="newUserPw" placeholder="Mínimo 8 chars"></div>
+          <div class="form-group" style="margin:0"><label>Perfil</label>
+            <select id="newUserRole">
+              <option value="viewer">Viewer (somente leitura)</option>
+              <option value="editor">Editor (cria/edita dados)</option>
+              <option value="admin">Admin (acesso total)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="createUser()">Criar Usuário</button>
+          <button class="btn btn-ghost btn-sm" onclick="hideAddUserForm()">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="userList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ EDIT USER MODAL ══════ -->
+<div class="modal-overlay" id="editUserModal">
+  <div class="modal" style="max-width:420px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">✏️ Editar Usuário</span>
+      <button class="modal-close" onclick="closeModal('editUserModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editUserId">
+      <div class="form-group"><label>Nome</label><input type="text" id="editUserName"></div>
+      <div class="form-group"><label>Perfil</label>
+        <select id="editUserRole">
+          <option value="viewer">Viewer (somente leitura)</option>
+          <option value="editor">Editor (cria/edita dados)</option>
+          <option value="admin">Admin (acesso total)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nova Senha (deixe em branco para não alterar)</label>
+        <input type="password" id="editUserNewPw" placeholder="Nova senha...">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="editUserActive" style="width:16px;height:16px">
+        <label for="editUserActive" style="font-size:.85rem;cursor:pointer">Usuário ativo</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editUserModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditUser()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="pin-screen" id="pinScreen" style="display:none">
+  <div class="pin-card">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:2.2rem;margin-bottom:6px">🔐</div>
+      <div class="pin-title">JF Family FinTrack</div>
+      <div class="pin-subtitle">Digite o Masterpin para acessar</div>
+    </div>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+      <div class="pin-dot" id="pd4"></div>
+      <div class="pin-dot" id="pd5"></div>
+    </div>
+    <div class="pin-keypad" id="pinKeypad">
+      <button class="pin-key" onclick="pinKey(1)">1</button>
+      <button class="pin-key" onclick="pinKey(2)">2</button>
+      <button class="pin-key" onclick="pinKey(3)">3</button>
+      <button class="pin-key" onclick="pinKey(4)">4</button>
+      <button class="pin-key" onclick="pinKey(5)">5</button>
+      <button class="pin-key" onclick="pinKey(6)">6</button>
+      <button class="pin-key" onclick="pinKey(7)">7</button>
+      <button class="pin-key" onclick="pinKey(8)">8</button>
+      <button class="pin-key" onclick="pinKey(9)">9</button>
+      <button class="pin-key zero" onclick="pinKey(0)">0</button>
+      <button class="pin-key del" onclick="pinDel()">⌫</button>
+    </div>
+    <div class="pin-error-msg" id="pinErrorMsg"></div>
+  </div>
+</div>
+
+<!-- SUPABASE SETUP -->
+<div class="setup-screen" id="setupScreen" style="display:none">
+  <div class="setup-box">
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="https://deciofranchini-oss.github.io/fintrack/logo.png" style="height:130px;object-fit:contain;mix-blend-mode:normal" alt="JF Family FinTrack">
+    </div>
+    <p style="text-align:center">Configure sua conexão com o Supabase para começar.</p>
+    <div class="form-group"><label>Supabase URL</label><input type="url" id="supabaseUrl" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+    <div class="form-group"><label>Supabase Anon Key</label><input type="password" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiI..." autocomplete="off"></div>
+    <button class="btn btn-primary" onclick="initSupabase()" style="width:100%;justify-content:center;padding:11px;margin-top:6px;font-size:.9rem">Conectar</button>
+    <p class="setup-hint">Credenciais salvas apenas no seu browser (localStorage).</p>
+  </div>
+</div>
+
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-logo" style="padding:4px 16px 4px;background:var(--surface)">
+    <img id="sidebarLogoImg" src="https://deciofranchini-oss.github.io/fintrack/logo.png" alt="Family FinTrack" style="width:100%;max-width:180px;height:auto;display:block;margin:0 auto;object-fit:contain;mix-blend-mode:normal">
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-label">Principal</div>
+      <button class="nav-item active" onclick="navigate('dashboard')" id=\"dashboardNav\"><span class="ni-icon">📊</span>Dashboard</button>
+      <button class="nav-item" onclick="navigate('transactions')" id=\"transactionsNav\"><span class="ni-icon">↕</span>Transações</button>
+      <button class="nav-item" onclick="navigate('accounts')" id=\"accountsNav\"><span class="ni-icon">🏦</span>Contas</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Análise</div>
+      <button class="nav-item" onclick="navigate('reports')" id=\"reportsNav\"><span class="ni-icon">📈</span>Relatórios</button>
+      <button class="nav-item" onclick="navigate('budgets')" id=\"budgetsNav\"><span class="ni-icon">🎯</span>Orçamentos</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Planejamento</div>
+      <button class="nav-item" onclick="navigate('scheduled')" id=\"scheduledNav\"><span class="ni-icon">📅</span>Programados</button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Cadastros</div>
+      <button class="nav-item" onclick="navigate('categories')" id=\"categoriesNav\"><span class="ni-icon">🏷</span>Categorias</button>
+      <button class="nav-item" onclick="navigate('payees')" id=\"payeesNav\"><span class="ni-icon">👥</span>Beneficiários</button>
+      <button class="nav-item" id="pricesNav" style="display:none" onclick="navigate('prices')"><span class="ni-icon">🏷️</span>Preços</button>
+    </div>
+</div>
+  <div class="sidebar-footer" style="display:flex;flex-direction:column;gap:3px">
+<button class="nav-item" onclick="doLogout()" style="color:var(--red);font-size:.8rem;padding:7px 10px"><span class="ni-icon" style="font-size:.85rem">↩</span>Sair</button>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main" id="mainApp">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <img id="topbarLogoImg" src="" alt="JF Family FinTrack" style="height:36px;width:auto;object-fit:contain;display:none">
+      <span class="topbar-title" id="pageTitle">Dashboard</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="privacyToggleBtn" onclick="togglePrivacy()" title="Ocultar valores" style="background:none;border:none;cursor:pointer;padding:6px;border-radius:6px;color:var(--muted);display:flex;align-items:center;transition:color 0.2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <!-- User avatar button + dropdown -->
+      <div id="topbarUserBtn" style="display:none;position:relative">
+        <div class="topbar-user" onclick="toggleUserMenu(event)" id="topbarUserAvatar" title="Meu perfil">
+          <span id="topbarUserAvatarInner">?</span>
+        </div>
+        <!-- Dropdown menu -->
+        <div id="userMenuDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;
+          background:var(--surface);border:1.5px solid var(--border2);border-radius:14px;
+          box-shadow:0 12px 40px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.10);min-width:230px;z-index:9999;overflow:hidden">
+          <!-- Header with avatar + name -->
+          <div id="userMenuHeader" style="padding:16px 16px 12px;border-bottom:1.5px solid var(--border);
+            display:flex;align-items:center;gap:12px;background:var(--bg2)">
+            <div id="userMenuAvatarBig" style="flex-shrink:0"></div>
+            <div style="min-width:0">
+              <div id="userMenuName" style="font-size:.88rem;font-weight:700;color:var(--text);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+              <div id="userMenuEmail" style="font-size:.72rem;color:var(--muted);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+              <div id="userMenuRole" style="font-size:.68rem;margin-top:3px"></div>
+            </div>
+          </div>
+          <!-- Family switcher section (só aparece se tiver > 1 família) -->
+          <div id="userMenuFamilySection" style="display:none;border-bottom:1.5px solid var(--border)">
+            <div style="padding:8px 12px 4px;font-size:.67rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">
+              Família ativa
+            </div>
+            <div id="userMenuFamilyList" style="padding:0 6px 6px"></div>
+          </div>
+
+          <!-- Menu items -->
+          <div style="padding:6px">
+            <button class="user-menu-item" onclick="openMyProfile()">
+              <span>🖼️</span><span>Meu Perfil</span>
+            </button>
+            <button class="user-menu-item" onclick="showChangeMyPwd();closeUserMenu()">
+              <span>🔑</span><span>Alterar senha</span>
+            </button>
+            <!-- Gerenciar Família: visível para owners de família que não são admin global -->
+            <button class="user-menu-item" id="umManageFamilyBtn" style="display:none"
+                    onclick="closeUserMenu();openUserAdmin()">
+              <span>🏠</span><span>Gerenciar minha família</span>
+            </button>
+            <div style="height:1px;background:var(--border);margin:4px 0"></div>
+            <button class="user-menu-item" onclick="doLogout()" style="color:var(--red,#dc2626)">
+              <span>↩</span><span>Sair</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      
+
+      <div class="topbar-quick-actions" style="display:flex;align-items:center;gap:6px;margin-right:6px">
+        <a class="topbar-icon-btn" id="schoolPaymentsBtn" href="https://deciofranchini-oss.github.io/objetivo" target="_blank" rel="noopener noreferrer" title="Gerenciamento Escola"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;text-decoration:none;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">🎓</span>
+        </a>
+        <button class="topbar-icon-btn" id="importNav" onclick="navigate('import')" title="Importar"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">📥</span>
+        </button>
+        <button class="topbar-icon-btn" id="auditNav" onclick="navigate('audit')" title="Auditoria"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">🧾</span>
+        </button>
+        <button class="topbar-icon-btn" id="settingsNav" onclick="navigate('settings')" title="Configurações"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text);">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">⚙️</span>
+        </button>
+        <button class="topbar-icon-btn" id="logoutTopbarBtn" onclick="doLogout()" title="Sair"
+           style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--red,#dc2626);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+<button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()" title="Nova Transação" aria-label="Nova Transação">+</button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="grid-4 mb-6">
+        <div class="stat-card"><div class="stat-accent"></div><div class="stat-label">Patrimônio Total</div><div class="stat-value text-accent" id="statTotal">—</div><div class="stat-sub">Todas as contas</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--green)"></div><div class="stat-label">Receitas do Mês</div><div class="stat-value text-green" id="statIncome">—</div><div class="stat-sub">Mês atual</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--red)"></div><div class="stat-label">Despesas do Mês</div><div class="stat-value text-red" id="statExpenses">—</div><div class="stat-sub">Mês atual</div></div>
+        <div class="stat-card"><div class="stat-accent" style="background:var(--amber)"></div><div class="stat-label">Saldo do Mês</div><div class="stat-value" id="statBalance">—</div><div class="stat-sub">Receitas − Despesas</div></div>
+      </div>
+      <div class="grid-2 mb-6">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Fluxo de Caixa (6 meses)</span>
+            <select id="cashflowAccountFilter" onchange="renderCashflowChart()" 
+              style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:160px">
+              <option value="">Todas as contas</option>
+            </select>
+          </div>
+          <canvas id="cashflowChart" height="200"></canvas>
+        </div>
+        <div class="card"><div class="card-header"><span class="card-title">Despesas por Categoria</span></div><canvas id="categoryChart" height="200"></canvas></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header" style="gap:8px;flex-wrap:wrap">
+  <span class="card-title">Últimas Transações</span>
+  <span id="dashPendingBadge" class="badge" style="background:var(--amber-lt,#fffbeb);color:var(--amber,#b45309);border:1px solid rgba(180,83,9,.18);display:none;white-space:nowrap">⏳ 0 pendentes</span>
+  <span id="dashAutoRunSummary" class="text-muted" style="font-size:.75rem;display:none;white-space:nowrap;cursor:pointer" onclick="navigate('audit')"></span>
+  <select id="dashRecentStatus" onchange="loadDashboardRecent()" style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:170px">
+    <option value="">Todos</option>
+    <option value="confirmed">✅ Confirmadas</option>
+    <option value="pending">⏳ Pendentes</option>
+  </select>
+  <button class="btn btn-ghost btn-sm" onclick="navigate('transactions')">Ver todas</button>
+</div>
+          <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody id="recentTxBody"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando...</td></tr></tbody></table></div>
+        </div>
+        <div class="card"><div class="card-header"><span class="card-title">Saldo por Conta</span></div><div id="accountBalancesList"></div></div>
+      </div>
+    </div>
+
+    <!-- TRANSACTIONS -->
+    <div class="page" id="page-transactions">
+      <!-- Header row: title + actions -->
+      <div class="tx-page-header">
+        <div class="tx-page-title-area">
+          <span id="txCount" class="tx-page-count">Transações</span>
+          <div class="tx-page-totals">
+            <span id="txTotalIncome"  class="badge badge-green"></span>
+            <span id="txTotalExpense" class="badge badge-red"></span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" onclick="openTxClipboardImport()">📋 Clipboard</button>
+          <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova</button>
+        </div>
+      </div>
+
+      <!-- Filter bar: single dense row on desktop -->
+      <div class="tx-filter-bar">
+        <div class="search-wrap tx-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="txSearch" placeholder="Buscar..." oninput="filterTransactions()">
+        </div>
+        <select id="txMonth"        onchange="filterTransactions()" class="tx-filter-select"></select>
+        <select id="txAccount"      onchange="filterTransactions()" class="tx-filter-select"><option value="">Todas as contas</option></select>
+        <select id="txType"         onchange="filterTransactions()" class="tx-filter-select">
+          <option value="">Todos os tipos</option>
+          <option value="income">💰 Receitas</option>
+          <option value="expense">💸 Despesas</option>
+          <option value="transfer">🔄 Transferências</option>
+          <option value="card_payment">💳 Pgto. Cartão</option>
+        </select>
+        <select id="txStatusFilter" onchange="filterTransactions()" class="tx-filter-select">
+          <option value="">Todos os status</option>
+          <option value="pending">⏳ Pendentes</option>
+          <option value="confirmed">✅ Confirmadas</option>
+        </select>
+        <div class="view-toggle tx-view-toggle">
+          <button class="view-btn active" id="viewBtnFlat"  onclick="setTxView('flat')"  title="Lista">☰</button>
+          <button class="view-btn"        id="viewBtnGroup" onclick="setTxView('group')" title="Por conta">⊞</button>
+        </div>
+      </div>
+
+      <div id="txSummaryBar" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+
+      <!-- Flat table card -->
+      <div class="card tx-table-card" id="txFlatCard">
+        <div class="table-wrap">
+          <table class="tx-table">
+            <thead><tr>
+              <th class="tx-th-date"   onclick="sortTx('date')">Data ⇅</th>
+              <th class="tx-th-acct">Conta</th>
+              <th class="tx-th-desc">Descrição</th>
+              <th class="tx-th-pay">Beneficiário</th>
+              <th class="tx-th-cat">Categoria</th>
+              <th class="tx-th-amt" onclick="sortTx('amount')">Valor ⇅</th>
+              <th class="tx-th-act"></th>
+            </tr></thead>
+            <tbody id="txBody">
+              <tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="txPagination" class="tx-pagination"></div>
+      </div>
+
+      <div id="txGroupContainer" style="display:none"></div>
+    </div>
+
+    <!-- ACCOUNTS -->
+    <div class="page" id="page-accounts">
+      <div class="section-header mb-6">
+        <span class="section-title">Minhas Contas</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openGroupModal()" title="Gerenciar grupos">🗂️ Grupos</button>
+          <button class="btn btn-primary" onclick="openAccountModal()">+ Nova Conta</button>
+        </div>
+      </div>
+      <div class="tab-bar" id="accountsTabBar">
+        <button class="tab active" onclick="filterAccounts('')">Todas</button>
+        <button class="tab" onclick="filterAccounts('corrente')">Corrente</button>
+        <button class="tab" onclick="filterAccounts('cartao_credito')">Cartão</button>
+        <button class="tab" onclick="filterAccounts('investimento')">Investimentos</button>
+        <button class="tab" onclick="filterAccounts('dinheiro')">Dinheiro</button>
+        <button class="tab" onclick="filterAccounts('__group__')">Por Grupo</button>
+      </div>
+
+      <div class="account-grid" id="accountGrid"></div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="page" id="page-reports">
+
+      <!-- ── Abas de tipo de relatório ── -->
+      <div class="section-header mb-4">
+        <span class="section-title">Relatórios Analíticos</span>
+        <div class="view-toggle">
+          <button class="view-btn active" id="rptBtnRegular"  onclick="setReportView('regular')">📊 Análise</button>
+          <button class="view-btn"        id="rptBtnTx"       onclick="setReportView('transactions')">📋 Transações</button>
+          <button class="view-btn"        id="rptBtnForecast" onclick="setReportView('forecast')">📅 Previsão</button>
+        </div>
+      </div>
+
+      <!-- ── Barra de filtros ── -->
+      <div class="report-filter-bar" id="reportFilterBar">
+        <div>
+          <label>Período</label>
+          <select id="rptPeriod" onchange="onRptPeriodChange()">
+            <option value="month">Mês específico</option>
+            <option value="custom">Intervalo livre</option>
+            <option value="quarter">Trimestre atual</option>
+            <option value="year">Ano atual</option>
+            <option value="last12">Últimos 12 meses</option>
+          </select>
+        </div>
+        <div id="rptMonthWrap">
+          <label>Mês</label>
+          <input type="month" id="reportMonth" onchange="loadCurrentReport()">
+        </div>
+        <div id="rptFromWrap" style="display:none">
+          <label>De</label>
+          <input type="date" id="rptFrom" onchange="loadCurrentReport()">
+        </div>
+        <div id="rptToWrap" style="display:none">
+          <label>Até</label>
+          <input type="date" id="rptTo" onchange="loadCurrentReport()">
+        </div>
+        <div>
+          <label>Conta</label>
+          <select id="rptAccount" onchange="loadCurrentReport()">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="rptType" onchange="loadCurrentReport()">
+            <option value="">Todos</option>
+            <option value="expense">Despesas</option>
+            <option value="income">Receitas</option>
+          </select>
+        </div>
+        <div>
+          <label>Categoria</label>
+          <select id="rptCategory" onchange="loadCurrentReport()">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div>
+          <label>Beneficiário</label>
+          <select id="rptPayee" onchange="loadCurrentReport()">
+            <option value="">Todos</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ── Barra de exportação ── -->
+      <div class="report-toolbar" id="reportToolbar">
+        <span style="font-size:.8rem;font-weight:600;color:var(--muted);white-space:nowrap">Exportar:</span>
+        <div class="export-btn-group">
+          <button class="export-btn export-btn-pdf"   onclick="exportReportPDF()">📄 Baixar PDF</button>
+          <button class="export-btn export-btn-print" onclick="printReport()">🖨️ Imprimir</button>
+          <button class="export-btn export-btn-csv"   onclick="exportReportCSV()">📊 Baixar CSV</button>
+          <button class="export-btn export-btn-email" onclick="showEmailPopup()">📧 Enviar por E-mail</button>
+        </div>
+        <div class="report-toolbar-sep"></div>
+        <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.75rem">⚙️ EmailJS</button>
+        <span id="reportDataInfo" style="font-size:.75rem;color:var(--muted);margin-left:auto"></span>
+      </div>
+
+      <!-- ── View: Análise ── -->
+      <div id="reportRegularView">
+        <div class="report-kpi-grid" id="reportKpis"></div>
+        <div class="grid-2 mb-4">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Despesas por Categoria</span></div>
+            <canvas id="reportCatChart" height="260"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Receitas por Categoria</span></div>
+            <canvas id="reportIncomeChart" height="260"></canvas>
+          </div>
+        </div>
+        <div class="grid-2 mb-4">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Distribuição por Conta</span></div>
+            <canvas id="reportAccountChart" height="260"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Evolução Mensal</span></div>
+            <canvas id="reportTrendChart" height="260"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Detalhamento por Categoria</span></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Categoria</th><th>Tipo</th><th>Qtd</th><th>Total</th><th>% do Total</th></tr></thead>
+            <tbody id="reportCatBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── View: Transações ── -->
+      <div id="reportTxView" style="display:none">
+        <div class="report-kpi-grid" id="reportTxKpis"></div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Transações</span>
+            <span id="reportTxCount" class="badge badge-muted"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="reportTxTable">
+              <thead><tr>
+                <th onclick="rptSortTx('date')" style="cursor:pointer">Data <span id="rptSortDate"></span></th>
+                <th onclick="rptSortTx('description')" style="cursor:pointer">Descrição <span id="rptSortDesc"></span></th>
+                <th>Conta</th><th>Categoria</th><th>Beneficiário</th>
+                <th onclick="rptSortTx('amount')" style="cursor:pointer">Valor <span id="rptSortAmt"></span></th>
+              </tr></thead>
+              <tbody id="reportTxBody"></tbody>
+              <tfoot><tr style="font-weight:700;background:var(--surface2)">
+                <td colspan="5" style="padding:10px 14px">Total</td>
+                <td id="reportTxTotal" style="padding:10px 14px;font-family:var(--font-serif)"></td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── View: Previsão ── -->
+      <div id="reportForecastView" style="display:none">
+        <div class="report-filter-bar" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:14px">
+          <div>
+            <label>De</label>
+            <input type="date" id="forecastFrom" onchange="loadForecast()">
+          </div>
+          <div>
+            <label>Até</label>
+            <input type="date" id="forecastTo" onchange="loadForecast()">
+          </div>
+          <div>
+            <label>Conta</label>
+            <select id="forecastAccountFilter" onchange="loadForecast()">
+              <option value="">Todas as contas</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;margin-bottom:0">
+              <input type="checkbox" id="forecastIncludeScheduled" checked onchange="loadForecast()">
+              Incluir programados
+            </label>
+          </div>
+        </div>
+        <div class="card mb-4">
+          <div class="card-header"><span class="card-title">Saldo Previsto por Conta</span></div>
+          <div class="forecast-chart-wrap"><canvas id="forecastChart"></canvas></div>
+        </div>
+        <div id="forecastAccountsContainer"></div>
+      </div>
+    </div>
+
+    <!-- Print area (hidden, used for print/PDF) -->
+    <div id="printArea"></div>
+
+    <!-- Email popup -->
+    <div class="email-popup" id="emailPopup" style="display:none" onclick="if(event.target===this)closeEmailPopup()">
+      <div class="email-popup-box">
+        <h3>📧 Enviar Relatório por E-mail</h3>
+        <div class="form-group">
+          <label>Destinatário</label>
+          <input type="email" id="emailTo" placeholder="email@exemplo.com">
+        </div>
+        <div class="form-group">
+          <label>Assunto</label>
+          <input type="text" id="emailSubject" value="Relatório FinTrack">
+        </div>
+        <div class="form-group">
+          <label>Mensagem (opcional)</label>
+          <textarea id="emailMsg" rows="2" placeholder="Segue o relatório..."></textarea>
+        </div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:4px">
+          O PDF será salvo no Supabase Storage e o link de download enviado por e-mail.<br>
+          Requer configuração do EmailJS (botão ⚙️ na barra).
+        </div>
+        <div class="email-popup-row">
+          <button class="btn btn-ghost" onclick="closeEmailPopup()">Cancelar</button>
+          <button class="btn btn-primary" onclick="sendReportByEmail()" id="emailSendBtn">Enviar PDF</button>
+          <span id="emailStatus" style="font-size:.78rem;color:var(--muted);margin-left:4px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUDGETS -->
+<div class="page" id="page-budgets">
+
+  <!-- Header: tabs + period picker + new button -->
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab active" id="budgetTabMonthly" onclick="setBudgetView('monthly')">📅 Mensal</button>
+        <button class="tab" id="budgetTabAnnual"  onclick="setBudgetView('annual')">📆 Anual</button>
+      </div>
+      <div id="budgetMonthPicker">
+        <input type="month" id="budgetMonth" onchange="loadBudgets()" style="font-size:.85rem">
+      </div>
+      <div id="budgetYearPicker" style="display:none">
+        <select id="budgetYear" onchange="loadBudgets()" style="font-size:.85rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text)"></select>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="openBudgetModal()">+ Novo orçamento</button>
+  </div>
+
+  <!-- Budget cards grid -->
+  <div style="height:16px;"></div>
+  <div class="budget-grid" id="budgetGrid"></div>
+
+  <!-- History panel -->
+  <div style="margin-top:32px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📊 Histórico por categoria</span>
+      <select id="budgetHistCat" onchange="loadBudgetHistory()" style="font-size:.82rem;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:240px">
+        <option value="">— Selecionar categoria —</option>
+      </select>
+    </div>
+    <div id="budgetHistContainer" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:4px;min-height:48px">
+      <div style="color:var(--muted);font-size:.83rem;padding:16px 12px">Selecione uma categoria para ver o histórico dos últimos 12 meses.</div>
+    </div>
+  </div>
+
+</div>
+
+
+    <!-- CATEGORIES -->
+    <div class="page" id="page-categories">
+      <!-- Header -->
+      <div class="section-header mb-6">
+        <span class="section-title">Categorias</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','despesa')">+ Despesa</button>
+          <button class="btn btn-primary btn-sm" onclick="openCategoryModal('','','receita')">+ Receita</button>
+        </div>
+      </div>
+
+      <!-- Summary bar -->
+      <div class="cat-summary-bar">
+        <div class="cat-summary-item cat-summary-expense">
+          <span class="cat-summary-icon">💸</span>
+          <span class="cat-summary-label">Despesas</span>
+          <span id="catCountExpense" class="cat-summary-count"></span>
+        </div>
+        <div class="cat-summary-sep"></div>
+        <div class="cat-summary-item cat-summary-income">
+          <span class="cat-summary-icon">💰</span>
+          <span class="cat-summary-label">Receitas</span>
+          <span id="catCountIncome" class="cat-summary-count"></span>
+        </div>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="grid-2">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="cat-col-header cat-col-expense">
+            <span class="cat-col-icon">💸</span>
+            <span class="cat-col-title">Despesas</span>
+            <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','despesa')" style="margin-left:auto;font-size:.75rem;padding:3px 10px">+ Nova</button>
+          </div>
+          <div id="catEditorExpense" style="padding:10px 12px"></div>
+          <div class="cat-add-root" onclick="openCategoryModal('','','despesa')">+ Nova categoria de despesa</div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="cat-col-header cat-col-income">
+            <span class="cat-col-icon">💰</span>
+            <span class="cat-col-title">Receitas</span>
+            <button class="btn btn-ghost btn-sm" onclick="openCategoryModal('','','receita')" style="margin-left:auto;font-size:.75rem;padding:3px 10px">+ Nova</button>
+          </div>
+          <div id="catEditorIncome" style="padding:10px 12px"></div>
+          <div class="cat-add-root" onclick="openCategoryModal('','','receita')">+ Nova categoria de receita</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAYEES -->
+    <div class="page" id="page-payees">
+      <div class="section-header mb-6">
+        <span class="section-title">Beneficiários &amp; Fontes Pagadoras</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost" onclick="openNormalizePayeesModal()" title="Padronizar Title Case em todos os nomes">🔤 Normalizar Nomes</button>
+          <button class="btn btn-ghost" onclick="openPayeeClipboardImport()">📋 Importar</button>
+          <button class="btn btn-primary" onclick="openPayeeModal()">+ Novo</button>
+        </div>
+      </div>
+      <div class="filters">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="payeeSearch" placeholder="Buscar..." oninput="filterPayees()">
+        </div>
+        <select id="payeeTypeFilter" onchange="filterPayees()" style="max-width:180px">
+          <option value="">Todos os tipos</option>
+          <option value="beneficiario">Beneficiários</option>
+          <option value="fonte_pagadora">Fontes Pagadoras</option>
+          <option value="ambos">Ambos</option>
+        </select>
+      </div>
+      <!-- Payee group summary chips -->
+      <div id="payeeSummaryBar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
+      <!-- Grouped containers -->
+      <div id="payeeGroups"></div>
+    </div>
+
+    <!-- SCHEDULED TRANSACTIONS -->
+    <div class="page" id="page-scheduled">
+      <!-- Mobile header -->
+      <div class="section-header mb-6">
+        <span class="section-title">Programados</span>
+        <button class="btn btn-primary" onclick="openScheduledModal()">+ Programar</button>
+      </div>
+
+      <!-- Status summary chips (scrollable on mobile) -->
+      <div id="scheduledSummaryBar" class="sc-summary-bar"></div>
+
+      <!-- Compact filter bar -->
+      <div class="sc-filter-bar mb-6">
+        <div class="search-wrap" style="flex:1;min-width:120px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="scSearch" placeholder="Buscar..." oninput="filterScheduled()">
+        </div>
+        <div class="sc-filter-chips">
+          <button class="sc-chip active" id="scChipAll"    onclick="scChipFilter(event,'all')">Todos</button>
+          <button class="sc-chip"        id="scChipActive" onclick="scChipFilter(event,'active')">Ativos</button>
+          <button class="sc-chip"        id="scChipPaused" onclick="scChipFilter(event,'paused')">Pausados</button>
+          <button class="sc-chip"        id="scChipDone"   onclick="scChipFilter(event,'finished')">Concluídos</button>
+        </div>
+        <select id="scTypeFilter" onchange="filterScheduled()" class="sc-type-select">
+          <option value="">Todos os tipos</option>
+          <option value="expense">💸 Despesas</option>
+          <option value="income">💰 Receitas</option>
+          <option value="transfer">🔄 Transferências</option>
+          <option value="card_payment">💳 Pgto. Cartão</option>
+        </select>
+      </div>
+
+      <!-- Upcoming next 30 days -->
+      <div id="scheduledUpcomingCard" style="display:none" class="card mb-6">
+        <div class="card-header">
+          <span class="card-title">⏰ Próximos 30 dias</span>
+          <span id="scheduledUpcomingTotal" class="badge badge-amber"></span>
+        </div>
+        <div id="scheduledUpcomingList" class="sc-upcoming-list"></div>
+      </div>
+
+      <!-- Main list -->
+      <div id="scheduledList"></div>
+    </div>    <!-- IMPORT / BACKUP PAGE -->
+    <div class="page" id="page-import">
+
+      <!-- ══ WIZARD STEPS ══ -->
+      <div class="import-wizard-steps" id="importWizardSteps">
+        <div class="import-wizard-step active" id="wizStep1">
+          <div class="import-wizard-step-num">1</div>
+          <span>Arquivo &amp; Fonte</span>
+        </div>
+        <span class="import-wizard-sep">›</span>
+        <div class="import-wizard-step" id="wizStep2">
+          <div class="import-wizard-step-num">2</div>
+          <span>Mapeamento de Colunas</span>
+        </div>
+        <span class="import-wizard-sep">›</span>
+        <div class="import-wizard-step" id="wizStep3">
+          <div class="import-wizard-step-num">3</div>
+          <span>Revisão &amp; Importar</span>
+        </div>
+      </div>
+
+      <!-- ══ STEP 1: File + Source ══ -->
+      <div id="importStep1">
+        <!-- Section selector cards -->
+        <div class="import-section-grid" id="importSectionGrid">
+          <div class="import-section-card active" id="isc-all" onclick="selectImportSection('all')">
+            <div class="import-sc-icon">📦</div>
+            <div class="import-sc-title">Importação Completa</div>
+            <div class="import-sc-sub">Contas + Categorias + Beneficiários + Transações</div>
+          </div>
+          <div class="import-section-card" id="isc-accounts" onclick="selectImportSection('accounts')">
+            <div class="import-sc-icon">🏦</div>
+            <div class="import-sc-title">Só Contas</div>
+            <div class="import-sc-sub">Criar contas do arquivo</div>
+          </div>
+          <div class="import-section-card" id="isc-categories" onclick="selectImportSection('categories')">
+            <div class="import-sc-icon">🏷️</div>
+            <div class="import-sc-title">Só Categorias</div>
+            <div class="import-sc-sub">Criar categorias e subcategorias</div>
+          </div>
+          <div class="import-section-card" id="isc-payees" onclick="selectImportSection('payees')">
+            <div class="import-sc-icon">👤</div>
+            <div class="import-sc-title">Só Beneficiários</div>
+            <div class="import-sc-sub">Importar beneficiários</div>
+          </div>
+          <div class="import-section-card" id="isc-transactions" onclick="selectImportSection('transactions')">
+            <div class="import-sc-icon">💳</div>
+            <div class="import-sc-title">Só Transações</div>
+            <div class="import-sc-sub">Importar histórico</div>
+          </div>
+        </div>
+
+        <!-- Source preset chips -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Formato do arquivo <span style="font-weight:400;text-transform:none;color:var(--accent);font-size:.7rem">— ou carregue o arquivo para detecção automática 🤖</span></div>
+        </div>
+        <div class="source-chips" id="sourceChips">
+          <div class="source-chip active" onclick="selectSourcePreset('generic')" id="chip-generic">📄 CSV Genérico</div>
+          <div class="source-chip" onclick="selectSourcePreset('moneywiz')" id="chip-moneywiz">💰 MoneyWiz</div>
+          <div class="source-chip" onclick="selectSourcePreset('ofx')" id="chip-ofx">🏦 OFX / QFX</div>
+          <div class="source-chip" onclick="selectSourcePreset('nubank')" id="chip-nubank">🟣 Nubank</div>
+          <div class="source-chip" onclick="selectSourcePreset('inter')" id="chip-inter">🟠 Banco Inter</div>
+          <div class="source-chip" onclick="selectSourcePreset('itau')" id="chip-itau">🔵 Itaú</div>
+          <div class="source-chip" onclick="selectSourcePreset('bradesco')" id="chip-bradesco">🔴 Bradesco</div>
+          <div class="source-chip" onclick="selectSourcePreset('santander')" id="chip-santander">🔴 Santander</div>
+          <div class="source-chip" onclick="selectSourcePreset('bb')" id="chip-bb">🟡 Banco do Brasil</div>
+          <div class="source-chip" onclick="selectSourcePreset('caixa')" id="chip-caixa">🔵 Caixa</div>
+          <div class="source-chip" onclick="selectSourcePreset('xp')" id="chip-xp">⚫ XP / Rico</div>
+          <div class="source-chip" onclick="selectSourcePreset('c6bank')" id="chip-c6bank">⚫ C6 Bank</div>
+          <div class="source-chip" onclick="selectSourcePreset('pagbank')" id="chip-pagbank">🟢 PagBank</div>
+          <div class="source-chip" onclick="selectSourcePreset('picpay')" id="chip-picpay">🟢 PicPay</div>
+          <div class="source-chip" onclick="selectSourcePreset('mercadopago')" id="chip-mercadopago">🔵 Mercado Pago</div>
+          <div class="source-chip" onclick="selectSourcePreset('sicoob')" id="chip-sicoob">🟢 Sicoob</div>
+        </div>
+
+        <!-- AI analysis badge (shown after file load) -->
+        <div id="importAiBadge" style="display:none;margin-top:10px"></div>
+
+        <!-- File drop zone -->
+        <div class="import-drop-zone" id="importDropZone"
+             ondragover="importDragOver(event)" ondragleave="importDragLeave(event)" ondrop="importDrop(event)">
+          <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv,.ofx,.qfx,.tsv" onchange="importFileSelected(event)">
+          <div class="import-drop-icon">📂</div>
+          <div class="import-drop-title" id="importDropTitle">Arraste o arquivo ou clique para selecionar</div>
+          <div class="import-drop-sub" id="importDropSub">Suporta CSV, XLSX, XLS — qualquer formato</div>
+        </div>
+      </div>
+
+      <!-- ══ STEP 2: Column Mapper (rebuilt) ══ -->
+      <div class="col-mapper-screen" id="colMapperScreen" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <div>
+            <div class="col-mapper-title">🗂️ Configurar Importação</div>
+            <div class="col-mapper-sub" id="cmapSubtitle">Indique qual coluna do arquivo corresponde a cada campo.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+        </div>
+
+        <!-- File preview table -->
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">
+          📋 Prévia do arquivo <span id="colPreviewInfo" style="font-weight:400;text-transform:none;color:var(--muted)"></span>
+        </div>
+        <div class="col-preview-wrap">
+          <table class="col-preview-table" id="colPreviewTable">
+            <thead id="colPreviewHead"></thead>
+            <tbody id="colPreviewBody"></tbody>
+          </table>
+        </div>
+
+        <!-- Dynamic field groups rendered by JS -->
+        <div id="colMapperGrid"></div>
+
+        <!-- Dedup options (only for transactions) -->
+        <div class="import-mode-bar" id="importModeBar" style="display:none">
+          <span style="font-weight:700;color:var(--text2)">Duplicatas:</span>
+          <label><input type="radio" name="importMode" value="new" checked> Apenas novas</label>
+          <label><input type="radio" name="importMode" value="update"> Atualizar existentes</label>
+          <label><input type="radio" name="importMode" value="all"> Re-importar todas</label>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--muted)">Conta destino padrão:</label>
+            <select id="importAccountFilter" style="font-size:.8rem;max-width:200px">
+              <option value="">— Detectar automaticamente —</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+          <button class="btn btn-ghost" onclick="goToStep(1)">← Voltar</button>
+          <button class="btn btn-primary" onclick="proceedFromColMapper()" id="applyColMapBtn">Analisar &amp; Prévia →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP 2b: Entity Review (Contas/Cats/Payees) ══ -->
+      <div class="field-map-screen" id="fieldMapScreen" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div>
+            <div class="field-map-title">🔄 Revisão de Entidades</div>
+            <div class="field-map-sub">Revise contas, categorias e beneficiários antes de importar. <span style="color:var(--green);font-weight:600">Novo</span> = será criado. <span style="color:var(--muted);font-weight:600">Existente</span> = já existe.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+        </div>
+        <div class="field-map-tabs">
+          <button class="field-map-tab active" onclick="showFieldMapTab('accounts')">🏦 Contas <span id="fmTabAccBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('categories')">🏷️ Categorias <span id="fmTabCatBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('payees')">👤 Beneficiários <span id="fmTabPayBadge" class="map-count"></span></button>
+          <button class="field-map-tab" onclick="showFieldMapTab('transfers')">🔄 Transferências <span id="fmTabXferBadge" class="map-count"></span></button>
+        </div>
+        <div class="field-map-panel active" id="fmpanel-accounts">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Contas encontradas. Mapeie para uma conta existente ou deixe para criar automaticamente.</p>
+          <div class="table-wrap"><table class="distinct-table"><thead><tr>
+            <th>Conta</th><th>Transações</th><th>Saldo Final</th><th>Status</th><th>Mapear para →</th>
+          </tr></thead><tbody id="fmAccountsBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-categories">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Categorias com hierarquia. Subcategorias criadas automaticamente.</p>
+          <div class="table-wrap" style="max-height:320px;overflow-y:auto"><table class="distinct-table"><thead><tr>
+            <th>Categoria</th><th>Tipo</th><th>Transações</th><th>Status</th>
+          </tr></thead><tbody id="fmCategoriesBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-payees">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Beneficiários únicos encontrados.</p>
+          <div class="table-wrap" style="max-height:300px;overflow-y:auto"><table class="distinct-table"><thead><tr>
+            <th>Beneficiário</th><th>Transações</th><th>Status</th>
+          </tr></thead><tbody id="fmPayeesBody"></tbody></table></div>
+        </div>
+        <div class="field-map-panel" id="fmpanel-transfers">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:8px">Contas de destino em transferências.</p>
+          <div class="table-wrap"><table class="distinct-table"><thead><tr>
+            <th>Conta Destino</th><th>Transferências</th><th>Status</th><th>Mapear para →</th>
+          </tr></thead><tbody id="fmTransfersBody"></tbody></table></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <button class="btn btn-ghost" onclick="goToStep(2)">← Voltar</button>
+          <button class="btn btn-primary" onclick="proceedFromFieldMap()" id="proceedImportBtn">Continuar →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP 3: Progress + Staging ══ -->
+      <!-- Progress -->
+      <div class="import-progress" id="importProgress" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:.85rem;font-weight:600" id="importProgressTitle">Analisando...</span>
+          <span style="font-size:.78rem;color:var(--muted)" id="importProgressPct">0%</span>
+        </div>
+        <div class="import-progress-bar-track">
+          <div class="import-progress-bar-fill" id="importProgressBar"></div>
+        </div>
+      </div>
+      <div class="import-log" id="importLog" style="display:none"></div>
+
+      <!-- Staging preview area -->
+      <div id="importStagingArea" style="display:none">
+        <div class="staging-header">
+          <div>
+            <div style="font-size:1rem;font-weight:600;color:var(--text1)" id="stagingTitle">Pré-visualização</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:2px" id="stagingSubtitle"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="cancelImport()">✕ Cancelar</button>
+            <button class="btn btn-primary" onclick="commitImport()" id="commitImportBtn">✓ Confirmar Importação</button>
+          </div>
+        </div>
+        <div class="staging-tabs mb-4" id="stagingTabs"></div>
+        <div id="stagingContent"></div>
+      </div>
+
+    </div>
+
+
+    <!-- ══ PRICES PAGE ════════════════════════════════════════════════════════ -->
+    
 
     <!-- SETTINGS PAGE -->
     <div class="page" id="page-settings">
@@ -2352,6 +3441,11 @@
             style="display:none;align-items:center;gap:8px;margin-top:8px;width:100%;padding:10px 14px;background:linear-gradient(135deg,#6d28d9,#4f46e5);color:#fff;border:none;border-radius:var(--r-sm,8px);font-size:.85rem;font-weight:600;cursor:pointer;font-family:var(--font-serif);justify-content:center;transition:opacity .15s">
             🤖 Ler com IA
           </button>
+          <button type="button" id="txRegisterPricesBtn"
+            onclick="openRegisterPricesFromReceipt()"
+            style="display:none;align-items:center;gap:8px;margin-top:6px;width:100%;padding:9px 14px;background:var(--accent-lt);color:var(--accent);border:1.5px solid var(--accent);border-radius:var(--r-sm,8px);font-size:.82rem;font-weight:600;cursor:pointer;font-family:var(--font-sans);justify-content:center;transition:opacity .15s">
+            🏷️ Registrar Preços
+          </button>
           <input type="file" id="receiptScanInput"
             accept="image/*,application/pdf" capture="environment"
             style="display:none"
@@ -2730,7 +3824,29 @@
       <div class="form-grid">
         <div class="form-group full"><label>Nome *</label><input type="text" id="payeeName" placeholder="Ex: Supermercado Extra"></div>
         <div class="form-group"><label>Tipo *</label><select id="payeeType"><option value="beneficiario">Beneficiário</option><option value="fonte_pagadora">Fonte Pagadora</option><option value="ambos">Ambos</option></select></div>
-        <div class="form-group"><label>Categoria Padrão</label><select id="payeeCategory"><option value="">— Nenhuma —</option></select></div>
+        <div class="form-group">
+          <label>Categoria Padrão</label>
+          <!-- Hierarchical cat picker — same as transactions, filtered by payee type -->
+          <div id="payeeCatPickerWrap" style="position:relative">
+            <button type="button" id="payeeCatPickerBtn"
+                    onclick="togglePayeeCatPicker()"
+                    style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;
+                           background:var(--surface);border:1.5px solid var(--border);
+                           border-radius:var(--r-sm);cursor:pointer;font-size:.85rem;
+                           color:var(--text);text-align:left;box-sizing:border-box;font-family:var(--font-sans)">
+              <span id="payeeCatPickerDot" style="width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0"></span>
+              <span id="payeeCatPickerLabel" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">— Sem categoria —</span>
+              <span style="font-size:.7rem;color:var(--muted);flex-shrink:0">▾</span>
+            </button>
+            <div id="payeeCatPickerDropdown"
+                 style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;
+                        background:var(--surface);border:1.5px solid var(--border);
+                        border-radius:var(--r);box-shadow:var(--shadow-lg);
+                        max-height:240px;overflow-y:auto;z-index:200;
+                        padding:4px 0"></div>
+          </div>
+          <input type="hidden" id="payeeCategory">
+        </div>
         <div class="form-group full"><label>Notas</label><textarea id="payeeNotes" rows="2" placeholder="Observações..."></textarea></div>
       </div>
     </div>
@@ -3049,6 +4165,8 @@
   <script src="js/auto_register.js"></script>
 <script src="js/audit.js"></script>
 <script src="js/receipt_ai.js"></script>
+<script src="js/prices.js"></script>
+<script src="js/prices.js"></script>
 
   <!-- Approval Modal -->
   <div class="modal-overlay" id="approvalModal">
@@ -3226,6 +4344,153 @@
           <button class="btn btn-primary btn-sm" id="myProfileSaveBtn" onclick="saveMyProfile()">💾 Salvar</button>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Modal: Detalhe do Item de Preço ════════════════════════════════════ -->
+  <div class="modal-overlay" id="priceItemDetailModal">
+    <div class="modal" style="max-width:580px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="pidItemName" style="font-size:.95rem"></div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:2px">
+            <span id="pidItemCat"></span>
+            <span id="pidItemUnit" style="margin-left:4px"></span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeModal('priceItemDetailModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Description -->
+        <div id="pidItemDescWrap" style="margin-bottom:14px;font-size:.82rem;color:var(--muted);font-style:italic">
+          <span id="pidItemDesc"></span>
+        </div>
+        <!-- Stats strip -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px">
+          <div class="pid-stat-card">
+            <div class="pid-stat-lbl">Preço Médio</div>
+            <div class="pid-stat-val" id="pidAvg" style="color:var(--accent)">—</div>
+          </div>
+          <div class="pid-stat-card">
+            <div class="pid-stat-lbl">Último Preço</div>
+            <div class="pid-stat-val" id="pidLast">—</div>
+          </div>
+          <div class="pid-stat-card">
+            <div class="pid-stat-lbl">Registros</div>
+            <div class="pid-stat-val" id="pidCount">0</div>
+          </div>
+        </div>
+        <!-- History -->
+        <div style="font-size:.71rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                    color:var(--muted);margin-bottom:8px">Histórico de Preços</div>
+        <!-- History header row -->
+        <div class="pid-hist-header">
+          <span>Data</span>
+          <span>Estabelecimento</span>
+          <span style="text-align:center">Qtd</span>
+          <span style="text-align:right">Preço Unit.</span>
+          <span></span>
+        </div>
+        <div id="pidHistory" style="max-height:300px;overflow-y:auto"></div>
+        <!-- Footer -->
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px;
+                    padding-top:14px;border-top:1px solid var(--border)">
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)"
+                  onclick="deletePriceItem()">🗑️ Excluir item</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="openEditPriceItem()">✏️ Editar</button>
+            <button class="btn btn-primary btn-sm"
+                    onclick="closeModal('priceItemDetailModal')">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Modal: Criar / Editar Item de Preço ═════════════════════════════════ -->
+  <div class="modal-overlay" id="priceItemFormModal">
+    <div class="modal" style="max-width:420px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title" id="pifFormTitle">🏷️ Novo Item</span>
+        <button class="modal-close" onclick="closeModal('priceItemFormModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="pifId">
+        <div class="form-group">
+          <label>Nome do item *</label>
+          <input type="text" id="pifName" placeholder="Ex: Arroz Branco 5kg"
+                 onkeydown="if(event.key==='Enter')savePriceItem()">
+        </div>
+        <div class="form-group">
+          <label>Descrição <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+          <input type="text" id="pifDescription" placeholder="Marca, variação, observações">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group" style="margin-bottom:0">
+            <label>Unidade</label>
+            <input type="text" id="pifUnit" value="un" placeholder="un / kg / L / cx">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Categoria</label>
+            <select id="pifCategory"></select>
+          </div>
+        </div>
+        <div id="pifError" style="display:none;color:var(--red);font-size:.8rem;margin-top:12px;
+          padding:7px 10px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+          <button class="btn btn-ghost btn-sm" onclick="closeModal('priceItemFormModal')">Cancelar</button>
+          <button class="btn btn-primary btn-sm" onclick="savePriceItem()">💾 Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Modal: Registrar Preços do Recibo ════════════════════════════════════ -->
+  <div class="modal-overlay" id="registerPricesModal">
+    <div class="modal" style="max-width:580px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">🏷️ Registrar Preços do Recibo</span>
+        <button class="modal-close" onclick="closeModal('registerPricesModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Store section -->
+        <div class="rpm-section-title">🏪 Estabelecimento</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.78rem">Nome *</label>
+            <input type="text" id="rpmStoreName" placeholder="Ex: Supermercado Pão de Açúcar">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.78rem">Endereço</label>
+            <input type="text" id="rpmStoreAddress" placeholder="Rua, número, bairro">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:18px">
+          <label style="font-size:.78rem">Data da compra *</label>
+          <input type="date" id="rpmDate" style="max-width:200px">
+        </div>
+
+        <!-- Items section -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="rpm-section-title" style="margin:0">🛒 Itens</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" style="font-size:.75rem"
+                    onclick="rpmNormalizeAllAI()" title="Normalizar todos os nomes com IA">🤖 Normalizar tudo</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:.75rem" onclick="rpmAddRow()">+ Adicionar item</button>
+          </div>
+        </div>
+        <div id="rpmItemList" style="max-height:360px;overflow-y:auto;padding-right:2px"></div>
+
+        <!-- Error -->
+        <div id="rpmError" style="display:none;color:var(--red);font-size:.8rem;margin-top:10px;
+          padding:7px 10px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca"></div>
+        <!-- Footer -->
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn btn-ghost btn-sm" onclick="closeModal('registerPricesModal')">Cancelar</button>
+          <button class="btn btn-primary btn-sm" id="rpmSaveBtn"
+                  onclick="saveRegisterPrices()">💾 Salvar preços</button>
+        </div>
       </div>
     </div>
   </div>
