@@ -3337,3 +3337,34 @@ html, body{
 /* ── myFamilyMgmtModal member list scrollbar ── */
 #mfmMembersList::-webkit-scrollbar { width: 4px; }
 #mfmMembersList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ══ myProfileModal — mobile optimisation ════════════════════════════════════
+   Em mobile o modal é um bottom-sheet. Garantir que o conteúdo caiba
+   sem rolar excessivamente em telas com menos de 480px de altura.
+══════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  #myProfileModal .modal {
+    max-height: 88vh;
+    max-height: 88dvh;
+  }
+  #myProfileModal .modal-body {
+    padding: 12px 14px 18px;
+  }
+  /* Side-by-side password grid → single column on very small screens */
+  @media (max-width: 360px) {
+    #myProfileModal .modal-body > div > div[style*="grid-template-columns"] {
+      grid-template-columns: 1fr !important;
+    }
+  }
+}
+
+/* Landscape mobile: limit height more aggressively */
+@media (max-height: 500px) and (max-width: 768px) {
+  #myProfileModal .modal {
+    max-height: 95vh;
+    max-height: 95dvh;
+  }
+  #myProfileModal .modal-body {
+    padding: 8px 14px 14px;
+  }
+}
