@@ -173,11 +173,8 @@ function _showAiBtn(state) {
 // Limpa estado quando o modal fecha
 function resetReceiptAI() {
   window._receiptAiPending = null;
-  window._lastReceiptAiResult = null;
   _showAiBtn('hidden');
   _renderAiResultPanel(null);
-  const pricesBtn = document.getElementById('txRegisterPricesBtn');
-  if (pricesBtn) pricesBtn.style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -203,16 +200,8 @@ async function readReceiptWithAI() {
 
   try {
     const result = await _callClaudeVision(apiKey, window._receiptAiPending);
-    window._lastReceiptAiResult = result; // used by prices module
     _applyResultToForm(result);
     _renderAiResultPanel(result);
-    // Show "Registrar Preços" button if feature enabled for family
-    if (typeof isPricesEnabled === 'function') {
-      isPricesEnabled().then(on => {
-        const btn = document.getElementById('txRegisterPricesBtn');
-        if (btn) btn.style.display = on ? 'flex' : 'none';
-      }).catch(() => {});
-    }
     toast('✅ Campos preenchidos! Revise e salve.', 'success');
   } catch (e) {
     toast('Erro na leitura com IA: ' + e.message, 'error');
@@ -391,7 +380,6 @@ function _renderAiResultPanel(r) {
       ${row('Data',            r.date)}
       ${row('Valor',           r.raw_total || (r.amount ? 'R$ ' + r.amount : null))}
       ${row('Estabelecimento', r.payee)}
-      ${row('Endereço', r.payee_address)}
       ${row('Categoria',       r.category)}
       ${row('Conta',           r.account)}
     </div>

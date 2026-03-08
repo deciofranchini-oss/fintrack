@@ -253,7 +253,7 @@ async function bootApp(){
   updateUserUI();
 }
 
-const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações',prices:'Gerenciamento de Preços'};
+const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações'};
 function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
   const btn=document.getElementById('privacyToggleBtn');
@@ -274,7 +274,7 @@ function togglePrivacy(){
 
 function navigate(page){
   // Guard: settings is admin-only
-  if((page==='settings' || page==='audit') && currentUser?.role !== 'admin') {
+  if((page==='settings' || page==='audit') && !(currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin)) {
     toast('Acesso restrito: apenas admin/owner pode acessar Configurações.','warning');
     return;
   }
@@ -298,7 +298,6 @@ function navigate(page){
   else if(page==='import')initImportPage();
   else if(page==='settings')loadSettings();
   else if(page==='audit')loadAuditLogs();
-  else if(page==='prices')initPricesPage();
 }
 // Handle SW messages (e.g., deep links from notifications)
 if('serviceWorker' in navigator){

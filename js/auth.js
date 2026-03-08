@@ -158,14 +158,13 @@ async function _loadCurrentUserContext() {
 
   const r = activeRole;
   const caps = {
-    can_view:      true,
-    can_create:    r !== 'viewer',
-    can_edit:      r !== 'viewer',
-    can_delete:    r === 'admin' || r === 'owner',
-    can_export:    true,
-    can_import:    r === 'admin' || r === 'owner',
-    can_admin:     r === 'admin',               // ← ONLY admin sees Settings/Audit
-    can_manage_family: r === 'admin' || r === 'owner', // owner can manage their family users
+    can_view:   true,
+    can_create: r !== 'viewer',
+    can_edit:   r !== 'viewer',
+    can_delete: r === 'admin' || r === 'owner',
+    can_export: true,
+    can_import: r === 'admin' || r === 'owner',
+    can_admin:  r === 'admin' || r === 'owner',
   };
 
   currentUser = {
@@ -562,24 +561,27 @@ function updateUserUI() {
     emailEl.textContent = currentUser.email + ' · ' + roleLabel + famLabel;
   }
 
-  // User management panel — visible to admins AND family owners
-  const canManage = currentUser.can_admin || currentUser.can_manage_family;
-  const mgmtSection = document.getElementById('userMgmtSection');
-  if (mgmtSection) mgmtSection.style.display = canManage ? '' : 'none';
-  if (canManage) {
+  // Show admin sections
+  if (currentUser.can_admin) {
+    document.getElementById('userMgmtSection')?.style && (document.getElementById('userMgmtSection').style.display = '');
     const sub = document.getElementById('userMgmtSub');
-    if (sub) sub.textContent = currentUser.can_admin
-      ? 'Controle de acesso global · Admin'
-      : 'Gerenciar minha família · Owner';
+    if (sub) sub.textContent = `Controle de acesso · Perfil: ${currentUser.role === 'owner' ? 'Owner' : 'Admin'}`;
   }
 
-  // Settings & Audit nav — ONLY for admin role
-  const auditNav    = document.getElementById('auditNav');
+
+  // Admin-only nav items
+  const auditNav = document.getElementById('auditNav');
   const settingsNav = document.getElementById('settingsNav');
-  if (auditNav)    auditNav.style.display    = currentUser.can_admin ? '' : 'none';
+  if (auditNav) auditNav.style.display = currentUser.can_admin ? '' : 'none';
   if (settingsNav) settingsNav.style.display = currentUser.can_admin ? '' : 'none';
 
-  if (currentUser.can_admin) _checkPendingApprovals();
+  // Show/hide admin-only topbar buttons
+  const _auditNav    = document.getElementById('auditNav');
+  const _settingsNav = document.getElementById('settingsNav');
+  const _isAdmin     = currentUser.can_admin;
+  if (_auditNav)    _auditNav.style.display    = _isAdmin ? 'flex' : 'none';
+  if (_settingsNav) _settingsNav.style.display = _isAdmin ? 'flex' : 'none';
+  if (_isAdmin) _checkPendingApprovals();
 
   // Family switcher (only when user has 2+ families)
   _renderFamilySwitcher();
@@ -610,7 +612,7 @@ function applyPermissions() {
   }
 
 // Hide admin-only screens for non-admin
-if (!p.can_admin) {
+if (!(p.role==='admin' || p.role==='owner' || p.can_admin)) {
   const settingsNav = document.querySelector('.nav-item[onclick="navigate(\'settings\')"]');
   if (settingsNav) settingsNav.style.display='none';
   const auditNav = document.getElementById('auditNav');
@@ -734,8 +736,7 @@ function openMyProfile() {
   }
 
   // Gerenciar Família — visível só para owners (e não para admins globais que já têm o painel completo)
-  // Family management button: show for owners only (admin has full user admin panel)
-  const isFamOwnerOnly = currentUser?.role === 'owner' && _currentUserIsFamilyOwner();
+  const isFamOwnerOnly = _currentUserIsFamilyOwner() && !(currentUser?.role === 'admin' || currentUser?.role === 'owner');
   const famMgmtBtn = document.getElementById('myProfileFamilyMgmtBtn');
   if (famMgmtBtn) famMgmtBtn.style.display = isFamOwnerOnly ? '' : 'none';
 
@@ -1097,22 +1098,20 @@ async function doRegister() {
 let _families = []; // cached families list
 
 async function openUserAdmin() {
-  const isAdmin       = currentUser?.role === 'admin';              // global admin
-  const isFamilyOwner = _currentUserIsFamilyOwner();                // owner of ≥1 family
-  const canManage     = isAdmin || isFamilyOwner;
-
-  if (!canManage) { toast('Acesso restrito','error'); return; }
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.can_admin;
+  const isFamilyOwner = _currentUserIsFamilyOwner();
+  if (!isGlobalAdmin && !isFamilyOwner) { toast('Acesso restrito','error'); return; }
 
   await loadFamiliesList();
   openModal('userAdminModal');
 
-  // Tabs: Pending + Users only for global admin; Families for admin AND owner
-  const tabPending = document.getElementById('uaTabPending');
-  const tabUsers   = document.getElementById('uaTabUsers');
-  if (tabPending) tabPending.style.display = isAdmin ? '' : 'none';
-  if (tabUsers)   tabUsers.style.display   = isAdmin ? '' : 'none';
+  // Abas visíveis conforme perfil
+  const tabPending  = document.getElementById('uaTabPending');
+  const tabUsers    = document.getElementById('uaTabUsers');
+  if (tabPending) tabPending.style.display = isGlobalAdmin ? '' : 'none';
+  if (tabUsers)   tabUsers.style.display   = isGlobalAdmin ? '' : 'none';
 
-  if (isAdmin) {
+  if (isGlobalAdmin) {
     let pending = null;
     try { const { data: _p } = await sb.rpc('get_pending_users'); pending = _p; } catch {}
     const hasPending = (pending?.length || 0) > 0;
@@ -1121,15 +1120,14 @@ async function openUserAdmin() {
       loadUsersList().catch(()=>{});
     } else {
       switchUATab('users');
-      await loadUsersList();
     }
     const badge = document.getElementById('uaPendingBadge');
     if (badge) {
-      badge.textContent   = pending?.length || 0;
+      badge.textContent = pending?.length || 0;
       badge.style.display = (pending?.length || 0) > 0 ? 'inline-block' : 'none';
     }
   } else {
-    // Owner: abre direto na aba de famílias
+    // Family owner: abre direto na aba de famílias
     switchUATab('families');
   }
 }
@@ -1139,9 +1137,10 @@ function _currentUserIsFamilyOwner() {
   return (currentUser?.families || []).some(f => f.role === 'owner');
 }
 
-/** Retorna as famílias onde o usuário logado é owner (ou todas se admin global) */
+/** Retorna as famílias onde o usuário logado é owner */
 function _ownedFamilies() {
-  if (currentUser?.role === 'admin') return _families; // admin global vê tudo
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin';
+  if (isGlobalAdmin) return _families; // admin global pode gerenciar todas
   return (currentUser?.families || [])
     .filter(f => f.role === 'owner')
     .map(f => _families.find(ff => ff.id === f.id) || f);
@@ -1374,7 +1373,7 @@ async function loadFamiliesList() {
   const roleIcon = r => ({ owner:'👑', admin:'🔧', user:'👤', viewer:'👁' })[r] || '👤';
   const roleLabel = r => ({ owner:'Owner', admin:'Admin', user:'Usuário', viewer:'Visualizador' })[r] || r;
 
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.can_admin;
 
   // If not global admin, show only families where user is owner
   const visibleFamilies = isGlobalAdmin
@@ -1428,15 +1427,7 @@ async function loadFamiliesList() {
             <div style="font-size:.74rem;color:var(--muted)">${members.length} membro${members.length!==1?'s':''} ${f.description ? '· ' + esc(f.description) : ''}</div>
           </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <!-- Prices feature toggle (admin global only) -->
-          ${isGlobalAdmin ? `
-            <label style="display:flex;align-items:center;gap:5px;font-size:.75rem;cursor:pointer;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:var(--surface)" title="Ativar/desativar Gerenciamento de Preços para esta família">
-              🏷️ Preços
-              <input type="checkbox" id="pricesFamToggle-${f.id}"
-                     style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
-                     onchange="toggleFamilyPrices('${f.id}',this.checked)">
-            </label>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${(isGlobalAdmin || membersByFamily[f.id]?.some(m => m.user_email === currentUser?.email && m.member_role === 'owner')) ? `
             <button class="btn btn-ghost btn-sm" onclick="editFamily('${f.id}')" style="padding:3px 10px;font-size:.73rem">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" id="wipeFamBtn-${f.id}" onclick="wipeFamilyData('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem;color:var(--amber,#f59e0b)" title="Apagar todos os dados desta família">🗑️ Dados</button>
@@ -1480,16 +1471,6 @@ async function loadFamiliesList() {
       </div>
     </div>`;
   }).join('');
-
-  // Set prices toggle checkboxes state after render
-  setTimeout(async () => {
-    for (const f of visibleFamilies) {
-      const chk = document.getElementById(`pricesFamToggle-${f.id}`);
-      if (!chk) continue;
-      const enabled = await getAppSetting(`prices_enabled_${f.id}`, false);
-      chk.checked = enabled === true || enabled === 'true';
-    }
-  }, 0);
 }
 
 function showFamilyForm(id='') {
@@ -1512,7 +1493,7 @@ async function saveFamily() {
   const desc = document.getElementById('fDesc').value.trim();
   if (!name) { toast('Informe o nome da família','error'); return; }
 
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin';
   const isFamOwner    = !id || (currentUser?.families||[]).some(f => f.id === id && f.role === 'owner');
   if (!isGlobalAdmin && !isFamOwner) { toast('Sem permissão para editar esta família','error'); return; }
 
@@ -1548,7 +1529,7 @@ async function saveFamily() {
 }
 
 async function deleteFamily(id, name) {
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.can_admin;
   const isFamOwner    = (currentUser?.families || []).some(f => f.id === id && f.role === 'owner');
 
   if (!isGlobalAdmin && !isFamOwner) { toast('Apenas admins ou o owner da família podem excluir','error'); return; }
@@ -1572,7 +1553,7 @@ async function deleteFamily(id, name) {
 async function wipeFamilyData(id, name) {
   // Apaga TODOS os dados da família (transações, contas, etc.) mas mantém a família e membros
   const isFamOwner = (currentUser?.families || []).some(f => f.id === id && f.role === 'owner');
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin';
   if (!isGlobalAdmin && !isFamOwner) { toast('Apenas o owner da família pode limpar os dados','error'); return; }
 
   // Confirmação dupla
@@ -1586,7 +1567,7 @@ async function wipeFamilyData(id, name) {
 
   try {
     // Apagar na ordem correta (FK constraints)
-    const tables = ['attachments','scheduled_transactions','budgets','transactions','accounts','payees','categories','price_history','price_items','price_stores'];
+    const tables = ['attachments','scheduled_transactions','budgets','transactions','accounts','payees','categories'];
     for (const table of tables) {
       const { error } = await sb.from(table).delete().eq('family_id', id);
       if (error) console.warn(`wipe ${table}:`, error.message);
@@ -1611,7 +1592,7 @@ async function inviteToFamily(familyId, familyName) {
   }
 
   const isFamOwner = (currentUser?.families || []).some(f => f.id === familyId && f.role === 'owner');
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin';
   if (!isGlobalAdmin && !isFamOwner) { toast('Apenas o owner pode convidar','error'); return; }
 
   const btn = document.getElementById(`inviteBtn-${familyId}`);
@@ -1744,9 +1725,8 @@ async function updateMemberRole(selectEl) {
 // ── USERS ─────────────────────────────────────────────────────────
 
 async function loadUsersList() {
-  // Guard: only global admin can list all users
-  if (currentUser?.role !== 'admin') return;
-
+  // Usar RPC get_all_users() (SECURITY DEFINER) para evitar problemas de RLS.
+  // Fallback para select direto se a função ainda não foi criada.
   let users, error;
   const { data: rpcData, error: rpcErr } = await sb.rpc('get_all_users');
   if (rpcErr) {
@@ -1861,7 +1841,6 @@ async function loadUsersList() {
         <td style="white-space:nowrap" onclick="event.stopPropagation()">
           ${u.id !== currentUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="toggleUserActive('${u.id}',${u.active})" style="padding:3px 8px;font-size:.73rem" title="${u.active?'Desativar':'Ativar'}">${u.active?'🚫':'✅'}</button>` : ''}
           ${u.id !== currentUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="resetUserPwd('${u.id}','${esc(u.name||u.email)}')" style="padding:3px 8px;font-size:.73rem" title="Redefinir senha">🔑</button>` : ''}
-          ${u.id !== currentUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="openDeleteUser('${u.id}','${esc(u.name||u.email)}','${esc(u.email)}')" style="padding:3px 8px;font-size:.73rem;color:var(--red)" title="Excluir usuário">🗑️</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -2018,8 +1997,7 @@ async function saveUser() {
     can_delete:      document.getElementById('pDelete').checked,
     can_export:      document.getElementById('pExport').checked,
     can_import:      document.getElementById('pImport').checked,
-    can_admin:       role === 'admin',
-    can_manage_family: role === 'admin' || role === 'owner',
+    can_admin:       role === 'admin' || role === 'owner',
     show_school_link: document.getElementById('pSchoolLink')?.checked ?? true,
   };
   if (avatarUrl !== undefined) record.avatar_url = avatarUrl;
@@ -2642,10 +2620,10 @@ function _renderUserMenuFamilies() {
 
   // Botão "Gerenciar Família" para owners (mesmo que tenha só 1 família)
   const isFamOwner    = families.some(f => f.role === 'owner');
-  const isGlobalAdmin = currentUser?.role === 'admin';
+  const isGlobalAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.can_admin;
   const manageFamBtn  = document.getElementById('umManageFamilyBtn');
   if (manageFamBtn) {
-    manageFamBtn.style.display = (currentUser?.role === 'owner' && isFamOwner) ? '' : 'none';
+    manageFamBtn.style.display = (isFamOwner && !isGlobalAdmin) ? '' : 'none';
   }
 
   // Ocultar switcher se só tiver 0 ou 1 família
@@ -2701,8 +2679,7 @@ async function switchFamily(familyId) {
     currentUser.can_edit   = r !== 'viewer';
     currentUser.can_delete = r === 'admin' || r === 'owner';
     currentUser.can_import = r === 'admin' || r === 'owner';
-    currentUser.can_admin         = r === 'admin';
-  currentUser.can_manage_family = r === 'admin' || r === 'owner';
+    currentUser.can_admin  = r === 'admin' || r === 'owner';
   }
 
   localStorage.setItem('ft_active_family_' + currentUser.id, familyId);
@@ -2724,7 +2701,6 @@ async function switchFamily(familyId) {
   toast(roleIcon + ' ' + fam.name, 'success');
   updateUserUI();
   _renderFamilySwitcher();
-  if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(()=>{});
 }
 
 function _roleLabel(role) {
@@ -3037,101 +3013,4 @@ function _mfmMsg(text, type) {
   el.style.background = type === 'error' ? '#fef2f2' : type === 'success' ? '#f0fdf4' : '#fffbeb';
   el.style.color      = type === 'error' ? '#991b1b' : type === 'success' ? '#166534' : '#92400e';
   el.style.border     = '1px solid ' + (type === 'error' ? '#fecaca' : type === 'success' ? '#bbf7d0' : '#fde68a');
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// DELETE USER
-// ══════════════════════════════════════════════════════════════════════════════
-
-function openDeleteUser(userId, userName, userEmail) {
-  const modal = document.getElementById('deleteUserModal');
-  if (!modal) return;
-  document.getElementById('duUserId').value    = userId;
-  document.getElementById('duUserName').textContent  = userName;
-  document.getElementById('duUserEmail').textContent = userEmail;
-  document.getElementById('duConfirmEmail').value    = '';
-  document.getElementById('duError').style.display   = 'none';
-  const btn = document.getElementById('duConfirmBtn');
-  if (btn) { btn.disabled = false; btn.textContent = '🗑️ Excluir permanentemente'; }
-  openModal('deleteUserModal');
-  setTimeout(() => document.getElementById('duConfirmEmail')?.focus(), 200);
-}
-
-async function confirmDeleteUser() {
-  const userId    = document.getElementById('duUserId').value;
-  const userEmail = document.getElementById('duUserEmail').textContent.trim();
-  const typed     = document.getElementById('duConfirmEmail').value.trim().toLowerCase();
-  const errEl     = document.getElementById('duError');
-  const btn       = document.getElementById('duConfirmBtn');
-
-  errEl.style.display = 'none';
-
-  if (typed !== userEmail.toLowerCase()) {
-    errEl.textContent    = 'O e-mail digitado não confere. Tente novamente.';
-    errEl.style.display  = '';
-    return;
-  }
-
-  btn.disabled    = true;
-  btn.textContent = '⏳ Excluindo...';
-
-  try {
-    // 1. Remover de family_members
-    await sb.from('family_members').delete().eq('user_id', userId).catch(() => {});
-
-    // 2. Remover de app_users
-    const { error: appErr } = await sb.from('app_users').delete().eq('id', userId);
-    if (appErr) throw new Error('Erro ao remover usuário: ' + appErr.message);
-
-    // 3. Remover do Supabase Auth
-    // 3a. Via sbAdmin (service_role key) — mais confiável
-    let authDeleted = false;
-    const admin = sbAdmin || initSbAdmin();
-    if (admin) {
-      try {
-        const { data: listData } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        const authUser = (listData?.users || []).find(
-          u => u.email?.toLowerCase() === userEmail.toLowerCase()
-        );
-        if (authUser?.id) {
-          const { error: delErr } = await admin.auth.admin.deleteUser(authUser.id);
-          if (!delErr) authDeleted = true;
-          else console.warn('[deleteUser] admin.deleteUser:', delErr.message);
-        }
-      } catch(e) {
-        console.warn('[deleteUser] sbAdmin falhou:', e.message);
-      }
-    }
-
-    // 3b. Fallback: RPC delete_auth_user (SECURITY DEFINER)
-    if (!authDeleted) {
-      try {
-        await sb.rpc('delete_auth_user', { p_email: userEmail });
-        authDeleted = true;
-      } catch(e) {
-        console.warn('[deleteUser] RPC delete_auth_user:', e.message);
-      }
-    }
-
-    if (!authDeleted) {
-      toast('⚠️ Usuário removido do app, mas a conta de login precisa ser excluída manualmente no Supabase Auth.', 'warning');
-    } else {
-      toast('✓ Usuário excluído permanentemente.', 'success');
-    }
-
-    closeModal('deleteUserModal');
-    await loadUsersList();
-    await _checkPendingApprovals();
-  } catch(e) {
-    errEl.textContent   = 'Erro: ' + e.message;
-    errEl.style.display = '';
-    btn.disabled    = false;
-    btn.textContent = '🗑️ Excluir permanentemente';
-  }
-}
-
-async function toggleFamilyPrices(familyId, enabled) {
-  await saveAppSetting(`prices_enabled_${familyId}`, enabled);
-  if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
-  toast(enabled ? '✓ Gestão de Preços ativada para esta família' : 'Gestão de Preços desativada', 'success');
 }
