@@ -2488,6 +2488,52 @@
       </div>
 
       <!-- ══ BACKUP NO BANCO (admin only) ══ -->
+
+      <!-- ── Normalização de Nomes (admin only) ─────────────────────────── -->
+      <div class="settings-section" id="normalizeNamesSection" style="display:none">
+        <div class="settings-group-label">🔤 Normalização de Nomes</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#f0fdf4">🔤</div>
+            <div class="settings-row-info">
+              <div class="settings-row-label">Padronizar beneficiários e categorias</div>
+              <div class="settings-row-sub" id="normalizeNamesSub">
+                Converte nomes para Title Case (Primeira Letra Maiúscula por Palavra).
+                Executado automaticamente todo domingo às 03:00 UTC via pg_cron.
+              </div>
+            </div>
+            <div class="settings-row-action" style="flex-direction:column;align-items:flex-end;gap:6px">
+              <button class="btn btn-ghost btn-sm" id="normalizeNamesPreviewBtn"
+                      onclick="openNormalizeNamesPreview()">
+                🔍 Prévia
+              </button>
+              <button class="btn btn-primary btn-sm" id="normalizeNamesRunBtn"
+                      onclick="runNormalizeNames()">
+                ▶ Executar agora
+              </button>
+            </div>
+          </div>
+
+          <!-- Last run info -->
+          <div id="normalizeNamesLastRun"
+               style="display:none;margin:0 16px 12px;padding:10px 14px;
+                      background:var(--surface2);border-radius:var(--r-sm);
+                      font-size:.78rem;color:var(--muted)"></div>
+
+          <!-- pg_cron hint -->
+          <div id="normalizeNamesCronHint"
+               style="margin:0 16px 12px;padding:10px 14px;
+                      background:var(--amber-lt,#fef3e2);border:1px solid var(--amber);
+                      border-radius:var(--r-sm);font-size:.78rem;line-height:1.6;display:none">
+            ⚠️ <strong>pg_cron não detectado.</strong>
+            O agendamento automático requer a extensão <code>pg_cron</code> ativa no Supabase.<br>
+            Habilite em <em>Database → Extensions → pg_cron</em>, depois execute novamente
+            <code>migration_normalize_names.sql</code>.<br>
+            A execução manual pelo botão acima funciona independentemente.
+          </div>
+        </div>
+      </div>
+
       <div class="settings-section" id="dbBackupSection" style="display:none">
         <div class="settings-group-label">🗄️ Backup no Banco de Dados</div>
         <div class="settings-card">
@@ -4490,6 +4536,51 @@
           <button class="btn btn-ghost btn-sm" onclick="closeModal('registerPricesModal')">Cancelar</button>
           <button class="btn btn-primary btn-sm" id="rpmSaveBtn"
                   onclick="saveRegisterPrices()">💾 Salvar preços</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ Modal: Prévia de Normalização de Nomes ══════════════════════════════ -->
+  <div class="modal-overlay" id="normalizeNamesPreviewModal">
+    <div class="modal" style="max-width:620px"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">🔍 Prévia — Normalização de Nomes</span>
+        <button class="modal-close" onclick="closeModal('normalizeNamesPreviewModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Summary chips -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
+                      padding:8px 14px;font-size:.82rem">
+            👥 Beneficiários:
+            <strong id="nnPreviewPayeeCount" style="color:var(--accent)">—</strong>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
+                      padding:8px 14px;font-size:.82rem">
+            🏷️ Categorias:
+            <strong id="nnPreviewCatCount" style="color:var(--accent)">—</strong>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div id="nnPreviewList"
+             style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm)">
+          <div style="text-align:center;padding:24px;color:var(--muted)">⏳ Carregando...</div>
+        </div>
+
+        <div style="font-size:.75rem;color:var(--muted);margin-top:10px">
+          Nenhuma alteração é feita até clicar em <strong>Executar agora</strong>.
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn btn-ghost btn-sm"
+                  onclick="closeModal('normalizeNamesPreviewModal')">Fechar</button>
+          <button class="btn btn-primary btn-sm"
+                  onclick="closeModal('normalizeNamesPreviewModal');runNormalizeNames()">
+            ▶ Executar agora
+          </button>
         </div>
       </div>
     </div>
