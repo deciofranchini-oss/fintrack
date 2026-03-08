@@ -1,156 +1,3 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   TITLE CASE — Normalização inteligente de nomes de beneficiários
-   Regras:
-   - Primeiras letras de cada palavra em maiúsculo, demais minúsculas
-   - Artigos/preposições PT no meio da frase ficam minúsculos
-     (de, da, do, das, dos, e, ou, para, pelo/pela, com, sem, sob, por…)
-   - Siglas de 2 letras ALL-CAPS preservadas como sigla (BB, XP, OI…)
-     exceto se forem preposição (DO, AS, OS, DE…)
-   - Siglas conhecidas sempre ALL-CAPS: PIX, CPF, CNPJ, ATM, TED, DOC…
-   - Abreviações: Ltda, Sa, Epp, Eireli, Mei, Me
-   - Tokens com ponto/barra curtos: S.A, S/A → uppercase cada segmento
-   - Tested: 16/16 casos reais de extratos bancários brasileiros
-═══════════════════════════════════════════════════════════════════════════ */
-
-// Artigos e preposições que ficam minúsculos quando no MEIO da frase
-const _TC_LOWER = new Set([
-  'de','da','do','das','dos','e','ou','a','o','as','os',
-  'em','na','no','nas','nos','para','pelo','pela','pelos','pelas',
-  'com','sem','sob','por','per','ante','até','após','entre',
-]);
-
-// Siglas sempre ALL-CAPS (independente de posição)
-const _TC_UPPER_FULL = new Set([
-  'cpf','cnpj','atm','pix','ted','doc','iss','nfe','nfse',
-  'bb','xp','cef','oi','tim','claro','vivo','sky','gpa',
-]);
-
-// Abreviações → Primeira letra maiúscula (Ltda, Sa, Epp…)
-const _TC_ABBREV = new Set([
-  'ltda','sa','epp','eireli','mei','me',
-]);
-
-/**
- * Converte uma string para Title Case inteligente.
- * @param {string} str
- * @returns {string}
- */
-function toTitleCase(str) {
-  if (!str) return '';
-  const s = str.trim();
-
-  // Apenas números/símbolos → retorna sem alterar
-  if (/^[\d\s\W]+$/.test(s)) return s;
-
-  // Dividir por espaços (preserva espaços como tokens)
-  const words = s.split(/([ \t]+)/);
-
-  return words.map((token, idx) => {
-    // Preservar separadores de espaço
-    if (/^[ \t]+$/.test(token) || !token) return token;
-
-    const low     = token.toLowerCase();
-    const isFirst = idx === 0 || words.slice(0, idx).every(t => /^[ \t]+$/.test(t));
-    const isLast  = idx === words.length - 1 || words.slice(idx + 1).every(t => /^[ \t]+$/.test(t));
-
-    // ── Token com separador interno curto: S.A, S/A, C.A → uppercase por segmento
-    if (/[./]/.test(token) && token.replace(/[./]/g, '').length <= 4) {
-      return token.split(/([./])/).map(seg => {
-        if (/^[./]$/.test(seg)) return seg;
-        return seg.toUpperCase();
-      }).join('');
-    }
-
-    // ── Sigla ALL-CAPS conhecida → sempre uppercase
-    if (_TC_UPPER_FULL.has(low)) return low.toUpperCase();
-
-    // ── Abreviação conhecida → Capitalize
-    if (_TC_ABBREV.has(low)) return low.charAt(0).toUpperCase() + low.slice(1);
-
-    // ── Sigla inferida: exatamente 2 letras ALL-CAPS que NÃO seja preposição
-    if (/^[A-ZÀ-Ú]{2}$/.test(token) && !_TC_LOWER.has(low)) return token;
-
-    // ── Preposição/artigo no MEIO da frase → minúsculas
-    if (!isFirst && !isLast && _TC_LOWER.has(low)) return low;
-
-    // ── Capitalização padrão: primeira maiúscula, restante minúsculas
-    return low.charAt(0).toUpperCase() + low.slice(1);
-  }).join('');
-}
-
-/** Aplica toTitleCase com trim — ponto de entrada para salvar nomes */
-function normalizePayeeName(name) {
-  return toTitleCase((name || '').trim());
-}
-
-/* ─── Normalização em massa de beneficiários ─────────────────────────────── */
-
-async function openNormalizePayeesModal() {
-  const changes = (state.payees || [])
-    .map(p => ({ id: p.id, oldName: p.name, newName: normalizePayeeName(p.name) }))
-    .filter(c => c.oldName !== c.newName);
-
-  const countEl  = document.getElementById('normPayeeCount');
-  const listEl   = document.getElementById('normPayeeList');
-  const applyBtn = document.getElementById('normPayeeApplyBtn');
-
-  if (countEl) countEl.textContent = changes.length;
-
-  if (!changes.length) {
-    if (listEl) listEl.innerHTML =
-      '<div class="norm-empty">✅ Todos os nomes já estão no formato correto.</div>';
-    if (applyBtn) applyBtn.style.display = 'none';
-  } else {
-    if (listEl) {
-      listEl.innerHTML = changes.map(c => `
-        <div class="norm-row">
-          <div class="norm-row-old" title="${esc(c.oldName)}">${esc(c.oldName)}</div>
-          <div class="norm-row-arrow">→</div>
-          <div class="norm-row-new" title="${esc(c.newName)}">${esc(c.newName)}</div>
-        </div>`).join('');
-    }
-    if (applyBtn) { applyBtn.style.display = ''; applyBtn.disabled = false; applyBtn.textContent = `✅ Aplicar em ${changes.length} nome${changes.length !== 1 ? 's' : ''}`; }
-  }
-
-  window._normPayeeChanges = changes;
-  openModal('normalizePayeesModal');
-}
-
-async function applyNormalizePayees() {
-  const changes = window._normPayeeChanges || [];
-  if (!changes.length) { closeModal('normalizePayeesModal'); return; }
-
-  const applyBtn = document.getElementById('normPayeeApplyBtn');
-  if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = '⏳ Salvando...'; }
-
-  let ok = 0, fail = 0;
-  const BATCH = 10;
-  for (let i = 0; i < changes.length; i += BATCH) {
-    const slice = changes.slice(i, i + BATCH);
-    await Promise.all(slice.map(async c => {
-      const { error } = await sb.from('payees')
-        .update({ name: c.newName })
-        .eq('id', c.id)
-        .eq('family_id', famId());
-      if (error) { fail++; console.warn('[NormPayee]', c.id, error.message); }
-      else ok++;
-    }));
-  }
-
-  closeModal('normalizePayeesModal');
-  await loadPayees();
-  populateSelects();
-  renderPayees();
-
-  toast(
-    fail === 0
-      ? `✅ ${ok} nome${ok !== 1 ? 's' : ''} normalizado${ok !== 1 ? 's' : ''}!`
-      : `✓ ${ok} OK · ⚠️ ${fail} erro${fail !== 1 ? 's' : ''}`,
-    fail === 0 ? 'success' : 'warning'
-  );
-  window._normPayeeChanges = [];
-}
-
 async function loadPayees(){const{data,error}=await famQ(sb.from('payees').select('*, categories(name)')).order('name');if(error){toast(error.message,'error');return;}state.payees=data||[];}
 
 // ── Contagem de transações por payee ──────────────────────────────────────
@@ -282,114 +129,13 @@ function filterPayees(){renderPayees(document.getElementById('payeeSearch').valu
 function openPayeeModal(id=''){
   const form={id:'',name:'',type:'beneficiario',default_category_id:'',notes:''};
   if(id){const p=state.payees.find(x=>x.id===id);if(p)Object.assign(form,p);}
-  document.getElementById('payeeId').value   = form.id;
-  document.getElementById('payeeName').value = form.name;
-  document.getElementById('payeeType').value = form.type;
-  document.getElementById('payeeNotes').value = form.notes || '';
-  document.getElementById('payeeModalTitle').textContent = id ? 'Editar Beneficiário' : 'Novo Beneficiário';
-  _buildPayeeCatPicker(form.type, form.default_category_id || '');
-  // Rebuild picker when type changes
-  const typeEl = document.getElementById('payeeType');
-  typeEl.onchange = () => _buildPayeeCatPicker(typeEl.value, '');
-  openModal('payeeModal');
-}
-
-/** Constrói o dropdown hierárquico de categorias filtrado por tipo de beneficiário */
-function _buildPayeeCatPicker(payeeType, selectedId) {
-  const typeFilter = payeeType === 'beneficiario' ? 'expense'
-    : payeeType === 'fonte_pagadora' ? 'income'
-    : null; // 'ambos' → mostra todas
-
-  const cats = state.categories || [];
-  // Parents visíveis conforme tipo
-  const parents = cats.filter(c => !c.parent_id && (typeFilter === null || c.type === typeFilter || c.type === 'both'));
-  const dropdown = document.getElementById('payeeCatPickerDropdown');
-  if (!dropdown) return;
-
-  let html = `<div onclick="setPayeeCatValue('','true')"
-    style="padding:9px 12px;cursor:pointer;font-size:.82rem;color:var(--muted);
-           border-bottom:1px solid var(--border2)"
-    onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-    — Nenhuma —</div>`;
-
-  if (typeFilter === null) {
-    // Agrupar por tipo quando 'ambos'
-    [['expense','💸 Despesas'],['income','💰 Receitas']].forEach(([t, label]) => {
-      const group = parents.filter(p => p.type === t || p.type === 'both');
-      if (!group.length) return;
-      html += `<div style="padding:5px 10px;font-size:.7rem;font-weight:700;
-                           text-transform:uppercase;letter-spacing:.06em;
-                           color:var(--muted);background:var(--surface2)">${label}</div>`;
-      group.forEach(p => { html += _payeeCatParentHtml(p, cats.filter(c => c.parent_id === p.id)); });
-    });
-  } else {
-    parents.forEach(p => { html += _payeeCatParentHtml(p, cats.filter(c => c.parent_id === p.id)); });
-  }
-
-  dropdown.innerHTML = html;
-  // Apply selected value
-  setPayeeCatValue(selectedId, false);
-}
-
-function _payeeCatParentHtml(parent, children) {
-  const dot = parent.color ? `<span style="width:9px;height:9px;border-radius:50%;background:${parent.color};display:inline-block;flex-shrink:0"></span>` : '';
-  const icon = parent.icon ? (parent.icon.startsWith('emoji-') ? `<span>${parent.icon.slice(6)}</span>` : '') : '';
-  let h = `<div onclick="setPayeeCatValue('${parent.id}', true)"
-    style="padding:8px 12px;cursor:pointer;font-size:.83rem;font-weight:600;
-           display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--border2)"
-    onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-    ${dot}${icon}<span>${esc(parent.name)}</span></div>`;
-  children.forEach(c => {
-    const cdot = c.color ? `<span style="width:7px;height:7px;border-radius:50%;background:${c.color};display:inline-block;flex-shrink:0"></span>` : '';
-    h += `<div onclick="setPayeeCatValue('${c.id}', true)"
-      style="padding:7px 12px 7px 28px;cursor:pointer;font-size:.8rem;
-             display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--border2)"
-      onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-      ${cdot}<span>${esc(c.name)}</span></div>`;
-  });
-  return h;
-}
-
-function togglePayeeCatPicker() {
-  const dd = document.getElementById('payeeCatPickerDropdown');
-  if (!dd) return;
-  const open = dd.style.display !== 'none';
-  dd.style.display = open ? 'none' : 'block';
-  if (!open) {
-    // close on outside click
-    setTimeout(() => {
-      document.addEventListener('click', function _close(e) {
-        const wrap = document.getElementById('payeeCatPickerWrap');
-        if (wrap && !wrap.contains(e.target)) {
-          dd.style.display = 'none';
-          document.removeEventListener('click', _close);
-        }
-      });
-    }, 10);
-  }
-}
-
-function setPayeeCatValue(catId, closeDropdown) {
-  document.getElementById('payeeCategory').value = catId || '';
-  const btn   = document.getElementById('payeeCatPickerBtn');
-  const label = document.getElementById('payeeCatPickerLabel');
-  const dot   = document.getElementById('payeeCatPickerDot');
-  const dd    = document.getElementById('payeeCatPickerDropdown');
-  if (!catId) {
-    if (label) label.textContent = '— Nenhuma —';
-    if (dot)   dot.style.background = 'var(--muted)';
-  } else {
-    const cat = (state.categories || []).find(c => c.id === catId);
-    if (cat) {
-      if (label) label.textContent = cat.name;
-      if (dot)   dot.style.background = cat.color || 'var(--accent)';
-    }
-  }
-  if (closeDropdown && dd) dd.style.display = 'none';
+  document.getElementById('payeeId').value=form.id;document.getElementById('payeeName').value=form.name;document.getElementById('payeeType').value=form.type;document.getElementById('payeeNotes').value=form.notes||'';
+  const sel=document.getElementById('payeeCategory');sel.innerHTML='<option value="">— Nenhuma —</option>'+state.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');sel.value=form.default_category_id||'';
+  document.getElementById('payeeModalTitle').textContent=id?'Editar Beneficiário':'Novo Beneficiário';openModal('payeeModal');
 }
 async function savePayee(){
   const id=document.getElementById('payeeId').value;
-  const data={name:normalizePayeeName(document.getElementById('payeeName').value),type:document.getElementById('payeeType').value,default_category_id:document.getElementById('payeeCategory').value||null,notes:document.getElementById('payeeNotes').value};
+  const data={name:document.getElementById('payeeName').value.trim(),type:document.getElementById('payeeType').value,default_category_id:document.getElementById('payeeCategory').value||null,notes:document.getElementById('payeeNotes').value};
   if(!data.name){toast('Informe o nome','error');return;}
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('payees').update(data).eq('id',id));}else{({error:err}=await sb.from('payees').insert(data));}
   if(err){toast(err.message,'error');return;}toast('Salvo!','success');closeModal('payeeModal');await loadPayees();populateSelects();renderPayees();
@@ -467,7 +213,7 @@ async function confirmPayeeReassign() {
     if (useNew) {
       if (!newName) { toast('Informe o nome do novo beneficiário', 'error'); return; }
       const { data: created, error: createErr } = await sb.from('payees')
-        .insert({ name: normalizePayeeName(newName), type: 'beneficiario', family_id: famId() })
+        .insert({ name: newName, type: 'beneficiario', family_id: famId() })
         .select().single();
       if (createErr) throw new Error('Erro ao criar beneficiário: ' + createErr.message);
       toId = created.id;
@@ -574,14 +320,11 @@ function parsePayeeClipboard() {
   // Check which already exist in state.payees
   const existingNames = new Set((state.payees||[]).map(p => p.name.toLowerCase()));
 
-  _payeeClipboardItems = names.map(name => {
-    const normalized = normalizePayeeName(name);
-    return {
-      name: normalized,
-      exists: existingNames.has(normalized.toLowerCase()),
-      selected: !existingNames.has(normalized.toLowerCase()),
-    };
-  });
+  _payeeClipboardItems = names.map(name => ({
+    name,
+    exists: existingNames.has(name.toLowerCase()),
+    selected: !existingNames.has(name.toLowerCase()), // pre-select only new ones
+  }));
 
   renderPayeeClipboardPreview();
 }
@@ -646,7 +389,7 @@ async function confirmPayeeClipboardImport() {
   const type = document.getElementById('payeeClipboardType').value || 'beneficiario';
 
   try {
-    const batch = toImport.map(i => ({ name: normalizePayeeName(i.name), type, family_id: famId() }));
+    const batch = toImport.map(i => ({ name: i.name, type, family_id: famId() }));
     // Insert in batches of 100
     let created = 0, errors = 0;
     for (let i = 0; i < batch.length; i += 100) {
