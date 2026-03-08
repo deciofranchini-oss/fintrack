@@ -172,9 +172,12 @@ function _showAiBtn(state) {
 
 // Limpa estado quando o modal fecha
 function resetReceiptAI() {
-  window._receiptAiPending = null;
+  window._receiptAiPending     = null;
+  window._lastReceiptAiResult  = null;
   _showAiBtn('hidden');
   _renderAiResultPanel(null);
+  const pricesBtn = document.getElementById('txRegisterPricesBtn');
+  if (pricesBtn) pricesBtn.style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -202,7 +205,15 @@ async function readReceiptWithAI() {
     const result = await _callClaudeVision(apiKey, window._receiptAiPending);
     _applyResultToForm(result);
     _renderAiResultPanel(result);
+    window._lastReceiptAiResult = result; // used by Módulo de Preços
     toast('✅ Campos preenchidos! Revise e salve.', 'success');
+    // Show "Registrar Preços" button if prices feature active for this family
+    try {
+      if (typeof isPricesEnabled === 'function' && await isPricesEnabled()) {
+        const pricesBtn = document.getElementById('txRegisterPricesBtn');
+        if (pricesBtn) pricesBtn.style.display = '';
+      }
+    } catch {}
   } catch (e) {
     toast('Erro na leitura com IA: ' + e.message, 'error');
     console.error('[ReceiptAI]', e);

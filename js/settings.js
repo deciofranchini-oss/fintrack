@@ -443,7 +443,7 @@ function loadSettings() {
   if (tl && pt) { tl.style.display='none'; pt.style.display=''; }
   if (typeof initLogoSettings === 'function') initLogoSettings();
 
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin');
 
   // DB Backup section — admin only
   const dbBackupSec = document.getElementById('dbBackupSection');
@@ -456,7 +456,7 @@ function loadSettings() {
   if (typeof initAiSettings === 'function') initAiSettings();
 
   // Seções admin-only
-  const adminSections = ['settingsVisibilitySection', 'schoolLinkSection', 'userMgmtSection'];
+  const adminSections = ['settingsVisibilitySection', 'schoolLinkSection', 'userMgmtSection', 'normalizeNamesSection'];
   adminSections.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? '' : 'none';
@@ -467,6 +467,7 @@ function loadSettings() {
     initSettingsVisibilityForm();
     initSchoolLinkForm();
     initServiceRoleKeySection();
+    try { _loadNormalizeNamesInfo().catch(()=>{}); } catch {}
     // Mostrar menuVisibilitySection para admin sempre
     const mvSec = document.getElementById('menuVisibilitySection');
     if (mvSec) { mvSec.style.display = ''; _renderMenuVisibilityForm(); }
@@ -486,7 +487,7 @@ function loadSettings() {
 
 function initLogoSettings() {
   // Admin-only section: show/hide
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin');
   const sec = document.getElementById('logoSettingsSection');
   if(sec) sec.style.display = isAdmin ? '' : 'none';
   if(!isAdmin) return;
@@ -515,7 +516,7 @@ function initLogoSettings() {
 }
 
 async function saveAppLogo() {
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin');
   if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
 
   const urlEl = document.getElementById('appLogoUrl');
@@ -530,7 +531,7 @@ async function saveAppLogo() {
 }
 
 async function resetAppLogo() {
-  const isAdmin = (currentUser?.role==='admin' || currentUser?.role==='owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role==='admin');
   if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
 
   await saveAppSetting('app_logo_url', '');
@@ -813,7 +814,7 @@ async function resetSettingsVisibility() {
 
 // Aplica a visibilidade das seções para usuário não-admin
 function applySettingsVisibility(vis) {
-  const isAdmin = (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role === 'admin');
   if (isAdmin) return; // admins veem tudo — não aplica restrição
 
   vis = vis || _getSettingsVisibility();
@@ -923,7 +924,7 @@ function applySchoolLink(cfg) {
 ══════════════════════════════════════════════════════════════════ */
 
 function initServiceRoleKeySection() {
-  const isAdmin = (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.can_admin);
+  const isAdmin = (currentUser?.role === 'admin');
   const row = document.getElementById('serviceRoleRow');
   if (!row) return;
   row.style.display = isAdmin ? '' : 'none';
@@ -966,4 +967,128 @@ function clearServiceRoleKey() {
   if (stat) { stat.textContent = 'Chave removida — reset de senha usará e-mail de recuperação.'; stat.style.color = 'var(--muted)'; }
   toast('Service Role Key removida', 'info');
   if (typeof initSbAdmin === 'function') initSbAdmin();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NORMALIZAÇÃO DE NOMES — admin only
+// Funções: _loadNormalizeNamesInfo, openNormalizeNamesPreview, runNormalizeNames
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _loadNormalizeNamesInfo() {
+  const lastRunEl = document.getElementById('normalizeNamesLastRun');
+  const hintEl    = document.getElementById('normalizeNamesCronHint');
+  try {
+    const val = await getAppSetting('normalize_names_last_run', null);
+    if (val && typeof val === 'object' && val.ran_at) {
+      const d = new Date(val.ran_at);
+      const fmt = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' })
+                + ' às '
+                + d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      if (lastRunEl) {
+        lastRunEl.style.display = '';
+        lastRunEl.innerHTML =
+          `✅ Última execução: <strong>${fmt}</strong> — ` +
+          `${val.payees_updated || 0} beneficiário(s) e ${val.cats_updated || 0} categoria(s) normalizados.`;
+      }
+    }
+  } catch {}
+
+  // Check pg_cron availability
+  if (hintEl) {
+    try {
+      const { data } = await sb.rpc('normalize_names_cron_active').catch(() => ({ data: null }));
+      hintEl.style.display = data ? 'none' : '';
+    } catch { hintEl.style.display = ''; }
+  }
+}
+
+async function openNormalizeNamesPreview() {
+  openModal('normalizeNamesPreviewModal');
+  const listEl     = document.getElementById('nnPreviewList');
+  const payeeCount = document.getElementById('nnPreviewPayeeCount');
+  const catCount   = document.getElementById('nnPreviewCatCount');
+  if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted)">⏳ Carregando prévia...</div>';
+
+  try {
+    const { data, error } = await sb
+      .from('normalize_names_preview')
+      .select('*')
+      .order('tabela')
+      .order('nome_atual');
+    if (error) throw error;
+
+    const rows   = data || [];
+    const payees = rows.filter(r => r.tabela === 'beneficiário');
+    const cats   = rows.filter(r => r.tabela === 'categoria');
+    if (payeeCount) payeeCount.textContent = payees.length;
+    if (catCount)   catCount.textContent   = cats.length;
+
+    if (!rows.length) {
+      listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-size:.85rem">✅ Todos os nomes já estão normalizados!</div>';
+      return;
+    }
+
+    const rowHtml = r => `
+      <div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;
+                  padding:8px 12px;border-bottom:1px solid var(--border2);font-size:.8rem;align-items:center">
+        <span style="font-size:.7rem;background:var(--surface2);border-radius:4px;
+                     padding:2px 6px;text-align:center;color:var(--muted)">
+          ${r.tabela === 'beneficiário' ? '👥' : '🏷️'} ${r.tabela}
+        </span>
+        <span style="color:var(--muted);text-decoration:line-through;
+                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${esc(r.nome_atual)}">${esc(r.nome_atual)}</span>
+        <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${esc(r.nome_normalizado)}">${esc(r.nome_normalizado)}</span>
+      </div>`;
+
+    listEl.innerHTML =
+      `<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;
+                   padding:8px 12px;background:var(--surface2);
+                   font-size:.7rem;font-weight:700;text-transform:uppercase;
+                   letter-spacing:.06em;color:var(--muted)">
+         <span>Tipo</span><span>Atual</span><span>Normalizado</span>
+       </div>` + rows.map(rowHtml).join('');
+  } catch (e) {
+    if (listEl) listEl.innerHTML =
+      `<div style="padding:16px;background:#fef2f2;border-radius:var(--r-sm);font-size:.82rem;color:#991b1b">
+         ❌ Erro: ${esc(e.message)}<br><br>
+         Execute <code>migration_normalize_names.sql</code> no Supabase primeiro.
+       </div>`;
+  }
+}
+
+async function runNormalizeNames() {
+  if (currentUser?.role !== 'admin') {
+    toast('Apenas administradores podem executar esta função.', 'error');
+    return;
+  }
+  const btn = document.getElementById('normalizeNamesRunBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Executando...'; }
+  try {
+    const { data, error } = await sb.rpc('run_normalize_names');
+    if (error) {
+      if (error.code === '42883' || error.message?.includes('function')) {
+        toast('⚠️ Execute migration_normalize_names.sql no Supabase primeiro.', 'warning');
+        return;
+      }
+      throw error;
+    }
+    const p = data?.payees_updated || 0;
+    const c = data?.cats_updated   || 0;
+    const total = p + c;
+    if (total === 0) {
+      toast('✅ Todos os nomes já estão normalizados!', 'success');
+    } else {
+      toast(`✅ ${total} nome(s) normalizado(s): ${p} beneficiário(s), ${c} categoria(s).`, 'success');
+    }
+    await _loadNormalizeNamesInfo();
+    if (typeof loadPayees     === 'function') await loadPayees().catch(()=>{});
+    if (typeof loadCategories === 'function') await loadCategories().catch(()=>{});
+    if (typeof populateSelects === 'function') populateSelects();
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Executar agora'; }
+  }
 }

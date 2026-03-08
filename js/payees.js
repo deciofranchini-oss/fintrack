@@ -282,9 +282,110 @@ function filterPayees(){renderPayees(document.getElementById('payeeSearch').valu
 function openPayeeModal(id=''){
   const form={id:'',name:'',type:'beneficiario',default_category_id:'',notes:''};
   if(id){const p=state.payees.find(x=>x.id===id);if(p)Object.assign(form,p);}
-  document.getElementById('payeeId').value=form.id;document.getElementById('payeeName').value=form.name;document.getElementById('payeeType').value=form.type;document.getElementById('payeeNotes').value=form.notes||'';
-  const sel=document.getElementById('payeeCategory');sel.innerHTML='<option value="">— Nenhuma —</option>'+state.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');sel.value=form.default_category_id||'';
-  document.getElementById('payeeModalTitle').textContent=id?'Editar Beneficiário':'Novo Beneficiário';openModal('payeeModal');
+  document.getElementById('payeeId').value   = form.id;
+  document.getElementById('payeeName').value = form.name;
+  document.getElementById('payeeType').value = form.type;
+  document.getElementById('payeeNotes').value = form.notes || '';
+  document.getElementById('payeeModalTitle').textContent = id ? 'Editar Beneficiário' : 'Novo Beneficiário';
+  _buildPayeeCatPicker(form.type, form.default_category_id || '');
+  // Rebuild picker when type changes
+  const typeEl = document.getElementById('payeeType');
+  typeEl.onchange = () => _buildPayeeCatPicker(typeEl.value, '');
+  openModal('payeeModal');
+}
+
+/** Constrói o dropdown hierárquico de categorias filtrado por tipo de beneficiário */
+function _buildPayeeCatPicker(payeeType, selectedId) {
+  const typeFilter = payeeType === 'beneficiario' ? 'expense'
+    : payeeType === 'fonte_pagadora' ? 'income'
+    : null; // 'ambos' → mostra todas
+
+  const cats = state.categories || [];
+  // Parents visíveis conforme tipo
+  const parents = cats.filter(c => !c.parent_id && (typeFilter === null || c.type === typeFilter || c.type === 'both'));
+  const dropdown = document.getElementById('payeeCatPickerDropdown');
+  if (!dropdown) return;
+
+  let html = `<div onclick="setPayeeCatValue('','true')"
+    style="padding:9px 12px;cursor:pointer;font-size:.82rem;color:var(--muted);
+           border-bottom:1px solid var(--border2)"
+    onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    — Nenhuma —</div>`;
+
+  if (typeFilter === null) {
+    // Agrupar por tipo quando 'ambos'
+    [['expense','💸 Despesas'],['income','💰 Receitas']].forEach(([t, label]) => {
+      const group = parents.filter(p => p.type === t || p.type === 'both');
+      if (!group.length) return;
+      html += `<div style="padding:5px 10px;font-size:.7rem;font-weight:700;
+                           text-transform:uppercase;letter-spacing:.06em;
+                           color:var(--muted);background:var(--surface2)">${label}</div>`;
+      group.forEach(p => { html += _payeeCatParentHtml(p, cats.filter(c => c.parent_id === p.id)); });
+    });
+  } else {
+    parents.forEach(p => { html += _payeeCatParentHtml(p, cats.filter(c => c.parent_id === p.id)); });
+  }
+
+  dropdown.innerHTML = html;
+  // Apply selected value
+  setPayeeCatValue(selectedId, false);
+}
+
+function _payeeCatParentHtml(parent, children) {
+  const dot = parent.color ? `<span style="width:9px;height:9px;border-radius:50%;background:${parent.color};display:inline-block;flex-shrink:0"></span>` : '';
+  const icon = parent.icon ? (parent.icon.startsWith('emoji-') ? `<span>${parent.icon.slice(6)}</span>` : '') : '';
+  let h = `<div onclick="setPayeeCatValue('${parent.id}', true)"
+    style="padding:8px 12px;cursor:pointer;font-size:.83rem;font-weight:600;
+           display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--border2)"
+    onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    ${dot}${icon}<span>${esc(parent.name)}</span></div>`;
+  children.forEach(c => {
+    const cdot = c.color ? `<span style="width:7px;height:7px;border-radius:50%;background:${c.color};display:inline-block;flex-shrink:0"></span>` : '';
+    h += `<div onclick="setPayeeCatValue('${c.id}', true)"
+      style="padding:7px 12px 7px 28px;cursor:pointer;font-size:.8rem;
+             display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--border2)"
+      onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+      ${cdot}<span>${esc(c.name)}</span></div>`;
+  });
+  return h;
+}
+
+function togglePayeeCatPicker() {
+  const dd = document.getElementById('payeeCatPickerDropdown');
+  if (!dd) return;
+  const open = dd.style.display !== 'none';
+  dd.style.display = open ? 'none' : 'block';
+  if (!open) {
+    // close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', function _close(e) {
+        const wrap = document.getElementById('payeeCatPickerWrap');
+        if (wrap && !wrap.contains(e.target)) {
+          dd.style.display = 'none';
+          document.removeEventListener('click', _close);
+        }
+      });
+    }, 10);
+  }
+}
+
+function setPayeeCatValue(catId, closeDropdown) {
+  document.getElementById('payeeCategory').value = catId || '';
+  const btn   = document.getElementById('payeeCatPickerBtn');
+  const label = document.getElementById('payeeCatPickerLabel');
+  const dot   = document.getElementById('payeeCatPickerDot');
+  const dd    = document.getElementById('payeeCatPickerDropdown');
+  if (!catId) {
+    if (label) label.textContent = '— Nenhuma —';
+    if (dot)   dot.style.background = 'var(--muted)';
+  } else {
+    const cat = (state.categories || []).find(c => c.id === catId);
+    if (cat) {
+      if (label) label.textContent = cat.name;
+      if (dot)   dot.style.background = cat.color || 'var(--accent)';
+    }
+  }
+  if (closeDropdown && dd) dd.style.display = 'none';
 }
 async function savePayee(){
   const id=document.getElementById('payeeId').value;
