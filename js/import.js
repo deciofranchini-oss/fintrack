@@ -49,6 +49,51 @@ const SOURCE_PRESETS = {
     fields: { date:'Data', description:'Descrição', amount:'Valor', type_col:'Tipo' },
     amountInvert: false,
   },
+  bradesco: {
+    label: 'Bradesco',
+    fields: { date:'Data', description:'Histórico', amount:'Valor', type_col:'Natureza' },
+    accountName: 'Bradesco',
+  },
+  santander: {
+    label: 'Santander',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Santander',
+  },
+  bb: {
+    label: 'Banco do Brasil',
+    fields: { date:'Data', description:'Histórico', amount_credit:'Crédito(R$)', amount_debit:'Débito(R$)' },
+    accountName: 'Banco do Brasil',
+  },
+  caixa: {
+    label: 'Caixa Econômica',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Caixa Econômica Federal',
+  },
+  c6bank: {
+    label: 'C6 Bank',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'C6 Bank', amountInvert: true,
+  },
+  picpay: {
+    label: 'PicPay',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'PicPay', amountInvert: true,
+  },
+  mercadopago: {
+    label: 'Mercado Pago',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Mercado Pago',
+  },
+  pagbank: {
+    label: 'PagBank',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'PagBank',
+  },
+  sicoob: {
+    label: 'Sicoob',
+    fields: { date:'Data', description:'Histórico', amount:'Valor', type_col:'Tipo' },
+    accountName: 'Sicoob',
+  },
 };
 
 const FINTRACK_FIELDS = [
@@ -141,6 +186,14 @@ async function loadImportFile(file) {
       const text = await file.text();
       rows = parseCsvToRows(text);
       importLogMsg('ok', `✓ ${rows.length} linhas (CSV)`);
+    } else if (ext.endsWith('.ofx') || ext.endsWith('.qfx')) {
+      const text = await file.text();
+      rows = parseOfxToRows(text);
+      importLogMsg('ok', `✓ ${rows.length} transações (OFX)`);
+      // OFX já tem preset forçado
+      importState.sourcePreset = 'ofx';
+      document.querySelectorAll('.source-chip').forEach(el => el.classList.remove('active'));
+      document.getElementById('chip-ofx')?.classList.add('active');
     } else {
       const buf = await file.arrayBuffer();
       const wb  = XLSX.read(buf, { type:'array', raw:false });
@@ -153,18 +206,61 @@ async function loadImportFile(file) {
     document.getElementById('importDropTitle').textContent = '✓ ' + file.name;
     document.getElementById('importDropSub').textContent = `${rows.length} linhas carregadas`;
     document.getElementById('importProgress').style.display = 'none';
+
+    // ── Análise com IA (assíncrona, não-bloqueante para a UI) ─────────────
     detectHeaderRow();
     buildColMapperUI();
+
     const preset = SOURCE_PRESETS[importState.sourcePreset] || SOURCE_PRESETS.generic;
     if (preset.isMoneywiz) {
+      // MoneyWiz: pular IA e avançar direto
+      importLogMsg('info', '⚡ MoneyWiz detectado — importando diretamente...');
+      await proceedFromColMapper();
+    } else if (ext.endsWith('.ofx') || ext.endsWith('.qfx')) {
+      // OFX: estrutura já conhecida, avançar direto
       await proceedFromColMapper();
     } else {
+      // CSV/XLSX genérico: tentar IA primeiro
       goToStep(2);
+      importLogMsg('info', '🤖 Iniciando análise inteligente do arquivo...');
+      const autoAdvance = await runImportAIPipeline(file, rows);
+      if (autoAdvance) {
+        importLogMsg('ok', '✓ Formato identificado com alta confiança — avançando automaticamente');
+        await proceedFromColMapper();
+      } else {
+        importLogMsg('info', '📋 Revise o mapeamento de colunas e clique em "Analisar & Prévia"');
+      }
     }
   } catch(err) {
     importLogMsg('err', '✗ ' + err.message);
     console.error(err);
   }
+}
+
+/* ─── OFX / QFX parser ─── */
+function parseOfxToRows(text) {
+  // Suporta OFX SGML clássico e OFX/QFX XML
+  const rows = [['Data', 'Descrição', 'Valor', 'Tipo', 'ID']];
+  const txRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  let match;
+  while ((match = txRegex.exec(text)) !== null) {
+    const block = match[1];
+    const get   = tag => { const m = block.match(new RegExp(`<${tag}>([^<\r\n]+)`, 'i')); return m ? m[1].trim() : ''; };
+    const dtraw = get('DTPOSTED') || get('DTUSER');
+    const date  = dtraw ? dtraw.slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+    const amt   = get('TRNAMT');
+    const name  = get('NAME') || get('MEMO') || get('PAYEE');
+    const memo  = get('MEMO');
+    const ttype = get('TRNTYPE');
+    const fitid = get('FITID');
+    if (date && amt) rows.push([date, name || memo, amt, ttype, fitid]);
+  }
+  // Fallback: se não achou tags XML, tentar como CSV com campos OFX flat
+  if (rows.length <= 1) {
+    // Tentar parsear como CSV normal
+    return parseCsvToRows(text);
+  }
+  return rows;
 }
 
 /* ─── CSV Parser ─── */
