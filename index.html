@@ -3222,11 +3222,88 @@
           </div>
         </div>
 
+        <!-- Gerenciar família (só para owners) -->
+        <div id="myProfileFamilyMgmtBtn" style="display:none;margin-bottom:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;gap:8px;font-size:.82rem"
+                  onclick="closeModal('myProfileModal');openMyFamilyMgmt()">
+            🏠 Gerenciar minha família
+          </button>
+        </div>
+
         <div id="myProfileError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:12px;
           padding:8px 12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-ghost btn-sm" onclick="closeModal('myProfileModal')">Cancelar</button>
           <button class="btn btn-primary btn-sm" id="myProfileSaveBtn" onclick="saveMyProfile()">💾 Salvar</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Modal: Gerenciar Minha Família (owner) ══════════════════════════════ -->
+  <div class="modal-overlay" id="myFamilyMgmtModal">
+    <div class="modal" style="max-width:580px;width:95vw"><div class="modal-handle"></div>
+      <div class="modal-header">
+        <span class="modal-title">🏠 Gerenciar Família</span>
+        <button class="modal-close" onclick="closeModal('myFamilyMgmtModal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+
+        <!-- Family tabs (when owner of multiple families) -->
+        <div id="mfmFamilyTabs" style="display:none;border-bottom:1px solid var(--border);padding:0 16px;overflow-x:auto;white-space:nowrap"></div>
+
+        <!-- Family name heading -->
+        <div style="padding:14px 20px 0">
+          <div id="mfmFamilyName" style="font-size:1rem;font-weight:700;color:var(--text)"></div>
+          <div id="mfmFamilyDesc" style="font-size:.75rem;color:var(--muted);margin-top:2px"></div>
+        </div>
+
+        <!-- Members list -->
+        <div style="padding:14px 20px 0">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">
+            Membros
+          </div>
+          <div id="mfmMembersList" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding-right:4px"></div>
+        </div>
+
+        <!-- Add existing user -->
+        <div style="padding:12px 20px 0" id="mfmAddExistingRow">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">
+            Adicionar usuário existente
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <select id="mfmAddUserSel" style="flex:1;min-width:140px;font-size:.82rem">
+              <option value="">— Selecionar usuário —</option>
+            </select>
+            <select id="mfmAddUserRole" style="width:130px;font-size:.82rem">
+              <option value="user">👤 Usuário</option>
+              <option value="admin">🔧 Admin</option>
+              <option value="viewer">👁 Visualizador</option>
+              <option value="owner">👑 Owner</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="mfmAddExisting()" style="white-space:nowrap;font-size:.8rem">+ Adicionar</button>
+          </div>
+        </div>
+
+        <!-- Invite by email -->
+        <div style="padding:12px 20px 16px">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">
+            Convidar por e-mail
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <input type="email" id="mfmInviteEmail" placeholder="email@exemplo.com"
+                   style="flex:1;min-width:160px;font-size:.82rem"
+                   onkeydown="if(event.key==='Enter')mfmInvite()">
+            <select id="mfmInviteRole" style="width:130px;font-size:.82rem">
+              <option value="user">👤 Usuário</option>
+              <option value="admin">🔧 Admin</option>
+              <option value="viewer">👁 Visualizador</option>
+              <option value="owner">👑 Owner</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="mfmInviteBtn" onclick="mfmInvite()" style="white-space:nowrap;font-size:.8rem">📨 Convidar</button>
+          </div>
+          <div id="mfmMsg" style="display:none;font-size:.78rem;margin-top:8px;padding:6px 10px;border-radius:6px"></div>
         </div>
 
       </div>
