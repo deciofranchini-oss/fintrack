@@ -467,7 +467,13 @@ function setScType(type) {
   const trLabel = document.querySelector('#scTransferToGroup label');
   if(trLabel) trLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
   // Hide FX panel when switching away from transfer
-  if (!isTransfer) _hideScFxPanel();
+  if (!isTransfer) {
+    _hideScFxPanel();
+    const accId = document.getElementById('scAccountId')?.value;
+    if (accId) _updateScCurrencyPanel(accId);
+  } else {
+    _hideScCurrencyPanel();
+  }
   // Filter source account: card_payment origin cannot be a credit card account
   _filterScAccountOrigin(isCardPayment);
   // Rebuild category picker for this type

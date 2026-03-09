@@ -436,6 +436,7 @@ function resetTxModal(){
   const stEl=document.getElementById('txStatus'); if(stEl) stEl.value='confirmed';
   setAmtField('txAmount', 0);
   document.getElementById('txTypeField').value='expense';
+  _hideTxCurrencyPanel();
   setTxType('expense');clearPayeeField('tx');hideCatSuggestion();setCatPickerValue(null);
   // Reset attachment — clear pending file AND all UI state
   window._txPendingFile = null;
@@ -467,7 +468,23 @@ async function editTransaction(id){
   // Check IOF config for account
   setTimeout(()=>checkAccountIofConfig(data.account_id), 50);
   const type=data.is_transfer?(data.is_card_payment?'card_payment':'transfer'):data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer'||type==='card_payment')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
-  document.getElementById('txModalTitle').textContent='Editar Transação';openModal('txModal');
+  document.getElementById('txModalTitle').textContent='Editar Transação';
+  // Restore currency panel state after DOM settles
+  setTimeout(() => {
+    const type = document.getElementById('txTypeField').value;
+    const accId = document.getElementById('txAccountId').value;
+    if (type !== 'transfer' && type !== 'card_payment') {
+      _updateTxCurrencyPanel(accId);
+      // If the saved transaction had a currency rate, restore it
+      if (data.currency && data.currency !== 'BRL' && data.brl_amount) {
+        const impliedRate = Math.abs(data.brl_amount / (data.amount || 1));
+        const rateInput = document.getElementById('txCurrencyRate');
+        if (rateInput && impliedRate > 0) rateInput.value = impliedRate.toFixed(6);
+        updateTxCurrencyPreview();
+      }
+    }
+  }, 80);
+  openModal('txModal');
 }
 function _filterTxAccountOrigin(excludeCreditCards) {
   const sel = document.getElementById('txAccountId');
@@ -507,7 +524,14 @@ function setTxType(type){
   // Rebuild category picker filtered by transaction type
   buildCatPicker();
   // Hide FX panel when switching away from transfer
-  if(!isTransfer) _hideFxPanel();
+  if(!isTransfer) {
+    _hideFxPanel();
+    // Re-evaluate currency panel for the selected account
+    const accId = document.getElementById('txAccountId')?.value;
+    if (accId) _updateTxCurrencyPanel(accId);
+  } else {
+    _hideTxCurrencyPanel();
+  }
 }
 
 // ── FX / Exchange-rate helpers ─────────────────────────────────────────────
@@ -565,7 +589,143 @@ function onTransferAccountChange() {
 function _onTxSourceAccountChange(accountId) {
   checkAccountIofConfig(accountId);
   const type = document.getElementById('txTypeField').value;
-  if (type === 'transfer') onTransferAccountChange();
+  if (type === 'transfer' || type === 'card_payment') {
+    onTransferAccountChange();
+  } else {
+    _updateTxCurrencyPanel(accountId);
+  }
+}
+
+// ── Currency helpers for regular expense/income transactions ──────────────
+
+/** Returns currency of currently selected source account */
+function _getTxAccountCurrency() {
+  const accId = document.getElementById('txAccountId')?.value;
+  const acc   = (state.accounts || []).find(a => a.id === accId);
+  return acc?.currency || 'BRL';
+}
+
+function _hideTxCurrencyPanel() {
+  const p = document.getElementById('txCurrencyPanel');
+  if (p) p.style.display = 'none';
+  const badge = document.getElementById('txCurrencyBadge');
+  if (badge) badge.textContent = 'BRL';
+}
+
+/** Updates currency badge and shows/hides the FX panel for expense/income */
+function _updateTxCurrencyPanel(accountId) {
+  const acc = (state.accounts || []).find(a => a.id === accountId);
+  const cur = acc?.currency || 'BRL';
+  const badge = document.getElementById('txCurrencyBadge');
+  if (badge) badge.textContent = cur;
+
+  const panel = document.getElementById('txCurrencyPanel');
+  if (!panel) return;
+
+  if (cur === 'BRL' || !accountId) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  // Non-BRL account: show conversion panel
+  panel.style.display = '';
+  const title = document.getElementById('txCurrencyPanelTitle');
+  const fromLabel = document.getElementById('txCurrencyRateFromLabel');
+  if (title) title.textContent = `Conversão: ${cur} → BRL`;
+  if (fromLabel) fromLabel.textContent = cur;
+
+  // Clear suggestion + preview
+  const sugg = document.getElementById('txCurrencySuggestion');
+  if (sugg) sugg.style.display = 'none';
+  const preview = document.getElementById('txCurrencyPreview');
+  if (preview) preview.textContent = '';
+
+  // Auto-fetch suggestion
+  fetchTxCurrencyRate();
+}
+
+function onTxAmountInput() {
+  // IOF mirror (existing)
+  if (document.getElementById('txIsInternational')?.checked) updateIofMirror();
+  // Currency preview
+  updateTxCurrencyPreview();
+}
+
+function updateTxCurrencyPreview() {
+  const cur    = _getTxAccountCurrency();
+  const panel  = document.getElementById('txCurrencyPanel');
+  if (!panel || panel.style.display === 'none') return;
+  if (cur === 'BRL') return;
+
+  const rateVal = parseFloat(document.getElementById('txCurrencyRate')?.value?.replace(',', '.'));
+  const amtVal  = Math.abs(getAmtField('txAmount') || 0);
+  const preview = document.getElementById('txCurrencyPreview');
+  const hint    = document.getElementById('txCurrencyBrlHint');
+  if (!rateVal || isNaN(rateVal) || !amtVal) {
+    if (preview) preview.textContent = '';
+    if (hint) hint.textContent = '—';
+    return;
+  }
+  const brl = amtVal * rateVal;
+  if (preview) preview.textContent = `= ${fmt(brl, 'BRL')}`;
+  if (hint) hint.textContent = fmt(brl, 'BRL');
+}
+
+async function fetchTxCurrencyRate() {
+  const cur = _getTxAccountCurrency();
+  if (cur === 'BRL') return;
+
+  const btn  = document.getElementById('txCurrencyFetchBtn');
+  const icon = document.getElementById('txCurrencyFetchIcon');
+  const sugg = document.getElementById('txCurrencySuggestion');
+  if (btn)  btn.disabled = true;
+  if (icon) icon.textContent = '⏳';
+  if (sugg) sugg.style.display = 'none';
+
+  try {
+    let txDate = document.getElementById('txDate')?.value || new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (txDate > todayStr) txDate = todayStr;
+
+    // Frankfurter: base=cur, to=BRL
+    // If cur = EUR use a direct call; EUR is always available as base
+    // Frankfurter doesn't serve EUR→EUR, so handle BRL base specially
+    let url, rate;
+    if (cur === 'EUR') {
+      url = `${FX_API_BASE}/${txDate}?base=EUR&to=BRL`;
+    } else {
+      // For USD, AED, etc: get cur→BRL directly
+      // Frankfurter supports any of its currencies as base
+      url = `${FX_API_BASE}/${txDate}?base=${cur}&to=BRL`;
+    }
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    rate = json?.rates?.BRL;
+    if (!rate) throw new Error('Taxa não encontrada');
+
+    const usedDate = json.date || txDate;
+    const rateStr  = Number(rate).toFixed(6);
+    const rateInput = document.getElementById('txCurrencyRate');
+    if (rateInput) rateInput.value = rateStr;
+    if (sugg) {
+      sugg.textContent = `📡 Cotação de ${usedDate} (BCE): 1 ${cur} = ${rateStr} BRL`;
+      sugg.style.display = '';
+      sugg.style.background = '';
+      sugg.style.color = '';
+    }
+    updateTxCurrencyPreview();
+  } catch (e) {
+    if (sugg) {
+      sugg.textContent = `⚠️ Não foi possível buscar: ${e.message}. Informe a taxa manualmente.`;
+      sugg.style.display = '';
+      sugg.style.background = '#fef9c3';
+      sugg.style.color = '#92400e';
+    }
+  } finally {
+    if (btn)  btn.disabled = false;
+    if (icon) icon.textContent = '🔄';
+  }
 }
 
 async function fetchSuggestedFxRate() {
@@ -668,10 +828,24 @@ async function saveTransaction(){
   const existingUrl    = document.getElementById('txAttachUrl').value || null;
   const existingName   = document.getElementById('txAttachNameHidden').value || null;
 
+  // Determine transaction currency from selected account
+  const _txSrcAccId = document.getElementById('txAccountId').value;
+  const _txSrcAcc   = (state.accounts || []).find(a => a.id === _txSrcAccId);
+  const txCurrency  = _txSrcAcc?.currency || 'BRL';
+
+  // For non-BRL expense/income: compute brl_amount from the exchange rate panel
+  let brlAmount = null;
+  if (!isTransfer && txCurrency !== 'BRL') {
+    const fxRate = parseFloat(document.getElementById('txCurrencyRate')?.value?.replace(',', '.'));
+    if (fxRate > 0) brlAmount = Math.abs(amount) * fxRate;
+  }
+
   const data={
     date:document.getElementById('txDate').value,
     description:document.getElementById('txDesc').value.trim(),
     amount,
+    currency: txCurrency,
+    brl_amount: brlAmount,
     account_id:document.getElementById('txAccountId').value||null,
     payee_id:isTransfer?null:(document.getElementById('txPayeeId').value||null),
     category_id:document.getElementById('txCategoryId').value||null,
