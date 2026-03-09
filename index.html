@@ -2086,11 +2086,52 @@
       <div class="form-grid">
         <!-- Basic info -->
         <div class="form-group full"><label>Descrição *</label><input type="text" id="scDesc" placeholder="Ex: Aluguel, Salário..."></div>
-        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="scAmountSignBtn" onclick="toggleAmtSign('scAmount')" aria-label="Alternar sinal">+</button><input type="text" id="scAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
-        <div class="form-group"><label>Conta Origem *</label><select id="scAccountId" onchange="onScTransferAccountChange()"></select></div>
+        <div class="form-group">
+          <label>Valor *</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="amt-wrap" style="flex:1">
+              <button type="button" class="amt-sign-btn" id="scAmountSignBtn" onclick="toggleAmtSign('scAmount')" aria-label="Alternar sinal">+</button>
+              <input type="text" id="scAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"
+                oninput="updateScCurrencyPreview()">
+            </div>
+            <span id="scCurrencyBadge"
+              style="flex-shrink:0;padding:6px 10px;border-radius:var(--r-sm);background:var(--surface2);
+                     border:1px solid var(--border);font-size:.8rem;font-weight:700;
+                     color:var(--accent);letter-spacing:.04em;white-space:nowrap">BRL</span>
+          </div>
+        </div>
+        <div class="form-group"><label>Conta Origem *</label><select id="scAccountId" onchange="onScAccountChange()"></select></div>
         <div class="form-group" id="scTransferToGroup" style="display:none">
           <label>Conta Destino *</label>
           <select id="scTransferToAccountId" onchange="onScTransferAccountChange()"></select>
+        </div>
+
+        <!-- Currency panel: expense/income on non-BRL account -->
+        <div id="scCurrencyPanel" style="display:none;grid-column:1/-1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div style="font-size:.82rem;font-weight:600;color:var(--accent)">
+              💱 <span id="scCurrencyPanelTitle">Conversão de Moeda</span>
+            </div>
+            <button type="button" onclick="fetchScCurrencyRate()" id="scCurrencyFetchBtn"
+              style="font-size:.75rem;padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600">
+              <span id="scCurrencyFetchIcon">🔄</span> Buscar cotação
+            </button>
+          </div>
+          <div id="scCurrencySuggestion" style="display:none;font-size:.78rem;margin-bottom:8px;padding:6px 8px;background:var(--blue-lt,#dbeafe);border-radius:6px;color:#1e40af"></div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="flex:1;min-width:120px">
+              <label style="font-size:.75rem;font-weight:600;display:block;margin-bottom:3px">
+                Taxa (1 <span id="scCurrencyRateFromLabel">USD</span> = ? BRL)
+              </label>
+              <input type="text" id="scCurrencyRate" inputmode="decimal" placeholder="1.00000"
+                style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:var(--font-serif);font-weight:600;box-sizing:border-box;background:var(--surface)"
+                oninput="updateScCurrencyPreview()">
+            </div>
+            <div id="scCurrencyPreview" style="font-size:.82rem;color:var(--accent);padding-top:18px;white-space:nowrap"></div>
+          </div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:8px">
+            💡 O valor em BRL (<span id="scCurrencyBrlHint">—</span>) será registrado para fins de relatórios.
+          </div>
         </div>
 
         <!-- FX panel for scheduled transfers between different currencies -->
@@ -2448,11 +2489,52 @@
           <div id="receiptAiResultPanel" style="display:none;margin-top:10px"></div>
         </div>
         <div class="form-group"><label>Data *</label><input type="date" id="txDate"></div>
-        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="txAmountSignBtn" onclick="toggleAmtSign('txAmount')" aria-label="Alternar sinal">+</button><input type="text" id="txAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="if(document.getElementById('txIsInternational')?.checked)updateIofMirror()"></div></div>
+        <div class="form-group">
+          <label>Valor *</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="amt-wrap" style="flex:1">
+              <button type="button" class="amt-sign-btn" id="txAmountSignBtn" onclick="toggleAmtSign('txAmount')" aria-label="Alternar sinal">+</button>
+              <input type="text" id="txAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"
+                oninput="onTxAmountInput()">
+            </div>
+            <span id="txCurrencyBadge"
+              style="flex-shrink:0;padding:6px 10px;border-radius:var(--r-sm);background:var(--surface2);
+                     border:1px solid var(--border);font-size:.8rem;font-weight:700;
+                     color:var(--accent);letter-spacing:.04em;white-space:nowrap">BRL</span>
+          </div>
+        </div>
         <div class="form-group full"><label>Descrição *</label><input type="text" id="txDesc" placeholder="Ex: Almoço no restaurante"></div>
 
                 <div class="form-group"><label>Status</label><select id="txStatus"><option value="confirmed">Confirmada</option><option value="pending">Pendente</option></select></div>
 <div class="form-group"><label>Conta *</label><select id="txAccountId" onchange="_onTxSourceAccountChange(this.value)"></select></div>
+        <!-- Currency conversion panel — expense/income with non-BRL account -->
+        <div id="txCurrencyPanel" style="display:none;grid-column:1/-1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div style="font-size:.82rem;font-weight:600;color:var(--accent)">
+              💱 <span id="txCurrencyPanelTitle">Conversão de Moeda</span>
+            </div>
+            <button type="button" onclick="fetchTxCurrencyRate()" id="txCurrencyFetchBtn"
+              style="font-size:.75rem;padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;display:flex;align-items:center;gap:4px">
+              <span id="txCurrencyFetchIcon">🔄</span> Buscar cotação
+            </button>
+          </div>
+          <div id="txCurrencySuggestion" style="display:none;font-size:.78rem;margin-bottom:8px;padding:6px 8px;background:var(--blue-lt,#dbeafe);border-radius:6px;color:#1e40af"></div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="flex:1;min-width:120px">
+              <label style="font-size:.75rem;font-weight:600;color:var(--text-muted,#374151);display:block;margin-bottom:3px">
+                Taxa (1 <span id="txCurrencyRateFromLabel">USD</span> = ? BRL)
+              </label>
+              <input type="text" id="txCurrencyRate" inputmode="decimal" placeholder="1.00000"
+                style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:var(--font-serif);font-weight:600;box-sizing:border-box;background:var(--surface)"
+                oninput="updateTxCurrencyPreview()">
+            </div>
+            <div id="txCurrencyPreview" style="font-size:.82rem;color:var(--accent);padding-top:18px;white-space:nowrap"></div>
+          </div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:8px">
+            💡 O valor em BRL (<span id="txCurrencyBrlHint">—</span>) será registrado para fins de relatórios e orçamentos.
+          </div>
+        </div>
+
         <div class="form-group" id="txTransferToGroup" style="display:none"><label>Conta Destino *</label><select id="txTransferTo" onchange="onTransferAccountChange()"></select></div>
 
         <!-- FX rate panel — shown only when source and destination accounts have different currencies -->
