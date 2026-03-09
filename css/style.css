@@ -3394,6 +3394,51 @@ html, body{
 .price-stat-value { font-size: .88rem; font-weight: 700; color: var(--accent); }
 .price-card-arrow { font-size: .8rem; color: var(--muted); flex-shrink: 0; }
 .prices-empty     { text-align: center; padding: 48px 24px; color: var(--muted); font-size: .88rem; }
+/* ── Prices page: card classes used by JS render ────────────────────────── */
+.price-list       { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.price-card       { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border2); cursor: pointer; transition: background .12s; }
+.price-card:last-child { border-bottom: none; }
+.price-card:hover { background: var(--bg2); }
+.price-card-body  { flex: 1; min-width: 0; }
+.price-card-name  { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.price-card-tag   { display: inline-block; font-size: .7rem; font-weight: 600; color: var(--accent); background: var(--accent-lt); border-radius: 4px; padding: 1px 6px; margin-top: 3px; }
+.price-card-desc  { font-size: .75rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.price-card-stats { display: flex; gap: 14px; flex-shrink: 0; }
+.price-card-chevron { font-size: 1.1rem; color: var(--muted); flex-shrink: 0; }
+.price-stat-col   { text-align: right; }
+.price-stat-lbl   { display: block; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.price-stat-val   { display: block; font-size: .88rem; font-weight: 700; color: var(--text); }
+.price-stat-val.accent { color: var(--accent); }
+
+/* ── Register prices modal: rpm-item rows ────────────────────────────────── */
+.rpm-item         { padding: 12px 14px; border-bottom: 1px solid var(--border2); }
+.rpm-item:last-child { border-bottom: none; }
+.rpm-item-header  { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.rpm-item-num     { font-size: .75rem; color: var(--muted); min-width: 18px; text-align: center; flex-shrink: 0; }
+.rpm-item-desc    { font-size: .85rem; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); width: 100%; }
+.rpm-item-desc:focus { outline: none; border-color: var(--accent); }
+.rpm-ai-btn       { padding: 5px 8px; font-size: .8rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface2); cursor: pointer; flex-shrink: 0; line-height: 1; }
+.rpm-ai-btn:hover { background: var(--accent-lt); border-color: var(--accent); }
+.rpm-del-btn      { padding: 5px 7px; font-size: .78rem; border: none; background: transparent; cursor: pointer; color: var(--muted); flex-shrink: 0; border-radius: var(--r-sm); }
+.rpm-del-btn:hover { color: var(--red); background: #fef2f2; }
+.rpm-item-fields  { display: grid; grid-template-columns: 80px 1fr 1fr; gap: 8px; }
+
+/* ── History rows in detail modal ────────────────────────────────────────── */
+.pid-row-date     { font-size: .75rem; color: var(--muted); }
+.pid-row-store    { min-width: 0; }
+.pid-row-store-name { font-size: .82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pid-row-store-addr { font-size: .72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pid-row-qty      { font-size: .8rem; color: var(--muted); text-align: center; }
+.pid-row-price    { font-size: .88rem; font-weight: 700; color: var(--accent); text-align: right; }
+.pid-row-del      { background: transparent; border: none; cursor: pointer; font-size: .82rem; padding: 2px 4px; color: var(--muted); border-radius: 4px; }
+.pid-row-del:hover { color: var(--red); background: #fef2f2; }
+
+@media (max-width: 480px) {
+  .price-card-stats { gap: 8px; }
+  .price-stat-val   { font-size: .8rem; }
+  .rpm-item-fields  { grid-template-columns: 72px 1fr; }
+  .rpm-item-fields > *:nth-child(3) { grid-column: 1 / -1; }
+}
 
 /* Prices detail modal */
 .pid-stat-card   { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; text-align: center; }
