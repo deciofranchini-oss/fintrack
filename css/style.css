@@ -3479,3 +3479,12 @@ html, body{
 #txCurrencyPanel, #scCurrencyPanel {
   transition: background .15s;
 }
+
+/* ── Foreign currency amount display in transaction list ─────────────────── */
+.tx-col-amt .fx-hint {
+  display: block;
+  font-size: .68rem;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.2;
+}
