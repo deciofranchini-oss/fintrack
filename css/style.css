@@ -3488,3 +3488,23 @@ html, body{
   font-weight: 400;
   line-height: 1.2;
 }
+/* ── Prices module: store-row in manager modal ──────────────────────────── */
+.store-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border2);
+  transition: background .1s;
+}
+.store-row:last-child { border-bottom: none; }
+.store-row:hover      { background: var(--bg2); }
+
+/* ── price-stat updated for 4-col strip ─────────────────────────────────── */
+.price-stat-col { display: flex; flex-direction: column; align-items: center; min-width: 52px; }
+.price-stat-lbl { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.price-stat-val { font-size: .88rem; font-weight: 700; color: var(--text); }
+.price-stat-val.accent { color: var(--accent); }
+
+/* ── Store suggest dropdown z-fix ──────────────────────────────────────── */
+#pifStoreSuggest, #rpmStoreSuggest, #aprStoreSuggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px);
+  min-width: 240px; z-index: 300;
+}
