@@ -1486,24 +1486,34 @@
       <!-- Receipt drop zone -->
       <div id="pricesReceiptZone" style="display:none;margin-bottom:16px;padding:20px;
            border:2px dashed var(--accent);border-radius:var(--r);background:var(--accent-lt);
-           text-align:center;cursor:pointer"
-           ondragover="event.preventDefault()" ondrop="onPricesReceiptDrop(event)"
-           onclick="document.getElementById('pricesReceiptInput').click()">
-        <div style="font-size:2rem;margin-bottom:8px">📷</div>
-        <div style="font-size:.85rem;font-weight:600;color:var(--accent)">
+           text-align:center"
+           ondragover="event.preventDefault();this.style.opacity='.75'"
+           ondragleave="this.style.opacity=''"
+           ondrop="this.style.opacity='';onPricesReceiptDrop(event)">
+        <div style="font-size:2rem;margin-bottom:8px;cursor:pointer"
+             onclick="document.getElementById('pricesReceiptInput').click()">📷</div>
+        <div style="font-size:.85rem;font-weight:600;color:var(--accent);cursor:pointer;margin-bottom:4px"
+             onclick="document.getElementById('pricesReceiptInput').click()">
           Arraste uma foto/PDF do recibo ou clique para selecionar
         </div>
-        <div style="font-size:.75rem;color:var(--muted);margin-top:4px">
+        <div style="font-size:.75rem;color:var(--muted)">
           JPG, PNG, PDF — a imagem <strong>não é armazenada</strong>
         </div>
         <input type="file" id="pricesReceiptInput" accept="image/*,application/pdf"
                style="display:none" onchange="onPricesReceiptSelected(this)">
-        <button class="btn btn-ghost btn-sm" style="margin-top:12px"
-                onclick="event.stopPropagation();closePricesReceiptZone()">✕ Cancelar</button>
+        <!-- Dynamic feedback -->
+        <div id="pricesReceiptFileName" style="margin-top:10px;font-size:.8rem;font-weight:600;color:var(--accent);min-height:1.2em"></div>
+        <div id="pricesAiStatus" style="display:none;font-size:.78rem;color:var(--muted);margin-top:4px"></div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm"
+                  onclick="closePricesReceiptZone()">✕ Cancelar</button>
+          <button class="btn btn-primary btn-sm" id="pricesReadAiBtn" style="display:none"
+                  onclick="readPricesReceiptWithAI()">🤖 Analisar com IA</button>
+        </div>
       </div>
 
       <!-- Filters -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
         <input type="text" id="pricesSearch" placeholder="🔍 Buscar item…"
                oninput="pricesSearch(this.value)"
                style="flex:1;min-width:180px;font-size:.85rem">
@@ -1511,6 +1521,7 @@
                 style="font-size:.85rem;min-width:160px">
           <option value="">Todas as categorias</option>
         </select>
+        <span id="pricesCount" style="font-size:.78rem;color:var(--muted);white-space:nowrap;align-self:center"></span>
       </div>
 
       <div id="pricesItemList">
@@ -3469,6 +3480,12 @@
         <button class="modal-close" onclick="closeModal('priceItemDetailModal')">✕</button>
       </div>
       <div class="modal-body">
+        <!-- Item info header -->
+        <div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border2)">
+          <div id="pidItemCat" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-bottom:3px"></div>
+          <div id="pidItemDesc" style="font-size:.8rem;color:var(--muted);margin-bottom:2px"></div>
+          <div id="pidItemUnit" style="font-size:.75rem;color:var(--muted)"></div>
+        </div>
         <!-- Stats strip -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
           <div class="pid-stat-card">
@@ -3525,6 +3542,7 @@
             <select id="pifCategory"><option value="">— Nenhuma —</option></select>
           </div>
         </div>
+        <div id="pifError" style="display:none;margin-top:8px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--r-sm);font-size:.82rem;color:#991b1b"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
           <button class="btn btn-ghost" onclick="closeModal('priceItemFormModal')">Cancelar</button>
           <button class="btn btn-primary" onclick="savePriceItem()">Salvar</button>
@@ -3543,18 +3561,31 @@
       <div class="modal-body">
         <div class="form-grid" style="margin-bottom:14px">
           <div class="form-group">
-            <label>Estabelecimento</label>
+            <label>Estabelecimento *</label>
             <input type="text" id="rpmStoreName" placeholder="Nome do estabelecimento">
           </div>
           <div class="form-group">
-            <label>Data da Compra</label>
+            <label>Endereço</label>
+            <input type="text" id="rpmStoreAddress" placeholder="Rua, número, bairro…">
+          </div>
+          <div class="form-group" style="grid-column:1">
+            <label>Data da Compra *</label>
             <input type="date" id="rpmDate">
           </div>
         </div>
-        <div id="rpmItemList" style="max-height:380px;overflow-y:auto"></div>
+        <!-- Items toolbar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Itens da compra</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="rpmNormalizeAllAI()">🤖 Normalizar todos</button>
+            <button class="btn btn-ghost btn-sm" onclick="rpmAddRow()">+ Item</button>
+          </div>
+        </div>
+        <div id="rpmItemList" style="max-height:340px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r-sm)"></div>
+        <div id="rpmError" style="display:none;margin-top:8px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--r-sm);font-size:.82rem;color:#991b1b"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
           <button class="btn btn-ghost" onclick="closeModal('registerPricesModal')">Cancelar</button>
-          <button class="btn btn-primary" onclick="saveRegisterPrices()">💾 Salvar Preços</button>
+          <button class="btn btn-primary" id="rpmSaveBtn" onclick="saveRegisterPrices()">💾 Salvar Preços</button>
         </div>
       </div>
     </div>
