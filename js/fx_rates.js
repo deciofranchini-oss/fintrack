@@ -136,24 +136,36 @@ async function _fetchRates(currencies) {
 }
 
 function _renderFxBadge() {
-  const el = document.getElementById('fxRatesBadge');
+  const el       = document.getElementById('fxRatesBadge');
+  const ratesEl  = document.getElementById('fxBarRates');
+  const ageEl    = document.getElementById('fxBarAge');
+  const refreshEl= document.getElementById('fxBarRefreshBtn');
   if (!el) return;
+
   const pairs = Object.entries(window._fxRates).filter(([c]) => c !== 'BRL');
   if (!pairs.length) { el.style.display = 'none'; return; }
-  const age    = Math.round(_fxAgeMin());
-  const ageStr = age === Infinity ? '?' : age < 60 ? `${age}min` : `${Math.round(age/60)}h`;
+
+  const age    = _fxAgeMin();
   const stale  = age > _FX_TTL_MIN;
-  el.style.display = 'flex';
-  el.style.alignItems = 'center';
-  el.style.gap = '8px';
-  el.innerHTML = pairs.map(([c, r]) =>
-    `<span style="display:inline-flex;align-items:center;gap:3px;font-size:.72rem;color:var(--muted)" title="Cotação ${c}→BRL (atualizada há ${ageStr})">`
-    + `<span style="font-size:.68rem;opacity:.7">🌐</span>`
-    + `<strong style="color:var(--text)">${c}</strong>`
-    + `<span style="opacity:.6">=</span>`
-    + `<strong style="color:var(--accent)">${r.toLocaleString('pt-BR',{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>`
-    + `</span>`
-  ).join('<span style="color:var(--border2);font-size:.65rem">│</span>')
-  + `<button onclick="refreshFxRates()" title="${stale?'Cotações desatualizadas — clique para atualizar':'Atualizar cotações'}"
-      style="background:none;border:none;cursor:pointer;font-size:.78rem;padding:1px 3px;opacity:${stale?'1':'.5'};color:${stale?'var(--yellow,#d97706)':'inherit'}">${stale?'⚠️':'🔄'}</button>`;
+  const ageRnd = Math.round(age);
+  const ageStr = age === Infinity ? '' : age < 60 ? `há ${ageRnd}min` : `há ${Math.round(age/60)}h`;
+
+  el.style.display = '';
+
+  if (ratesEl) {
+    ratesEl.innerHTML = pairs.map(([c, r]) =>
+      `<span class="fx-chip${stale?' fx-chip-stale':''}" title="1 ${c} = ${r.toLocaleString('pt-BR',{minimumFractionDigits:4,maximumFractionDigits:4})} BRL">`
+      + `<span class="fx-chip-cur">${c}</span>`
+      + `<span class="fx-chip-sep">=</span>`
+      + `<span class="fx-chip-val">${r.toLocaleString('pt-BR',{minimumFractionDigits:4,maximumFractionDigits:4})}</span>`
+      + `</span>`
+    ).join('');
+  }
+
+  if (ageEl)     ageEl.textContent   = ageStr;
+  if (refreshEl) {
+    refreshEl.textContent = stale ? '⚠️' : '🔄';
+    refreshEl.title       = stale ? 'Cotações desatualizadas — clique para atualizar' : 'Atualizar cotações';
+    refreshEl.classList.toggle('fx-bar-stale', stale);
+  }
 }
