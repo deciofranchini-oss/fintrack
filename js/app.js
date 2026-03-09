@@ -232,6 +232,8 @@ async function bootApp(){
     toast('Erro ao carregar dados: '+e.message,'error');
     return;
   }
+  // Inicializa cotações FX após contas carregadas (sabe quais moedas usar)
+  initFxRates().catch(e => console.warn('[FX] boot init failed:', e.message));
   // Auto-register scheduled transactions (browser session)
   if (typeof runScheduledAutoRegister === 'function') { await runScheduledAutoRegister(); }
 

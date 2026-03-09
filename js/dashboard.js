@@ -61,13 +61,24 @@ async function loadDashboardRecent(){
 
 
 async function loadDashboard(){
+  // Garante que cotações estejam disponíveis antes de computar totais
+  await initFxRates().catch(()=>{});
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,is_transfer,status')).eq('status','confirmed').gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
-  let income=0,expense=0;(monthTxs||[]).filter(t=>!t.is_transfer).forEach(t=>{if(t.amount>0)income+=t.amount;else expense+=Math.abs(t.amount);});
+  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,brl_amount,currency,is_transfer,status,account_id')).eq('status','confirmed').gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
+  let income=0,expense=0;
+  (monthTxs||[]).filter(t=>!t.is_transfer).forEach(t=>{
+    // Usa brl_amount se disponível; senão converte usando câmbio cached
+    const cur = t.currency || 'BRL';
+    const brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, cur);
+    if(brl>0) income+=brl; else expense+=Math.abs(brl);
+  });
   // Patrimônio: soma dos saldos de todas as contas ativas (já carregadas em state)
   await loadAccounts(); // garante dados frescos
+  // Patrimônio total convertido para BRL
   const total = state.accounts.reduce((s,a)=>{
-    return s + (parseFloat(a.balance)||0);
+    const bal = parseFloat(a.balance) || 0;
+    const cur = a.currency || 'BRL';
+    return s + toBRL(bal, cur);
   },0);
   const statTotalEl = document.getElementById('statTotal');
   const statIncomeEl = document.getElementById('statIncome');
@@ -141,7 +152,7 @@ async function loadDashboard(){
     let html = '';
     const buildGroup = (key, label, gAccs) => {
       const collapsed = _dashGroupCollapsed[key] === true;
-      const gTotal = gAccs.reduce((s,a) => s + (parseFloat(a.balance)||0), 0);
+      const gTotal = gAccs.reduce((s,a) => s + toBRL(parseFloat(a.balance)||0, a.currency||'BRL'), 0);
       return `<div style="margin-bottom:2px">
         <div onclick="toggleDashGroup('${key}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 4px;margin-top:6px;cursor:pointer;user-select:none">
           <span style="display:flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">
@@ -188,12 +199,15 @@ async function renderCashflowChart(){
   });
   const incomes=[],expenses=[],balances=[];
   for(const{y,m}of months){
-    let q=famQ(sb.from('transactions').select('amount,is_transfer'))
+    let q=famQ(sb.from('transactions').select('amount,brl_amount,currency,is_transfer'))
       .gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
     if(accId) q=q.eq('account_id',accId);
     const{data}=await q;
     let inc=0,exp=0;
-    (data||[]).filter(t=>!t.is_transfer).forEach(t=>{if(t.amount>0)inc+=t.amount;else exp+=Math.abs(t.amount);});
+    (data||[]).filter(t=>!t.is_transfer).forEach(t=>{
+      const brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, t.currency || 'BRL');
+      if(brl>0) inc+=brl; else exp+=Math.abs(brl);
+    });
     incomes.push(+inc.toFixed(2));
     expenses.push(+exp.toFixed(2));
     balances.push(+(inc-exp).toFixed(2));
@@ -206,13 +220,14 @@ async function renderCashflowChart(){
 }
 async function renderCategoryChart(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data}=await famQ(sb.from('transactions').select('amount,categories(name,color)')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
+  const{data}=await famQ(sb.from('transactions').select('amount,brl_amount,currency,categories(name,color)')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
   const catMap={};
   (data||[]).forEach(t=>{
     const n=t.categories?.name||'Outros';
     const c=t.categories?.color||'#94a3b8';
     if(!catMap[n]) catMap[n]={total:0,color:c};
-    catMap[n].total+=Math.abs(t.amount);
+    const brl = t.brl_amount != null ? Math.abs(t.brl_amount) : toBRL(Math.abs(t.amount), t.currency||'BRL');
+    catMap[n].total+=brl;
   });
   const FALLBACK_COLORS=['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#3d7a5e'];
   const entries=Object.entries(catMap).sort((a,b)=>b[1].total-a[1].total).slice(0,8);

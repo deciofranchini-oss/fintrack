@@ -108,11 +108,13 @@ function renderAccountsGrouped(accs,grid){
 
   grid.innerHTML = sections.map(({g, accs:ga})=>{
     const currency = g.currency || 'BRL';
-    const bal = ga.reduce((s,a)=>s+a.balance,0);
+    // Converte contas em moeda estrangeira para a moeda do grupo (ou BRL) antes de somar
+    const _toGrp = (a) => { const ac = a.currency||'BRL'; if(ac===currency) return a.balance; return toBRL(a.balance,ac) / (currency==='BRL'?1:getFxRate(currency)); };
+    const bal = ga.reduce((s,a)=>s+_toGrp(a),0);
     const color = g.color||'var(--accent)';
     const isCollapsed = !!_collapsed[g.id];
-    const pos = ga.filter(a=>a.balance>=0).reduce((s,a)=>s+a.balance,0);
-    const neg = ga.filter(a=>a.balance<0).reduce((s,a)=>s+a.balance,0);
+    const pos = ga.filter(a=>_toGrp(a)>=0).reduce((s,a)=>s+_toGrp(a),0);
+    const neg = ga.filter(a=>_toGrp(a)<0).reduce((s,a)=>s+_toGrp(a),0);
 
     return `<div class="account-group-section" id="grp-${g.id}" data-grp="${g.id}">
       <div class="account-group-header account-group-header--clickable"
@@ -170,9 +172,9 @@ function toggleGroupCollapse(id){
 function renderAccountsSummary(){
   const el=document.getElementById('accountsSummary');if(!el)return;
   const accs=state.accounts;
-  const total=accs.reduce((s,a)=>s+a.balance,0);
-  const pos=accs.filter(a=>a.balance>=0).reduce((s,a)=>s+a.balance,0);
-  const neg=accs.filter(a=>a.balance<0).reduce((s,a)=>s+a.balance,0);
+  const total=accs.reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
+  const pos=accs.filter(a=>a.balance>=0).reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
+  const neg=accs.filter(a=>a.balance<0).reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
   el.innerHTML=`<span class="summary-label">Total:</span><span class="summary-value ${total<0?'text-red':'text-accent'}">${fmt(total)}</span>${pos?`<span class="summary-sep">·</span><span class="summary-pos">+${fmt(pos)}</span>`:''}${neg?`<span class="summary-sep">·</span><span class="summary-neg">${fmt(neg)}</span>`:''}`;
 }
 

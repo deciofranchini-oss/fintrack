@@ -305,7 +305,17 @@ function txRow(t, showAccount=true) {
     <td class="tx-col-desc" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}${t.attachment_url?'<span title="Tem anexo" style="margin-left:4px;opacity:.6;font-size:.72rem">📎</span>':''}</td>
     <td class="text-muted tx-col-pay" style="font-size:.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.payees?.name||'—')}</td>
     <td class="tx-col-cat">${cat}</td>
-    <td class="${t.amount>=0?'amount-pos':'amount-neg'} tx-col-amt" style="white-space:nowrap;font-variant-numeric:tabular-nums">${fmt(t.amount)}</td>
+    <td class="${t.amount>=0?'amount-pos':'amount-neg'} tx-col-amt" style="white-space:nowrap;font-variant-numeric:tabular-nums">
+      ${(()=>{
+        const cur = (t.currency||t.accounts?.currency||'BRL').toUpperCase();
+        const mainFmt = fmt(t.amount, cur);
+        // Se moeda estrangeira E temos brl_amount, mostra conversão como tooltip/subtext
+        if (cur !== 'BRL' && t.brl_amount != null) {
+          return `<span title="${mainFmt} = ${fmt(t.brl_amount,'BRL')}">${mainFmt}<span style="display:block;font-size:.68rem;color:var(--muted);font-weight:400">${fmt(t.brl_amount,'BRL')}</span></span>`;
+        }
+        return mainFmt;
+      })()}
+    </td>
     <td class="tx-col-act" onclick="event.stopPropagation()"><div style="display:flex;gap:3px;justify-content:center"><button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏️</button><button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button><button class="btn-icon" title="Excluir" onclick="deleteTransaction('${t.id}')">🗑️</button></div></td>
   </tr>`;
 }
@@ -322,7 +332,7 @@ function setTxView(v) {
 function renderTransactions(){
   const txs = state.transactions;
   let income=0, expense=0;
-  txs.forEach(t=>{ const st=(t.status||'confirmed'); if(st==='pending') return; if(t.amount>0)income+=t.amount; else expense+=t.amount;});
+  txs.forEach(t=>{ const st=(t.status||'confirmed'); if(st==='pending') return; const brl=txToBRL(t); if(brl>0)income+=brl; else expense+=brl;});
   document.getElementById('txCount').textContent = `${state.txTotal} transações`;
   document.getElementById('txTotalIncome').textContent = income ? `+${fmt(income)}` : '';
   document.getElementById('txTotalExpense').textContent = expense ? fmt(expense) : '';
@@ -357,9 +367,10 @@ function renderTransactionsGrouped(txs) {
     groups[key].txs.push(t);
     const st=(t.status||'confirmed');
     if(st!=='pending') {
-      if(t.amount > 0) groups[key].income += t.amount;
-      else groups[key].expense += t.amount;
-      groups[key].balance += t.amount;
+      const _brl = txToBRL(t); // converte para BRL (usa brl_amount se disponível)
+      if(_brl > 0) groups[key].income += _brl;
+      else groups[key].expense += _brl;
+      groups[key].balance += _brl;
     }
   });
 
@@ -383,7 +394,7 @@ function renderTransactionsGrouped(txs) {
       onmouseover="this.style.boxShadow='var(--shadow)'" onmouseout="this.style.boxShadow=''">
       ${renderIconEl(acct.icon, acct.color, 20)}
       <span style="font-weight:600;color:var(--text)">${esc(g.account?.name||'Sem conta')}</span>
-      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal)}</span>
+      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal,'BRL')}</span>
     </div>`;
   }).join('');
 
@@ -400,10 +411,10 @@ function renderTransactionsGrouped(txs) {
         ${renderIconEl(acct.icon, acct.color, 28)}
         <span style="font-weight:700;font-size:.95rem;flex:1">${esc(g.account?.name||'Sem conta')}</span>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income)}</span>` : ''}
-          ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense)}</span>` : ''}
+          ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income,'BRL')}</span>` : ''}
+          ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense,'BRL')}</span>` : ''}
           <span class="badge" style="font-size:.78rem;font-weight:700;background:${g.balance>=0?'var(--green-lt)':'var(--red-lt)'};color:${g.balance>=0?'var(--green)':'var(--red)'}">
-            ${g.balance>=0?'=':''} ${fmt(g.balance)}
+            ${g.balance>=0?'=':''} ${fmt(g.balance,'BRL')}
           </span>
           <span style="font-size:.7rem;color:var(--muted)">${g.txs.length} lanç.</span>
         </div>
