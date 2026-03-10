@@ -1,68 +1,46 @@
-function getBottomNav(){
-  return document.getElementById('bottomNav');
-}
-
-function setBottomNavHiddenBySidebar(hidden){
-  const nav = getBottomNav();
-  if(!nav) return;
-  nav.classList.toggle('hidden-by-sidebar', !!hidden);
-}
-
 function setBottomNavCollapsed(collapsed){
-  const nav = getBottomNav();
+  const nav = document.getElementById('bottomNav');
   if(!nav) return;
-  nav.classList.toggle('collapsed', !!collapsed);
+  nav.classList.toggle('is-collapsed', !!collapsed);
+  try{ localStorage.setItem('bottomNavCollapsed', collapsed ? '1' : '0'); }catch(e){}
+}
+
+function initBottomNav(){
+  const nav = document.getElementById('bottomNav');
   const toggle = document.getElementById('bottomNavToggle');
-  if(toggle){
-    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    toggle.setAttribute('aria-label', collapsed ? 'Abrir navegação' : 'Recolher navegação');
-  }
-}
+  if(!nav || !toggle || nav.dataset.init === '1') return;
+  nav.dataset.init = '1';
+  try{
+    const saved = localStorage.getItem('bottomNavCollapsed') === '1';
+    nav.classList.toggle('is-collapsed', saved);
+  }catch(e){}
+  toggle.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    setBottomNavCollapsed(!nav.classList.contains('is-collapsed'));
+  });
 
-function toggleBottomNavCollapse(force){
-  const nav = getBottomNav();
-  if(!nav) return;
-  if(typeof force === 'boolean'){
-    setBottomNavCollapsed(force);
-    return;
-  }
-  setBottomNavCollapsed(!nav.classList.contains('collapsed'));
-}
-
-function setupBottomNavGestures(){
-  const nav = getBottomNav();
-  if(!nav || nav.dataset.gestureReady === '1') return;
-  nav.dataset.gestureReady = '1';
   let startX = 0;
   let startY = 0;
   let tracking = false;
-
-  nav.addEventListener('touchstart', (ev)=>{
-    if(!ev.touches || !ev.touches[0]) return;
-    const touch = ev.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
-    tracking = true;
-  }, { passive:true });
-
-  nav.addEventListener('touchend', (ev)=>{
-    if(!tracking || !ev.changedTouches || !ev.changedTouches[0]) return;
-    tracking = false;
-    const touch = ev.changedTouches[0];
-    const dx = touch.clientX - startX;
-    const dy = touch.clientY - startY;
-    if(Math.abs(dx) < 38 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-    if(dx > 0){
-      setBottomNavCollapsed(true);
-    }else if(dx < -30){
-      setBottomNavCollapsed(false);
-    }
-  }, { passive:true });
+  const start = (x,y)=>{ startX=x; startY=y; tracking=true; };
+  const end = (x,y)=>{
+    if(!tracking) return;
+    tracking=false;
+    const dx = x - startX;
+    const dy = y - startY;
+    if(Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
+    if(dx > 0) setBottomNavCollapsed(true);
+    else if(dx < 0) setBottomNavCollapsed(false);
+  };
+  nav.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; start(t.clientX, t.clientY); }, {passive:true});
+  nav.addEventListener('touchend', e=>{ const t=e.changedTouches[0]; end(t.clientX, t.clientY); }, {passive:true});
+  nav.addEventListener('pointerdown', e=>{ start(e.clientX, e.clientY); });
+  nav.addEventListener('pointerup', e=>{ end(e.clientX, e.clientY); });
 }
 
 function openSidebar(){
   setBottomNavCollapsed(true);
-  setBottomNavHiddenBySidebar(true);
+  document.body.classList.add('sidebar-open');
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebarOverlay').classList.add('open');
   // iOS-safe: lock scroll without overflow:hidden on body
@@ -77,9 +55,9 @@ function toggleSidebar(){
   if (isOpen) closeSidebar(); else openSidebar();
 }
 function closeSidebar(){
+  document.body.classList.remove('sidebar-open');
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
-  setBottomNavHiddenBySidebar(false);
   // Restore scroll position after position:fixed unlock
   const scrollY = parseInt(document.body.dataset.scrollY||'0');
   document.body.style.position='';
@@ -87,8 +65,6 @@ function closeSidebar(){
   document.body.style.width='';
   window.scrollTo(0, scrollY);
 }
-
-document.addEventListener('DOMContentLoaded', setupBottomNavGestures);
 
 let sb=null;
 
@@ -391,3 +367,6 @@ if('serviceWorker' in navigator){
   });
 }
 
+
+
+document.addEventListener('DOMContentLoaded', initBottomNav);
