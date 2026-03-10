@@ -300,18 +300,17 @@ function renderScheduled(list) {
 
 function renderUpcoming() {
   const today = new Date().toISOString().slice(0, 10);
-  const limit = new Date(); limit.setDate(limit.getDate() + 30);
+  const limit = new Date(); limit.setDate(limit.getDate() + 10);
   const limitStr = limit.toISOString().slice(0, 10);
 
   const upcoming = [];
   state.scheduled.forEach(sc => {
     if(sc.status === 'paused') return;
     const registered = new Set((sc.occurrences||[]).map(o => o.scheduled_date));
-    const occ = generateOccurrences(sc, 60);
+    const occ = generateOccurrences(sc, 30);
     occ.forEach(date => {
-      if(date >= today && date <= limitStr && !registered.has(date)) {
+      if(date >= today && date <= limitStr && !registered.has(date))
         upcoming.push({ sc, date });
-      }
     });
   });
   upcoming.sort((a, b) => a.date.localeCompare(b.date));
@@ -321,30 +320,64 @@ function renderUpcoming() {
   const totalEl = document.getElementById('scheduledUpcomingTotal');
   if(!upcoming.length) { if(card) card.style.display='none'; return; }
 
-  if(card) card.style.display='';
+  if(card) card.style.display = '';
   if(totalEl) {
-    const total = upcoming.reduce((s,u) => s + (u.sc.type==='expense'?-1:1)*Math.abs(u.sc.amount), 0);
-    totalEl.textContent = (total>=0?'+':'') + fmt(total);
-    totalEl.className = 'badge ' + (total>=0?'badge-green':'badge-red');
+    const tot = upcoming.reduce((s,{sc}) => {
+      const isExp = sc.type==='expense'||sc.type==='card_payment'||sc.type==='transfer';
+      return s + (isExp ? -1 : 1) * Math.abs(sc.amount);
+    }, 0);
+    totalEl.textContent = (tot>=0?'+':'') + fmt(tot);
+    totalEl.className = 'badge ' + (tot>=0?'badge-green':'badge-red');
   }
 
-  // Mobile-first card list (no table)
-  if(listEl) listEl.innerHTML = upcoming.slice(0, 20).map(({sc, date}) => {
-    const isOverdue = date < today;
-    const isToday   = date === today;
-    const isExpense = sc.type === 'expense' || sc.type === 'card_payment' || sc.type === 'transfer';
-    const typeIcon  = sc.type === 'card_payment' ? '💳' : sc.type === 'transfer' ? '🔄' : isExpense ? '💸' : '💰';
-    const dateLabel = isToday ? '🔔 Hoje' : isOverdue ? `⚠️ ${fmtDate(date)}` : fmtDate(date);
-    return `<div class="sc-upcoming-item${isOverdue?' sc-upcoming-overdue':''}${isToday?' sc-upcoming-today':''}">
-      <div class="sc-upcoming-left">
-        <span class="sc-upcoming-date">${dateLabel}</span>
-        <span class="sc-upcoming-desc">${typeIcon} ${esc(sc.description)}</span>
-        <span class="sc-upcoming-acct">${esc(sc.accounts?.name||'—')}</span>
+  // Agrupar por data
+  const byDate = {};
+  upcoming.forEach(u => { if(!byDate[u.date]) byDate[u.date]=[]; byDate[u.date].push(u); });
+
+  const DOW = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
+  const tomorrowStr = tomorrow.toISOString().slice(0,10);
+
+  if(listEl) listEl.innerHTML = Object.entries(byDate).map(([date, items]) => {
+    const isToday    = date === today;
+    const isTomorrow = date === tomorrowStr;
+    const dow = DOW[new Date(date+'T12:00:00').getDay()];
+    const dayLabel = isToday ? '🔔 Hoje' : isTomorrow ? '📆 Amanhã' : `${dow}, ${fmtDate(date)}`;
+
+    const dayTot = items.reduce((s,{sc}) => {
+      const isExp = sc.type==='expense'||sc.type==='card_payment'||sc.type==='transfer';
+      return s + (isExp ? -1 : 1)*Math.abs(sc.amount);
+    }, 0);
+
+    const gid = 'upg_' + date.replace(/-/g,'');
+    const rows = items.map(({sc}) => {
+      const isExp = sc.type==='expense'||sc.type==='card_payment'||sc.type==='transfer';
+      const icon  = sc.type==='card_payment'?'💳':sc.type==='transfer'?'🔄':isExp?'💸':'💰';
+      const dest  = (sc.type==='transfer'||sc.type==='card_payment')
+                    ? state.accounts.find(a=>a.id===sc.transfer_to_account_id) : null;
+      return `<div class="sc-upcoming-item${isToday?' sc-upcoming-today':''}">
+        <div class="sc-upcoming-left">
+          <span class="sc-upcoming-desc">${icon} ${esc(sc.description)}</span>
+          <span class="sc-upcoming-acct" style="font-size:.72rem;color:var(--muted)">
+            ${esc(sc.accounts?.name||'—')}${dest?` → ${esc(dest.name)}`:''}</span>
+        </div>
+        <div class="sc-upcoming-right">
+          <span class="${isExp?'amount-neg':'amount-pos'} sc-upcoming-amt">${isExp?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
+          <button class="btn btn-primary btn-sm sc-upcoming-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="sc-upcoming-group">
+      <div class="sc-upcoming-day-hdr" onclick="toggleUpcomingGroup('${gid}')">
+        <span class="sc-upcoming-day-name${isToday?' today-lbl':''}">${dayLabel}</span>
+        <div class="sc-upcoming-day-meta">
+          <span class="badge ${dayTot>=0?'badge-green':'badge-red'}" style="font-size:.7rem">${dayTot>=0?'+':''}${fmt(dayTot)}</span>
+          <span style="font-size:.72rem;color:var(--muted)">${items.length} item${items.length>1?'s':''}</span>
+          <svg class="sc-upcoming-day-arrow open" id="${gid}_arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
-      <div class="sc-upcoming-right">
-        <span class="${isExpense?'amount-neg':'amount-pos'} sc-upcoming-amt">${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
-        <button class="btn btn-primary btn-sm sc-upcoming-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓ Registrar</button>
-      </div>
+      <div class="sc-upcoming-group-rows" id="${gid}">${rows}</div>
     </div>`;
   }).join('');
 }
@@ -429,24 +462,6 @@ function openScheduledModal(id='') {
 
   document.getElementById('scheduledModalTitle').textContent = id ? 'Editar Programação' : 'Programar Transação';
 
-  // Currency badge + panel — restore after type/account are settled
-  setTimeout(() => {
-    const type  = document.getElementById('scTypeField')?.value;
-    const accId = document.getElementById('scAccountId')?.value;
-    if (type !== 'transfer' && type !== 'card_payment' && accId) {
-      _updateScCurrencyPanel(accId);
-      // Se estava editando e tinha brl_amount, recalcula a taxa implícita
-      if (sc?.currency && sc.currency !== 'BRL' && sc.brl_amount && sc.amount) {
-        const impliedRate = Math.abs(sc.brl_amount / sc.amount);
-        const rateInput = document.getElementById('scCurrencyRate');
-        if (rateInput && impliedRate > 0) {
-          rateInput.value = impliedRate.toFixed(6);
-          updateScCurrencyPreview();
-        }
-      }
-    }
-  }, 80);
-
   // Auto-register & notify fields
   const arEl = document.getElementById('scAutoRegister');
   const neEl = document.getElementById('scNotifyEmail');
@@ -485,13 +500,7 @@ function setScType(type) {
   const trLabel = document.querySelector('#scTransferToGroup label');
   if(trLabel) trLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
   // Hide FX panel when switching away from transfer
-  if (!isTransfer) {
-    _hideScFxPanel();
-    const accId = document.getElementById('scAccountId')?.value;
-    if (accId) _updateScCurrencyPanel(accId);
-  } else {
-    _hideScCurrencyPanel();
-  }
+  if (!isTransfer) _hideScFxPanel();
   // Filter source account: card_payment origin cannot be a credit card account
   _filterScAccountOrigin(isCardPayment);
   // Rebuild category picker for this type
@@ -514,116 +523,6 @@ function _getScTransferCurrencies() {
 function _hideScFxPanel() {
   const panel = document.getElementById('scFxPanel');
   if (panel) panel.style.display = 'none';
-}
-
-/** Dispatcher — chamado quando conta de origem muda */
-function onScAccountChange() {
-  const type = document.getElementById('scTypeField')?.value;
-  if (type === 'transfer' || type === 'card_payment') {
-    onScTransferAccountChange();
-  } else {
-    _updateScCurrencyPanel(document.getElementById('scAccountId')?.value);
-  }
-}
-
-// ── Currency helpers para despesa/receita em moeda estrangeira ────────────
-
-function _getScAccountCurrency() {
-  const acc = (state.accounts || []).find(a => a.id === document.getElementById('scAccountId')?.value);
-  return acc?.currency || 'BRL';
-}
-
-function _hideScCurrencyPanel() {
-  const p = document.getElementById('scCurrencyPanel');
-  if (p) p.style.display = 'none';
-  const badge = document.getElementById('scCurrencyBadge');
-  if (badge) badge.textContent = 'BRL';
-}
-
-function _updateScCurrencyPanel(accountId) {
-  const acc = (state.accounts || []).find(a => a.id === accountId);
-  const cur = acc?.currency || 'BRL';
-  const badge = document.getElementById('scCurrencyBadge');
-  if (badge) badge.textContent = cur;
-
-  const panel = document.getElementById('scCurrencyPanel');
-  if (!panel) return;
-
-  if (cur === 'BRL' || !accountId) {
-    panel.style.display = 'none';
-    return;
-  }
-  panel.style.display = '';
-  const title = document.getElementById('scCurrencyPanelTitle');
-  const fromLabel = document.getElementById('scCurrencyRateFromLabel');
-  if (title) title.textContent = `Conversão: ${cur} → BRL`;
-  if (fromLabel) fromLabel.textContent = cur;
-
-  const sugg = document.getElementById('scCurrencySuggestion');
-  if (sugg) sugg.style.display = 'none';
-  const preview = document.getElementById('scCurrencyPreview');
-  if (preview) preview.textContent = '';
-  fetchScCurrencyRate();
-}
-
-function updateScCurrencyPreview() {
-  const type = document.getElementById('scTypeField')?.value;
-  if (type === 'transfer' || type === 'card_payment') return;
-  const panel = document.getElementById('scCurrencyPanel');
-  if (!panel || panel.style.display === 'none') return;
-  const rateVal = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',', '.'));
-  const amtVal  = Math.abs(getAmtField('scAmount') || 0);
-  const preview = document.getElementById('scCurrencyPreview');
-  const hint    = document.getElementById('scCurrencyBrlHint');
-  if (!rateVal || isNaN(rateVal) || !amtVal) {
-    if (preview) preview.textContent = '';
-    if (hint)    hint.textContent = '—';
-    return;
-  }
-  const brl = amtVal * rateVal;
-  if (preview) preview.textContent = `= ${fmt(brl, 'BRL')}`;
-  if (hint)    hint.textContent = fmt(brl, 'BRL');
-}
-
-async function fetchScCurrencyRate() {
-  const cur = _getScAccountCurrency();
-  if (cur === 'BRL') return;
-  const btn  = document.getElementById('scCurrencyFetchBtn');
-  const icon = document.getElementById('scCurrencyFetchIcon');
-  const sugg = document.getElementById('scCurrencySuggestion');
-  if (btn)  btn.disabled = true;
-  if (icon) icon.textContent = '⏳';
-  if (sugg) sugg.style.display = 'none';
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const fxBase = (typeof FX_API_BASE !== 'undefined') ? FX_API_BASE : 'https://api.frankfurter.app';
-    const url = `${fxBase}/${today}?base=${cur}&to=BRL`;
-    const res  = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const rate = json?.rates?.BRL;
-    if (!rate) throw new Error('Taxa não encontrada');
-    const rateStr = Number(rate).toFixed(6);
-    const rateInput = document.getElementById('scCurrencyRate');
-    if (rateInput) rateInput.value = rateStr;
-    if (sugg) {
-      sugg.textContent = `📡 Cotação de ${json.date} (BCE): 1 ${cur} = ${rateStr} BRL`;
-      sugg.style.display = '';
-      sugg.style.background = '';
-      sugg.style.color = '';
-    }
-    updateScCurrencyPreview();
-  } catch (e) {
-    if (sugg) {
-      sugg.textContent = `⚠️ Não foi possível buscar: ${e.message}. Informe manualmente.`;
-      sugg.style.display = '';
-      sugg.style.background = '#fef9c3';
-      sugg.style.color = '#92400e';
-    }
-  } finally {
-    if (btn)  btn.disabled = false;
-    if (icon) icon.textContent = '🔄';
-  }
 }
 
 function onScTransferAccountChange() {
@@ -793,21 +692,10 @@ async function saveScheduled() {
   const fxRateRaw = parseFloat(document.getElementById('scFxRate')?.value?.replace(',', '.'));
   const fxRate    = (fxMode === 'fixed' && fxRateRaw > 0) ? fxRateRaw : null;
 
-  // Moeda da conta de origem
-  const _scAcc     = (state.accounts || []).find(a => a.id === document.getElementById('scAccountId').value);
-  const scCurrency = _scAcc?.currency || 'BRL';
-  let scBrlAmount  = null;
-  if (!isScTransfer && scCurrency !== 'BRL') {
-    const fxRate = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',', '.'));
-    if (fxRate > 0) scBrlAmount = Math.abs(amount) * fxRate;
-  }
-
   const data = {
     description: document.getElementById('scDesc').value.trim(),
     type,
     amount: (type==='expense'||isScTransfer) ? -Math.abs(amount) : Math.abs(amount),
-    currency:   scCurrency,
-    brl_amount: scBrlAmount,
     account_id: document.getElementById('scAccountId').value || null,
     transfer_to_account_id: isScTransfer ? (document.getElementById('scTransferToAccountId')?.value || null) : null,
     payee_id: isScTransfer ? null : (document.getElementById('scPayeeId').value || null),
