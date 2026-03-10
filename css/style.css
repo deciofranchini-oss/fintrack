@@ -3692,3 +3692,107 @@ html, body{
 }
 .store-list-row:hover { background: var(--surface2); }
 .store-list-row:last-child { border-bottom: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   REGISTER PRICES MODAL — tabela de itens do recibo
+══════════════════════════════════════════════════════════════════════════ */
+.rpm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+  table-layout: fixed;
+}
+.rpm-table thead tr {
+  background: var(--surface2);
+  border-bottom: 2px solid var(--border);
+}
+.rpm-table thead th {
+  padding: 6px 8px;
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rpm-row {
+  border-bottom: 1px solid var(--border2);
+  transition: background .12s;
+}
+.rpm-row:last-child { border-bottom: none; }
+.rpm-row:hover      { background: var(--surface2); }
+
+.rpm-td-num   { padding: 4px 6px; color: var(--muted); font-size: .72rem; text-align: center; width: 28px; }
+.rpm-td-desc  { padding: 4px 6px; }
+.rpm-td-qty   { padding: 4px 4px; width: 66px; }
+.rpm-td-price { padding: 4px 4px; width: 96px; }
+.rpm-td-cat   { padding: 4px 4px; width: 120px; }
+.rpm-td-link  { padding: 4px 4px; width: 148px; }
+.rpm-td-act   { padding: 4px 4px; width: 52px; text-align: center; white-space: nowrap; }
+
+.rpm-inline-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: .8rem;
+  font-family: var(--font-sans);
+  color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.rpm-inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.rpm-inline-input:hover { border-color: var(--border); }
+.rpm-input-center { text-align: center; }
+.rpm-input-right  { text-align: right; }
+
+.rpm-inline-select {
+  width: 100%;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: .75rem;
+  font-family: var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.rpm-inline-select:focus  { outline: none; border-color: var(--accent); background: var(--surface); }
+.rpm-inline-select:hover  { border-color: var(--border); }
+
+.rpm-ai-name {
+  font-size: .65rem;
+  color: var(--muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rpm-ai-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: .75rem; padding: 2px 3px;
+  border-radius: 3px; opacity: .6; line-height: 1;
+  transition: opacity .15s;
+}
+.rpm-ai-btn:hover { opacity: 1; background: var(--accent-lt); }
+.rpm-del-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: .72rem; padding: 2px 3px;
+  border-radius: 3px; color: var(--red); opacity: .5; line-height: 1;
+  transition: opacity .15s;
+}
+.rpm-del-btn:hover { opacity: 1; background: var(--red-lt); }
+
+/* Mobile: hide category and link columns, collapse layout */
+@media (max-width: 640px) {
+  .rpm-table { font-size: .78rem; }
+  .rpm-td-cat, .rpm-table thead th:nth-child(5),
+  .rpm-td-link,.rpm-table thead th:nth-child(6) { display: none; }
+  .rpm-td-price { width: 78px; }
+}
