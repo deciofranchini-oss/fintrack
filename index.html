@@ -2713,25 +2713,25 @@
   <div class="bottom-nav-inner">
     <button class="bn-item active" onclick="navigate('dashboard')" data-page="dashboard" aria-label="Início">
       <span class="bn-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" class="bn-svg"><path d="M3 10.8L12 4l9 6.8"></path><path d="M5.5 9.8V20h4.8v-5.2h3.4V20h4.8V9.8"></path></svg>
+        <svg viewBox="0 0 24 24" class="bn-svg"><path d="M3 12.2 12 4l9 8.2"></path><path d="M5 10.8V20h14v-9.2"></path><path d="M9.5 20v-5.2h5V20"></path></svg>
       </span>
       <span class="bn-label">Início</span>
     </button>
     <button class="bn-item" onclick="navigate('transactions')" data-page="transactions" aria-label="Lançamentos">
       <span class="bn-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" class="bn-svg"><path d="M7 4v16"></path><path d="M17 4v16"></path><path d="M4 8h6"></path><path d="M14 16h6"></path></svg>
+        <svg viewBox="0 0 24 24" class="bn-svg"><path d="M7 7h12"></path><path d="M13 3l6 4-6 4"></path><path d="M17 17H5"></path><path d="M11 13l-6 4 6 4"></path></svg>
       </span>
       <span class="bn-label">Lançamentos</span>
     </button>
     <button class="bn-item" onclick="navigate('accounts')" data-page="accounts" aria-label="Contas">
       <span class="bn-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" class="bn-svg"><rect x="3.5" y="6" width="17" height="12" rx="2.5"></rect><path d="M15 12h3.5"></path></svg>
+        <svg viewBox="0 0 24 24" class="bn-svg"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M4 10h16"></path><path d="M15.5 14.5h.01"></path></svg>
       </span>
       <span class="bn-label">Contas</span>
     </button>
     <button class="bn-item" onclick="navigate('scheduled')" data-page="scheduled" aria-label="Programados">
       <span class="bn-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" class="bn-svg"><rect x="4" y="5" width="16" height="15" rx="2.5"></rect><path d="M8 3.8v3.5"></path><path d="M16 3.8v3.5"></path><path d="M4 9.5h16"></path></svg>
+        <svg viewBox="0 0 24 24" class="bn-svg"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="M4 10h16"></path><path d="M8 14h3"></path></svg>
       </span>
       <span class="bn-label">Programados</span>
     </button>
@@ -2741,12 +2741,12 @@
       </span>
       <span class="bn-label">Mais</span>
     </button>
-    <button class="bottom-nav-toggle" id="bottomNavToggle" type="button" aria-label="Recolher barra inferior" title="Recolher barra inferior">
-      <svg viewBox="0 0 24 24" class="bottom-nav-toggle-icon"><path d="M9 6l6 6-6 6"></path></svg>
-    </button>
   </div>
+  <button class="bottom-nav-handle" id="bottomNavHandle" type="button" aria-label="Ocultar ou mostrar barra" onclick="toggleBottomNav()">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+  </button>
 </nav>
-<button class="fab" id="bottomFab" onclick="openTransactionModal()" aria-label="Nova transação">+</button>
+<button class="fab fab-accent" id="bottomFab" onclick="openTransactionModal()" aria-label="Nova transação">+</button>
 
 <!-- MODALS -->
 <!-- Transaction Detail Modal -->
