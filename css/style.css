@@ -41,13 +41,19 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
   justify-content: space-between;
   padding: 14px 16px 10px;
   flex-shrink: 0;
+  overflow: hidden;        /* belt + suspenders: clip any oversized child */
+  min-width: 0;
+  gap: 8px;
 }
 .sb-logo-img {
-  height: 38px;
+  height: 36px;
+  max-height: 36px;
   width: auto;
+  max-width: 170px;        /* never wider than sidebar minus close btn + padding */
   object-fit: contain;
   display: block;
-  /* Logo has white text + shield — use it directly on dark bg */
+  flex-shrink: 1;
+  min-width: 0;
   filter: brightness(1.05);
 }
 .sb-close {
