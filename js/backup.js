@@ -130,8 +130,23 @@ async function _collectFamilyBackupPayload(fid) {
       : Promise.resolve({ data: [], error: null }),
   ]);
 
+  const fallbackFamilyName =
+    _arr(currentUser?.families).find(f => f?.id === fid)?.name ||
+    state?.familyName ||
+    state?.currentFamily?.name ||
+    'Família';
+
   const payload = {
-    families: _arr(familiesRes.data),
+    families: familiesRes.data?.length
+      ? familiesRes.data
+      : [{
+          id: fid,
+          name: fallbackFamilyName,
+          description: null,
+          active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
     family_members: _arr(membersRes.data),
     account_groups: _arr(groupsRes.data),
     accounts: _arr(accountsRes.data),
