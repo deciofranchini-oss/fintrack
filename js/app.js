@@ -344,6 +344,39 @@ async function togglePrivacy(){
   }
 }
 
+function _scrollActivePageToTop(page){
+  const content = document.querySelector('.content');
+  const pageEl = document.getElementById('page-'+page);
+  const topTargets = [
+    content,
+    pageEl,
+    document.scrollingElement,
+    document.documentElement,
+    document.body,
+  ].filter(Boolean);
+
+  topTargets.forEach(el => {
+    try {
+      if (typeof el.scrollTo === 'function') el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    } catch (_) {}
+  });
+
+  try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) {}
+
+  requestAnimationFrame(() => {
+    topTargets.forEach(el => {
+      try {
+        if (typeof el.scrollTo === 'function') el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        el.scrollTop = 0;
+        el.scrollLeft = 0;
+      } catch (_) {}
+    });
+    try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) {}
+  });
+}
+
 function navigate(page){
   // Guard: settings is admin-only
   if((page==='settings' || page==='audit') && currentUser?.role !== 'admin') {
@@ -359,6 +392,7 @@ function navigate(page){
   const bi=document.querySelector(`.bn-item[data-page="${page}"]`);if(bi)bi.classList.add('active');
   document.getElementById('pageTitle').textContent=pageTitles[page]||page;
   state.currentPage=page;closeSidebar();
+  _scrollActivePageToTop(page);
   if(page==='dashboard')loadDashboard();
   else if(page==='transactions'){populateTxMonthFilter();loadTransactions();}
   else if(page==='accounts')renderAccounts();
@@ -371,6 +405,9 @@ function navigate(page){
   else if(page==='settings')loadSettings();
   else if(page==='audit')loadAuditLogs();
   else if(page==='prices')initPricesPage();
+
+  setTimeout(() => _scrollActivePageToTop(page), 0);
+  setTimeout(() => _scrollActivePageToTop(page), 120);
 }
 // Handle SW messages (e.g., deep links from notifications)
 if('serviceWorker' in navigator){
