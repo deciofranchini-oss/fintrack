@@ -17,19 +17,23 @@ function switchUATab(tab) {
 async function loadFamiliesList() {
   let families = [];
   try {
-    const { data, error } = await sb.from('families').select('*').order('name');
-    if (error) throw error;
-    families = data || [];
+    const { data: rpcData, error: rpcErr } = await sb.rpc('get_manageable_families');
+    if (!rpcErr && Array.isArray(rpcData)) {
+      families = rpcData;
+    } else {
+      const { data, error } = await sb.from('families').select('*').order('name');
+      if (error) throw error;
+      families = data || [];
+    }
   } catch(e) {
-    // families table may not exist yet — show migration hint
     const el = document.getElementById('familiesList');
     if (el) el.innerHTML = `<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:8px;padding:14px;font-size:.82rem">
-      ⚠️ <strong>Tabela "families" não encontrada.</strong><br>
-      Execute o script <code>migration_families.sql</code> no Supabase SQL Editor para habilitar o suporte a múltiplas famílias.
+      ⚠️ <strong>Não foi possível carregar as famílias.</strong><br>
+      Verifique as policies/RPCs de gestão de famílias no Supabase.
     </div>`;
     return;
   }
-  _families = families;
+  _families = families || [];
 
   // Populate family select in user form
   const sel = document.getElementById('uFamilyId');
@@ -122,10 +126,35 @@ async function saveFamily() {
   const name = document.getElementById('fName').value.trim();
   const desc = document.getElementById('fDesc').value.trim();
   if (!name) { toast('Informe o nome da família','error'); return; }
-  const data = { name, description: desc||null, updated_at: new Date().toISOString() };
-  let error;
-  if (id) { ({ error } = await sb.from('families').update(data).eq('id', id)); }
-  else    { ({ error } = await sb.from('families').insert(data)); }
+  const data = { name, description: desc||null };
+  let error = null;
+  try {
+    if (id) {
+      const { error: rpcErr } = await sb.rpc('update_family_as_owner', {
+        p_family_id: id,
+        p_name: data.name,
+        p_description: data.description
+      });
+      if (rpcErr) {
+        const upd = await sb.from('families').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id);
+        error = upd.error;
+      }
+    } else {
+      const { error: rpcErr } = await sb.rpc('create_family_with_owner', {
+        p_name: data.name,
+        p_description: data.description
+      });
+      if (rpcErr) {
+        const ins = await sb.from('families').insert({ ...data, updated_at: new Date().toISOString() });
+        error = ins.error;
+      }
+    }
+  } catch(_) {
+    const res = id
+      ? await sb.from('families').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+      : await sb.from('families').insert({ ...data, updated_at: new Date().toISOString() });
+    error = res.error;
+  }
   if (error) { toast('Erro: '+error.message,'error'); return; }
   toast(id ? '✓ Família atualizada!' : '✓ Família criada!','success');
   document.getElementById('familyFormArea').style.display = 'none';
