@@ -12,45 +12,26 @@ function switchUATab(tab) {
   document.getElementById('uaTabFamilies').classList.toggle('active', tab === 'families');
 }
 
-
-function _adminNormalizeFamilyRow(row = {}) {
-  return {
-    id: row.id || row.family_id || null,
-    name: row.name || row.family_name || row.label || row.id || row.family_id || '',
-    description: row.description || null,
-    active: row.active !== false,
-    role: row.role || row.user_role || 'owner'
-  };
-}
-
-async function _adminLoadFamiliesCatalog() {
-  let families = [];
-  try {
-    const { data, error } = await sb.rpc('get_manageable_families');
-    if (error) throw error;
-    families = (data || []).map(_adminNormalizeFamilyRow);
-  } catch (_) {
-    try {
-      const { data, error } = await sb.from('families').select('id,name,description,active,created_at,updated_at').order('name');
-      if (!error) families = (data || []).map(_adminNormalizeFamilyRow);
-    } catch (_) {}
-  }
-  _families = families;
-  return _families;
-}
-
-
 // ── FAMILIES ──────────────────────────────────────────────────────
-
 
 async function loadFamiliesList() {
   let families = [];
   try {
-    families = await _adminLoadFamiliesCatalog();
+    const { data, error } = await sb.from('families').select('*').order('name');
+    if (error) throw error;
+    families = data || [];
   } catch(e) {
-    families = [];
+    // families table may not exist yet — show migration hint
+    const el = document.getElementById('familiesList');
+    if (el) el.innerHTML = `<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:8px;padding:14px;font-size:.82rem">
+      ⚠️ <strong>Tabela "families" não encontrada.</strong><br>
+      Execute o script <code>migration_families.sql</code> no Supabase SQL Editor para habilitar o suporte a múltiplas famílias.
+    </div>`;
+    return;
   }
+  _families = families;
 
+  // Populate family select in user form
   const sel = document.getElementById('uFamilyId');
   if (sel) {
     const cur = sel.value;
@@ -67,33 +48,13 @@ async function loadFamiliesList() {
     return;
   }
 
-  let members = [];
-  try {
-    const { data } = await sb.from('family_members')
-      .select('user_id, family_id, role, app_users(id,name,email,role,active)')
-      .order('created_at');
-    members = data || [];
-  } catch (_) {}
-
+  // For each family show its members
+  const { data: allUsers } = await sb.from('app_users').select('id,name,email,role,active,family_id').order('name');
   const usersByFamily = {};
-  (members || []).forEach(m => {
-    const fid = m.family_id;
-    if (!fid) return;
+  (allUsers || []).forEach(u => {
+    const fid = u.family_id || '__none__';
     if (!usersByFamily[fid]) usersByFamily[fid] = [];
-    usersByFamily[fid].push({
-      id: m.user_id,
-      name: m.app_users?.name,
-      email: m.app_users?.email,
-      role: m.role || m.app_users?.role || 'user',
-      active: m.app_users?.active
-    });
-  });
-
-  const { data: allUsers } = await sb.from('app_users').select('id,name,email,role,active').order('name');
-  const familiesByUser = {};
-  (members || []).forEach(m => {
-    if (!familiesByUser[m.user_id]) familiesByUser[m.user_id] = new Set();
-    familiesByUser[m.user_id].add(m.family_id);
+    usersByFamily[fid].push(u);
   });
 
   el.innerHTML = _families.map(f => {
@@ -101,13 +62,14 @@ async function loadFamiliesList() {
     const membersHtml = members.length
       ? members.map(u => `
           <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:.82rem;flex:1"><strong>${esc(u.name||'—')}</strong> <span style="color:var(--muted);font-size:.75rem">${esc(u.email||'—')}</span></span>
+            <span style="font-size:.82rem;flex:1"><strong>${esc(u.name||'—')}</strong> <span style="color:var(--muted);font-size:.75rem">${esc(u.email)}</span></span>
             <span class="badge ${(u.role==='admin'||u.role==='owner')?'badge-amber':'badge-muted'}" style="font-size:.7rem">${u.role}</span>
-            <button class="btn-icon" title="Remover da família" onclick="removeUserFromFamily('${u.id}','${esc(u.name||u.email||'usuário')}','${esc(f.name)}')">✕</button>
+            <button class="btn-icon" title="Remover da família" onclick="removeUserFromFamily('${u.id}','${esc(u.name||u.email)}','${esc(f.name)}')">✕</button>
           </div>`).join('')
       : '<div style="font-size:.78rem;color:var(--muted);padding:8px 0">Nenhum membro</div>';
 
-    const available = (allUsers||[]).filter(u => !familiesByUser[u.id]?.has(f.id));
+    // Users not yet in this family (for adding)
+    const available = (allUsers||[]).filter(u => !u.family_id || u.family_id !== f.id);
 
     return `<div class="card" style="margin-bottom:12px">
       <div class="card-header">
@@ -148,49 +110,33 @@ function showFamilyForm(id='') {
   document.getElementById('familyFormTitle').textContent = id ? 'Editar Família' : 'Nova Família';
   document.getElementById('familyFormArea').style.display = '';
   if (id) {
-    const f = _adminNormalizeFamilyRow(_families.find(x => x.id === id) || { id, name: '' });
-    document.getElementById('fName').value = f.name || '';
-    document.getElementById('fDesc').value = f.description||'';
+    const f = _families.find(x => x.id === id);
+    if (f) { document.getElementById('fName').value = f.name; document.getElementById('fDesc').value = f.description||''; }
   }
 }
 
 function editFamily(id) { showFamilyForm(id); document.getElementById('familyFormArea').scrollIntoView({behavior:'smooth'}); }
-
 
 async function saveFamily() {
   const id   = document.getElementById('editFamilyId').value;
   const name = document.getElementById('fName').value.trim();
   const desc = document.getElementById('fDesc').value.trim();
   if (!name) { toast('Informe o nome da família','error'); return; }
+  const data = { name, description: desc||null, updated_at: new Date().toISOString() };
   let error;
-  try {
-    if (id) {
-      const rpc = await sb.rpc('update_family_as_owner', { p_family_id: id, p_name: name, p_description: desc || null });
-      if (rpc.error) throw rpc.error;
-    } else {
-      const rpc = await sb.rpc('create_family_with_owner', { p_name: name, p_description: desc || null });
-      if (rpc.error) throw rpc.error;
-    }
-  } catch (e) {
-    error = e;
-  }
+  if (id) { ({ error } = await sb.from('families').update(data).eq('id', id)); }
+  else    { ({ error } = await sb.from('families').insert(data)); }
   if (error) { toast('Erro: '+error.message,'error'); return; }
   toast(id ? '✓ Família atualizada!' : '✓ Família criada!','success');
   document.getElementById('familyFormArea').style.display = 'none';
   await loadFamiliesList();
 }
 
-
 async function deleteFamily(id, name) {
-  const typed = window.prompt(`⚠️ EXCLUSÃO TOTAL
-
-Isto vai apagar definitivamente a família "${name}" e todos os registros relacionados.
-
-Para confirmar, digite exatamente o nome da família:`);
-  if (typed !== name) return;
-  const { error } = await sb.rpc('delete_family_cascade', { p_family_id: id });
+  if (!confirm(`Excluir a família "${name}"?\n\nOs usuários vinculados ficarão sem família, mas seus dados não serão apagados.`)) return;
+  const { error } = await sb.from('families').delete().eq('id', id);
   if (error) { toast('Erro: '+error.message,'error'); return; }
-  toast('Família removida com todos os dados relacionados','success');
+  toast('Família removida','success');
   await loadFamiliesList();
 }
 
@@ -256,7 +202,7 @@ async function loadUsersList() {
       <td><strong>${esc(u.name||'—')}</strong></td>
       <td style="font-size:.82rem">${esc(u.email)}</td>
       <td><span class="badge badge-green" style="font-size:.7rem">${u.role==='owner'?'Owner':u.role==='admin'?'Admin':u.role==='viewer'?'Viewer':'Usuário'}</span></td>
-      <td style="font-size:.78rem;color:var(--text2)">${u.family_id ? (famById[u.family_id]||'—') : '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="font-size:.78rem;color:var(--text2)">${u.family_id ? (_familyDisplayName ? _familyDisplayName(u.family_id, famById[u.family_id]||'') : (famById[u.family_id]||'—')) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span style="font-size:.75rem;color:${u.active?'var(--green)':'var(--red)'}">● ${u.active?'Ativo':'Inativo'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')" style="padding:3px 8px;font-size:.73rem">✏️</button>
