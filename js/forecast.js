@@ -44,25 +44,38 @@ async function loadForecast() {
       occ.forEach(date => {
         if (date < fromStr || date > toStr || registered.has(date)) return;
 
-        // Leg de DÉBITO: conta origem (sempre negativo)
+        const baseAmt = Math.abs(parseFloat(sc.amount) || 0);
+        const isExpense = sc.type === 'expense';
+        const isIncome  = sc.type === 'income';
+        const isCardPayment = sc.type === 'card_payment';
+
+        // Conta origem:
+        // - expense: saída (negativo)
+        // - income: entrada (positivo)
+        // - transfer/card_payment: perna de débito (negativo)
         if (!accFilter || sc.account_id === accFilter) {
-          scheduledItems.push({
-            date,
-            description: sc.description + ' 📅',
-            amount: -Math.abs(sc.amount),
-            account_id: sc.account_id,
-            categories: sc.categories,
-            payees: sc.payees,
-            isScheduled: true,
-            transferLeg: isTransfer ? 'debit' : null,
-            sc_id: sc.id,
-          });
+          let originAmount = 0;
+          if (isIncome) originAmount = baseAmt;
+          else if (isExpense || isTransfer || isCardPayment) originAmount = -baseAmt;
+
+          if (originAmount !== 0) {
+            scheduledItems.push({
+              date,
+              description: sc.description + ' 📅',
+              amount: originAmount,
+              account_id: sc.account_id,
+              categories: sc.categories,
+              payees: sc.payees,
+              isScheduled: true,
+              transferLeg: isTransfer || isCardPayment ? 'debit' : null,
+              sc_id: sc.id,
+            });
+          }
         }
 
-        // Leg de CRÉDITO: conta destino (sempre positivo) — apenas transferências
-        if (isTransfer && sc.transfer_to_account_id && (!accFilter || sc.transfer_to_account_id === accFilter)) {
-          // Aplicar câmbio se configurado
-          let creditAmt = Math.abs(sc.amount);
+        // Conta destino: apenas transferências/cartão, sempre positivo
+        if ((isTransfer || isCardPayment) && sc.transfer_to_account_id && (!accFilter || sc.transfer_to_account_id === accFilter)) {
+          let creditAmt = baseAmt;
           if (sc.fx_mode === 'fixed' && sc.fx_rate > 0) creditAmt = creditAmt * sc.fx_rate;
           scheduledItems.push({
             date,
