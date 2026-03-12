@@ -11,6 +11,7 @@ function toggleDashGroup(key) {
 
 // Dashboard formatter: no decimals (0 casas) for quick glance
 function dashFmt(value, currency='BRL'){
+  if (state?.privacyMode) return '••••••';
   const v = Number(value) || 0;
   try{
     const opts = { minimumFractionDigits: 0, maximumFractionDigits: 0 };
