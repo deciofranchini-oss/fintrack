@@ -167,7 +167,8 @@ function _backupHeader(fid, counts) {
   };
 }
 
-function _analyzeBackupObject(backup) {
+
+async function _analyzeBackupObject(backup) {
   const data = backup?.data || {};
   const report = {
     version: backup?.version || null,
@@ -197,14 +198,52 @@ function _analyzeBackupObject(backup) {
     if (dupCount) report.duplicateIds.push({ table, count: dupCount });
   });
 
-  BACKUP_RELATIONS.forEach(([table, column, targetTable]) => {
+  const families = _backupTableRows(data, 'families');
+  const familyIdsInRows = new Set();
+  BACKUP_TABLES.forEach(table => {
+    _backupTableRows(data, table).forEach(row => {
+      if (_nonnull(row?.family_id)) familyIdsInRows.add(row.family_id);
+    });
+  });
+
+  if (!families.length) {
+    report.warnings.push('O backup não contém a tabela families. A pré-validação vai usar o family_id do cabeçalho/linhas e o banco atual como referência.');
+    if (_nonnull(backup?.family_id)) idMaps.families.add(backup.family_id);
+    familyIdsInRows.forEach(fid => idMaps.families.add(fid));
+  }
+  if (!_backupTableRows(data, 'family_members').length) report.warnings.push('O backup não contém vínculos em family_members.');
+
+  const existingCache = {};
+  async function existingIdsFor(table, ids) {
+    const cleanIds = [...new Set((ids || []).filter(_nonnull))];
+    if (!cleanIds.length) return new Set();
+    if (!existingCache[table]) existingCache[table] = new Set();
+    const out = new Set();
+    const missing = cleanIds.filter(id => !existingCache[table].has(id));
+    if (missing.length) {
+      try {
+        for (const chunk of _chunk(missing, 200)) {
+          const { data: found } = await sb.from(table).select('id').in('id', chunk);
+          (found || []).forEach(r => existingCache[table].add(r.id));
+        }
+      } catch (_) {}
+    }
+    cleanIds.forEach(id => { if (existingCache[table].has(id)) out.add(id); });
+    return out;
+  }
+
+  for (const [table, column, targetTable] of BACKUP_RELATIONS) {
     const rows = _backupTableRows(data, table);
+    const refs = [...new Set(rows.map(row => row?.[column]).filter(_nonnull))];
+    const existing = await existingIdsFor(targetTable, refs);
     let count = 0;
     const examples = [];
     rows.forEach(row => {
       const ref = row?.[column];
       if (!_nonnull(ref)) return;
-      if (!idMaps[targetTable]?.has(ref)) {
+      const okInBackup = idMaps[targetTable]?.has(ref);
+      const okInDb = existing.has(ref);
+      if (!okInBackup && !okInDb) {
         count++;
         if (examples.length < 5) examples.push(`${row.id || 'sem-id'} → ${ref}`);
       }
@@ -212,13 +251,15 @@ function _analyzeBackupObject(backup) {
     if (count) {
       const issue = { table, column, targetTable, count, examples };
       report.relationIssues.push(issue);
-      report.errors.push(`${table}.${column} possui ${count} referência(s) sem destino em ${targetTable}.`);
+      const isLegacyFamilyGap = targetTable === 'families' && !families.length && familyIdsInRows.size <= 1;
+      const isAuxLogGap = table === 'scheduled_run_logs' && (column === 'transaction_id' || column === 'scheduled_id');
+      if (isLegacyFamilyGap || isAuxLogGap) {
+        report.warnings.push(`${table}.${column} possui ${count} referência(s) sem destino em ${targetTable}.`);
+      } else {
+        report.errors.push(`${table}.${column} possui ${count} referência(s) sem destino em ${targetTable}.`);
+      }
     }
-  });
-
-  const families = _backupTableRows(data, 'families');
-  if (!families.length) report.warnings.push('O backup não contém a tabela families.');
-  if (!_backupTableRows(data, 'family_members').length) report.warnings.push('O backup não contém vínculos em family_members.');
+  }
 
   report.summary.totalRows = report.tableStats.reduce((a, b) => a + b.total, 0);
   report.summary.totalTables = report.tableStats.filter(t => t.total > 0).length;
@@ -226,7 +267,6 @@ function _analyzeBackupObject(backup) {
   report.summary.warningCount = report.warnings.length;
   return report;
 }
-
 async function _estimateRestoreImpact(backup) {
   const data = backup?.data || {};
   const out = {};
@@ -370,7 +410,7 @@ function _showBackupReportModal({ title, html, canProceed = false, proceedLabel 
 }
 
 async function _validateBackupForRestore(backup, title = 'Pré-validar restore') {
-  const report = _analyzeBackupObject(backup);
+  const report = await _analyzeBackupObject(backup);
   const impact = await _estimateRestoreImpact(backup);
   const html = _renderBackupReportHtml(title, backup, report, impact);
   const canProceed = report.errors.length === 0;
