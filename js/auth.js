@@ -1524,6 +1524,8 @@ async function loadFamiliesList() {
           </label>
           ${(isGlobalAdmin || membersByFamily[f.id]?.some(m => m.user_email === currentUser?.email && m.member_role === 'owner')) ? `
             <button class="btn btn-ghost btn-sm" onclick="editFamily('${f.id}')" style="padding:3px 10px;font-size:.73rem">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="openDbBackupCreateForFamily('${f.id}','${esc(_familyDisplayName(f.id, f.name||'')).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem" title="Criar snapshot desta família">📸 Backup</button>
+            <button class="btn btn-ghost btn-sm" onclick="openFamilyBackupManager('${f.id}','${esc(_familyDisplayName(f.id, f.name||'')).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem" title="Ver e restaurar snapshots desta família">🗂️ Snapshots</button>
             <button class="btn btn-ghost btn-sm" id="wipeFamBtn-${f.id}" onclick="wipeFamilyData('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem;color:var(--amber,#f59e0b)" title="Apagar todos os dados desta família">🗑️ Dados</button>
             <button class="btn btn-ghost btn-sm" onclick="deleteFamily('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem;color:var(--red)" title="Excluir família">✕ Excluir</button>
           ` : ''}

@@ -130,23 +130,8 @@ async function _collectFamilyBackupPayload(fid) {
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const fallbackFamilyName =
-    _arr(currentUser?.families).find(f => f?.id === fid)?.name ||
-    state?.familyName ||
-    state?.currentFamily?.name ||
-    'Família';
-
   const payload = {
-    families: familiesRes.data?.length
-      ? familiesRes.data
-      : [{
-          id: fid,
-          name: fallbackFamilyName,
-          description: null,
-          active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }],
+    families: _arr(familiesRes.data),
     family_members: _arr(membersRes.data),
     account_groups: _arr(groupsRes.data),
     accounts: _arr(accountsRes.data),
@@ -602,7 +587,158 @@ async function _checkBackupTable() {
   return !error || !error.message?.includes('does not exist');
 }
 
+
+async function createDbBackupForFamily(fid, familyName = '', label = '') {
+  const btn = document.getElementById('dbBackupCreateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Criando...'; }
+  try {
+    const hasTable = await _checkBackupTable();
+    if (!hasTable) {
+      toast('Tabela app_backups não existe. Execute a migration primeiro.', 'error');
+      _showDbBackupMigrationHint();
+      return;
+    }
+    if (!fid) throw new Error('Família não informada para o backup.');
+    const { payload, counts } = await _collectFamilyBackupPayload(fid);
+    const famRow = _backupTableRows(payload, 'families')[0] || null;
+    const famName = _familyDisplayName?.(fid, familyName || famRow?.name || '') || familyName || famRow?.name || fid;
+    const row = {
+      family_id: fid,
+      label: label || `Backup manual — ${famName} — ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+      created_by: currentUser?.name || currentUser?.email || 'sistema',
+      payload,
+      counts,
+      size_kb: Math.round(JSON.stringify(payload).length / 1024),
+      backup_type: 'manual',
+    };
+    const { error } = await sb.from('app_backups').insert(row);
+    if (error) throw error;
+    toast(`✅ Backup da família "${famName}" criado!`, 'success');
+    await loadDbBackups();
+  } catch (e) {
+    toast('Erro ao criar backup: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📸 Criar Snapshot'; }
+  }
+}
+
+function openDbBackupCreateForFamily(fid, familyName) {
+  const resolved = (_familyDisplayName?.(fid, familyName || '') || familyName || fid);
+  const label = prompt('Nome/etiqueta para este backup (opcional):', `Backup — ${resolved} — ${new Date().toLocaleDateString('pt-BR')}`);
+  if (label === null) return;
+  createDbBackupForFamily(fid, resolved, label || '');
+}
+
+async function _fetchDbBackupsForFamily(fid, limit = 20) {
+  const { data, error } = await sb.from('app_backups')
+    .select('id, family_id, label, created_at, created_by, counts, size_kb, backup_type')
+    .eq('family_id', fid)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+function _renderFamilyBackupsHtml(backups, fid, familyName) {
+  if (!backups.length) {
+    return `<div style="text-align:center;padding:20px;color:var(--muted);font-size:.83rem"><div style="font-size:1.8rem;margin-bottom:8px;opacity:.4">🗄️</div>Nenhum snapshot encontrado para <strong>${esc(familyName || _familyDisplayName?.(fid,'') || fid)}</strong>.</div>`;
+  }
+  return `<div style="display:grid;gap:10px">${backups.map(b => {
+    const dt = new Date(b.created_at);
+    const ago = _timeAgo(dt);
+    const typeIcon = b.backup_type === 'auto' ? '🤖' : '👤';
+    return `<div class="db-backup-row" style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface)">
+      <div class="db-backup-row-info">
+        <div class="db-backup-row-label">${typeIcon} ${esc(b.label || 'Backup')}</div>
+        <div class="db-backup-row-meta">${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · <span title="${ago}">${ago}</span> · por ${esc(b.created_by || '—')} · ${b.size_kb || '?'} KB</div>
+        <div class="db-backup-row-counts">${b.counts?.transactions || 0} txs · ${b.counts?.accounts || 0} contas · ${b.counts?.categories || 0} categorias</div>
+      </div>
+      <div class="db-backup-row-actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="downloadDbBackup('${b.id}')" title="Baixar JSON">⬇️</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewDbBackupRestore('${b.id}')" title="Pré-validar restore">🔎</button>
+        <button class="btn btn-ghost btn-sm" onclick="restoreDbBackup('${b.id}')" title="Restaurar este snapshot">↩️ Restaurar</button>
+        <button class="btn-icon" onclick="deleteDbBackup('${b.id}')" title="Excluir backup" style="color:var(--red)">🗑️</button>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+async function openFamilyBackupManager(fid, familyName = '') {
+  try {
+    const hasTable = await _checkBackupTable();
+    if (!hasTable) {
+      toast('Tabela app_backups não existe. Execute a migration primeiro.', 'error');
+      _showDbBackupMigrationHint();
+      return;
+    }
+    const resolved = _familyDisplayName?.(fid, familyName || '') || familyName || fid;
+    const backups = await _fetchDbBackupsForFamily(fid, 30);
+    const html = `
+      <div style="display:grid;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:700">Família: ${esc(resolved)}</div>
+            <div style="font-size:.82rem;color:var(--muted)">${backups.length} snapshot(s) encontrados.</div>
+          </div>
+          <button class="btn btn-primary" id="familyBackupCreateFromModal">📸 Criar novo snapshot</button>
+        </div>
+        ${_renderFamilyBackupsHtml(backups, fid, resolved)}
+      </div>`;
+    const old = document.getElementById('familyBackupManagerModal');
+    old?.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'familyBackupManagerModal';
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    wrap.innerHTML = `
+      <div style="width:min(980px,96vw);max-height:90vh;overflow:hidden;background:var(--card, #fff);color:var(--text, #111);border:1px solid var(--border, #ddd);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.28);display:flex;flex-direction:column">
+        <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div>
+            <div style="font-size:1rem;font-weight:800">Snapshots da família</div>
+            <div style="font-size:.82rem;color:var(--muted)">Crie, pré-valide e restaure snapshots desta família específica.</div>
+          </div>
+          <button id="familyBackupManagerCloseX" class="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <div style="padding:18px;overflow:auto">${html}</div>
+        <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px">
+          <button id="familyBackupManagerClose" class="btn btn-ghost">Fechar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.querySelector('#familyBackupManagerClose')?.addEventListener('click', close);
+    wrap.querySelector('#familyBackupManagerCloseX')?.addEventListener('click', close);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    wrap.querySelector('#familyBackupCreateFromModal')?.addEventListener('click', async () => {
+      await openDbBackupCreateForFamily(fid, resolved);
+      close();
+      setTimeout(() => openFamilyBackupManager(fid, resolved), 200);
+    });
+  } catch (e) {
+    toast('Erro ao abrir snapshots da família: ' + e.message, 'error');
+  }
+}
+
 async function createDbBackup(label = '') {
+  const btn = document.getElementById('dbBackupCreateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Criando...'; }
+  try {
+    const hasTable = await _checkBackupTable();
+    if (!hasTable) {
+      toast('Tabela app_backups não existe. Execute a migration primeiro.', 'error');
+      _showDbBackupMigrationHint();
+      return;
+    }
+    const fid = await _resolveActiveFamilyId();
+    if (!fid) throw new Error('Não foi possível determinar a família ativa.');
+    return createDbBackupForFamily(fid, '', label);
+  } catch (e) {
+    toast('Erro ao criar backup: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📸 Criar Snapshot'; }
+  }
+}
+
+async function _createDbBackup_legacy_unused(label = '') {
   const btn = document.getElementById('dbBackupCreateBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Criando...'; }
   try {
