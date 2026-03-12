@@ -1,8 +1,7 @@
 // ── backup.js — Backup local (JSON) + Backup no banco (Supabase) ───────────
 
 const BACKUP_VERSION = '4.0';
-const BACKUP_APP_NAME = 'JF Family FinTrack';
-const BACKUP_CORE_TABLES = [
+const BACKUP_TABLES = [
   'families',
   'family_members',
   'account_groups',
@@ -16,244 +15,354 @@ const BACKUP_CORE_TABLES = [
   'scheduled_run_logs',
   'price_items',
   'price_stores',
-  'price_history',
+  'price_history'
 ];
-const BACKUP_OPTIONAL_TABLES = [
+
+const BACKUP_RESTORE_ORDER = [
   'families',
   'family_members',
+  'account_groups',
+  'accounts',
+  'categories',
+  'payees',
+  'budgets',
+  'scheduled_transactions',
+  'transactions',
+  'scheduled_occurrences',
+  'scheduled_run_logs',
+  'price_items',
+  'price_stores',
+  'price_history'
 ];
-const BACKUP_BATCH_SIZE = 200;
 
-function _backupTableCounts(data) {
+const BACKUP_FK_RULES = {
+  family_members: [
+    { field: 'family_id', target: 'families' }
+  ],
+  account_groups: [
+    { field: 'family_id', target: 'families' }
+  ],
+  accounts: [
+    { field: 'family_id', target: 'families' },
+    { field: 'group_id', target: 'account_groups' }
+  ],
+  categories: [
+    { field: 'family_id', target: 'families' },
+    { field: 'parent_id', target: 'categories' }
+  ],
+  payees: [
+    { field: 'family_id', target: 'families' },
+    { field: 'default_category_id', target: 'categories' }
+  ],
+  transactions: [
+    { field: 'family_id', target: 'families' },
+    { field: 'account_id', target: 'accounts' },
+    { field: 'payee_id', target: 'payees' },
+    { field: 'category_id', target: 'categories' },
+    { field: 'transfer_to_account_id', target: 'accounts' },
+    { field: 'linked_transfer_id', target: 'transactions' },
+    { field: 'transfer_pair_id', target: 'transactions' }
+  ],
+  budgets: [
+    { field: 'family_id', target: 'families' },
+    { field: 'category_id', target: 'categories' }
+  ],
+  scheduled_transactions: [
+    { field: 'family_id', target: 'families' },
+    { field: 'account_id', target: 'accounts' },
+    { field: 'payee_id', target: 'payees' },
+    { field: 'category_id', target: 'categories' },
+    { field: 'transfer_to_account_id', target: 'accounts' }
+  ],
+  scheduled_occurrences: [
+    { field: 'scheduled_id', target: 'scheduled_transactions' },
+    { field: 'transaction_id', target: 'transactions' }
+  ],
+  scheduled_run_logs: [
+    { field: 'family_id', target: 'families' },
+    { field: 'scheduled_id', target: 'scheduled_transactions' },
+    { field: 'transaction_id', target: 'transactions' }
+  ],
+  price_items: [
+    { field: 'family_id', target: 'families' },
+    { field: 'category_id', target: 'categories' }
+  ],
+  price_stores: [
+    { field: 'family_id', target: 'families' },
+    { field: 'payee_id', target: 'payees' }
+  ],
+  price_history: [
+    { field: 'family_id', target: 'families' },
+    { field: 'item_id', target: 'price_items' },
+    { field: 'store_id', target: 'price_stores' }
+  ]
+};
+
+function _rowsFor(payload, table) {
+  return payload?.[table] || [];
+}
+
+function _backupCounts(payload) {
   const counts = {};
-  Object.entries(data || {}).forEach(([k, rows]) => { counts[k] = Array.isArray(rows) ? rows.length : 0; });
+  for (const t of BACKUP_TABLES) counts[t] = _rowsFor(payload, t).length;
   return counts;
 }
 
-function _backupSummary(counts) {
-  return [
-    `${counts.transactions || 0} transações`,
-    `${counts.accounts || 0} contas`,
-    `${counts.categories || 0} categorias`,
-    `${counts.payees || 0} beneficiários`,
-    `${counts.scheduled_transactions || 0} programados`,
-    `${counts.price_history || 0} históricos de preço`,
-  ].join(' · ');
-}
+async function _resolveActiveFamilyId() {
+  const explicit = state?.currentFamilyId || currentUser?.preferred_family_id || currentUser?.family_id || null;
+  if (explicit) return explicit;
 
-function _backupPayloadBytes(payload) {
-  try { return JSON.stringify(payload).length; } catch (_) { return 0; }
-}
+  const userFamilies = currentUser?.families || [];
+  if (userFamilies.length === 1) return userFamilies[0].id;
 
-async function _resolveBackupFamilyId() {
-  if (currentUser?.family_id) return currentUser.family_id;
-  if (currentUser?.preferred_family_id) return currentUser.preferred_family_id;
-  if (Array.isArray(currentUser?.families) && currentUser.families.length) return currentUser.families[0].id || null;
-
-  const probes = [
-    () => sb.from('accounts').select('family_id').not('family_id', 'is', null).limit(1).maybeSingle(),
-    () => sb.from('categories').select('family_id').not('family_id', 'is', null).limit(1).maybeSingle(),
-    () => sb.from('families').select('id').limit(1).maybeSingle(),
-  ];
-
-  for (const probe of probes) {
+  const familyTables = ['accounts', 'categories', 'payees', 'transactions', 'budgets', 'scheduled_transactions', 'price_items', 'price_stores'];
+  for (const table of familyTables) {
     try {
-      const { data } = await probe();
-      const fid = data?.family_id || data?.id || null;
-      if (fid) return fid;
+      const { data } = await sb.from(table).select('family_id').not('family_id', 'is', null).limit(1).maybeSingle();
+      if (data?.family_id) return data.family_id;
     } catch (_) {}
   }
+
+  try {
+    const { data } = await sb.from('families').select('id').limit(1).maybeSingle();
+    if (data?.id) return data.id;
+  } catch (_) {}
 
   return null;
 }
 
-async function _selectFamilyRows(table, familyId) {
-  if (table === 'families') {
-    return sb.from('families').select('*').eq('id', familyId);
-  }
-  if (table === 'family_members') {
-    return sb.from('family_members').select('*').eq('family_id', familyId);
-  }
-  return sb.from(table).select('*').eq('family_id', familyId);
+async function _fetchBackupPayload(fid) {
+  const q = table => {
+    if (table === 'families') return sb.from('families').select('*').eq('id', fid);
+    if (table === 'family_members') return sb.from('family_members').select('*').eq('family_id', fid);
+    return sb.from(table).select('*').eq('family_id', fid);
+  };
+
+  const results = await Promise.all(BACKUP_TABLES.map(async (table) => {
+    const { data, error } = await q(table);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    return [table, data || []];
+  }));
+
+  const payload = Object.fromEntries(results);
+  return payload;
 }
 
-async function _buildBackupSnapshot(familyId) {
-  const queries = BACKUP_CORE_TABLES.map(t => _selectFamilyRows(t, familyId));
-  const results = await Promise.all(queries);
-  const data = {};
-  const errors = [];
+function _normalizePayload(backup) {
+  const data = { ...(backup?.data || backup?.payload || {}) };
+  if (data.scheduled && !data.scheduled_transactions) data.scheduled_transactions = data.scheduled;
+  for (const t of BACKUP_TABLES) if (!Array.isArray(data[t])) data[t] = [];
+  return data;
+}
 
-  BACKUP_CORE_TABLES.forEach((table, idx) => {
-    const res = results[idx] || {};
-    if (res.error) {
-      const isOptional = BACKUP_OPTIONAL_TABLES.includes(table);
-      if (!isOptional) errors.push(`${table}: ${res.error.message}`);
-      data[table] = [];
-      return;
+function _buildIdSets(payload) {
+  const sets = {};
+  for (const t of BACKUP_TABLES) {
+    sets[t] = new Set((_rowsFor(payload, t)).map(r => r?.id).filter(Boolean));
+  }
+  return sets;
+}
+
+function _collectIntegrityIssues(payload) {
+  const issues = [];
+  const idSets = _buildIdSets(payload);
+
+  for (const table of BACKUP_TABLES) {
+    const rows = _rowsFor(payload, table);
+    const seen = new Set();
+    for (const row of rows) {
+      if (!row?.id) {
+        issues.push({ level: 'warning', table, message: `linha sem id em ${table}` });
+        continue;
+      }
+      if (seen.has(row.id)) issues.push({ level: 'error', table, message: `id duplicado ${row.id}` });
+      seen.add(row.id);
     }
-    data[table] = res.data || [];
-  });
+  }
 
-  if (errors.length) throw new Error(`Falha ao montar backup: ${errors.join(' | ')}`);
+  for (const [table, rules] of Object.entries(BACKUP_FK_RULES)) {
+    for (const row of _rowsFor(payload, table)) {
+      for (const rule of rules) {
+        const v = row?.[rule.field];
+        if (!v) continue;
+        if (!idSets[rule.target]?.has(v)) {
+          issues.push({
+            level: 'error',
+            table,
+            message: `${table}.${rule.field} referencia ${rule.target}.${v} inexistente no backup`,
+            rowId: row?.id || null
+          });
+        }
+      }
+    }
+  }
 
-  return {
-    version: BACKUP_VERSION,
-    app: BACKUP_APP_NAME,
-    family_id: familyId,
-    exported_at: new Date().toISOString(),
-    counts: _backupTableCounts(data),
-    data,
+  return issues;
+}
+
+async function _loadExistingIdSet(table, ids, extraFilter) {
+  const found = new Set();
+  if (!ids?.length) return found;
+  for (let i = 0; i < ids.length; i += 200) {
+    let q = sb.from(table).select('id').in('id', ids.slice(i, i + 200));
+    if (extraFilter?.field && extraFilter?.value) q = q.eq(extraFilter.field, extraFilter.value);
+    const { data, error } = await q;
+    if (error) throw new Error(`${table}: ${error.message}`);
+    (data || []).forEach(r => { if (r?.id) found.add(r.id); });
+  }
+  return found;
+}
+
+async function _buildDryRunReport(payload, fid) {
+  const report = {
+    family_id: fid,
+    counts: _backupCounts(payload),
+    integrity: _collectIntegrityIssues(payload),
+    existing: {},
+    criticalErrors: [],
+    warnings: []
   };
+
+  for (const t of BACKUP_TABLES) {
+    const rows = _rowsFor(payload, t);
+    if (!rows.length) {
+      report.existing[t] = { incoming: 0, existingById: 0, newRows: 0 };
+      continue;
+    }
+    const ids = rows.map(r => r?.id).filter(Boolean);
+    const extraFilter = t === 'families' ? null : (rows[0]?.family_id || fid ? { field: 'family_id', value: rows[0]?.family_id || fid } : null);
+    const existingSet = await _loadExistingIdSet(t, ids, extraFilter);
+    report.existing[t] = {
+      incoming: rows.length,
+      existingById: existingSet.size,
+      newRows: rows.length - existingSet.size
+    };
+  }
+
+  report.criticalErrors = report.integrity.filter(x => x.level === 'error');
+  report.warnings = report.integrity.filter(x => x.level !== 'error');
+  return report;
 }
 
-function _normalizeBackupPayload(payload) {
-  const data = payload?.data || payload || {};
-  return {
-    families: data.families || [],
-    family_members: data.family_members || [],
-    account_groups: data.account_groups || [],
-    accounts: data.accounts || [],
-    categories: data.categories || [],
-    payees: data.payees || [],
-    transactions: data.transactions || [],
-    budgets: data.budgets || [],
-    scheduled_transactions: data.scheduled_transactions || data.scheduled || [],
-    scheduled_occurrences: data.scheduled_occurrences || [],
-    scheduled_run_logs: data.scheduled_run_logs || [],
-    price_items: data.price_items || [],
-    price_stores: data.price_stores || [],
-    price_history: data.price_history || [],
-  };
+function _reportSummary(report) {
+  const totalIncoming = Object.values(report.counts || {}).reduce((a, b) => a + (b || 0), 0);
+  const totalExisting = Object.values(report.existing || {}).reduce((a, b) => a + (b.existingById || 0), 0);
+  const lines = [
+    `Família: ${report.family_id || '—'}`,
+    `Registros no backup: ${totalIncoming}`,
+    `Registros que já existem por id: ${totalExisting}`,
+    `Erros críticos: ${report.criticalErrors?.length || 0}`,
+    `Alertas: ${report.warnings?.length || 0}`
+  ];
+  return lines.join('\n');
 }
 
-function _chunk(arr, size = BACKUP_BATCH_SIZE) {
-  const out = [];
-  for (let i = 0; i < (arr?.length || 0); i += size) out.push(arr.slice(i, i + size));
-  return out;
+function _formatIssues(report, limit = 10) {
+  const issues = [...(report.criticalErrors || []), ...(report.warnings || [])].slice(0, limit);
+  if (!issues.length) return 'Nenhum problema estrutural detectado.';
+  return issues.map(i => `• ${i.message}${i.rowId ? ` [row ${i.rowId}]` : ''}`).join('\n');
 }
 
-async function _upsertRows(table, rows, options = {}) {
+async function previewBackupDryRun(backupLike) {
+  const payload = _normalizePayload(backupLike);
+  const fid = backupLike?.family_id || payload?.families?.[0]?.id || await _resolveActiveFamilyId();
+  const report = await _buildDryRunReport(payload, fid);
+  alert(`Pré-validação do restore\n\n${_reportSummary(report)}\n\n${_formatIssues(report, 12)}`);
+  return report;
+}
+window.previewBackupDryRun = previewBackupDryRun;
+
+async function _safeUpsert(table, rows, opts = {}) {
   if (!rows?.length) return;
-  const upsertOptions = options.upsertOptions || { ignoreDuplicates: false };
-  for (const part of _chunk(rows)) {
-    const { error } = await sb.from(table).upsert(part, upsertOptions);
+  const useFamilyFilter = table !== 'families' && table !== 'family_members' && table !== 'scheduled_occurrences';
+  for (let i = 0; i < rows.length; i += 200) {
+    let batch = rows.slice(i, i + 200);
+    if (opts.filterExistingUsers && table === 'family_members') {
+      const userIds = [...new Set(batch.map(r => r.user_id).filter(Boolean))];
+      const validUsers = await _loadExistingIdSet('app_users', userIds);
+      batch = batch.filter(r => validUsers.has(r.user_id));
+      if (!batch.length) continue;
+    }
+    const { error } = await sb.from(table).upsert(batch, { ignoreDuplicates: false });
     if (error) throw new Error(`${table}: ${error.message}`);
   }
 }
 
-async function _restoreFamiliesAndMembers(data, warnings) {
-  const familyRows = data.families || [];
-  const memberRows = data.family_members || [];
+async function _restorePayload(payload, statusEl) {
+  const updateStatus = msg => { if (statusEl) statusEl.textContent = msg; };
+  const d = _normalizePayload({ data: payload });
 
-  if (familyRows.length) {
-    try {
-      await _upsertRows('families', familyRows, { upsertOptions: { ignoreDuplicates: false } });
-    } catch (e) {
-      warnings.push(`families: ${e.message}`);
-    }
-  }
+  // Families first
+  await _safeUpsert('families', d.families || []);
+  updateStatus('✓ families ok...');
 
-  if (memberRows.length) {
-    try {
-      const userIds = [...new Set(memberRows.map(r => r.user_id).filter(Boolean))];
-      let validIds = new Set();
-      if (userIds.length) {
-        const { data: users, error } = await sb.from('app_users').select('id').in('id', userIds);
-        if (error) throw error;
-        validIds = new Set((users || []).map(u => u.id));
-      }
-      const filtered = memberRows.filter(r => validIds.has(r.user_id));
-      if (filtered.length) {
-        await _upsertRows('family_members', filtered, { upsertOptions: { onConflict: 'user_id,family_id', ignoreDuplicates: false } });
-      }
-      const skipped = memberRows.length - filtered.length;
-      if (skipped > 0) warnings.push(`family_members: ${skipped} vínculo(s) ignorado(s) porque o usuário não existe em app_users`);
-    } catch (e) {
-      warnings.push(`family_members: ${e.message}`);
-    }
+  // family_members only where app_users exists
+  await _safeUpsert('family_members', d.family_members || [], { filterExistingUsers: true });
+  updateStatus('✓ family_members ok...');
+
+  await _safeUpsert('account_groups', d.account_groups || []);
+  updateStatus('✓ account_groups ok...');
+
+  await _safeUpsert('accounts', d.accounts || []);
+  updateStatus('✓ accounts ok...');
+
+  // categories two-pass because of parent_id
+  const categories = d.categories || [];
+  if (categories.length) {
+    const pass1 = categories.map(r => ({ ...r, parent_id: null }));
+    await _safeUpsert('categories', pass1);
+    await _safeUpsert('categories', categories);
   }
+  updateStatus('✓ categories ok...');
+
+  await _safeUpsert('payees', d.payees || []);
+  updateStatus('✓ payees ok...');
+
+  await _safeUpsert('budgets', d.budgets || []);
+  updateStatus('✓ budgets ok...');
+
+  await _safeUpsert('scheduled_transactions', d.scheduled_transactions || []);
+  updateStatus('✓ scheduled_transactions ok...');
+
+  // transactions two-pass because of self references
+  const transactions = d.transactions || [];
+  if (transactions.length) {
+    const pass1 = transactions.map(r => ({ ...r, linked_transfer_id: null, transfer_pair_id: null }));
+    await _safeUpsert('transactions', pass1);
+    await _safeUpsert('transactions', transactions);
+  }
+  updateStatus('✓ transactions ok...');
+
+  await _safeUpsert('scheduled_occurrences', d.scheduled_occurrences || []);
+  updateStatus('✓ scheduled_occurrences ok...');
+
+  await _safeUpsert('scheduled_run_logs', d.scheduled_run_logs || []);
+  updateStatus('✓ scheduled_run_logs ok...');
+
+  await _safeUpsert('price_items', d.price_items || []);
+  updateStatus('✓ price_items ok...');
+
+  await _safeUpsert('price_stores', d.price_stores || []);
+  updateStatus('✓ price_stores ok...');
+
+  await _safeUpsert('price_history', d.price_history || []);
+  updateStatus('✓ price_history ok...');
 }
 
-async function _restoreCategories(rows) {
-  if (!rows?.length) return;
-  const base = rows.map(r => ({ ...r, parent_id: null }));
-  await _upsertRows('categories', base);
-  const withParent = rows.filter(r => r.parent_id);
-  for (const part of _chunk(withParent)) {
-    for (const row of part) {
-      const { error } = await sb.from('categories').update({ parent_id: row.parent_id, updated_at: row.updated_at || new Date().toISOString() }).eq('id', row.id);
-      if (error) throw new Error(`categories(parent): ${error.message}`);
-    }
-  }
-}
-
-async function _restoreTransactions(rows) {
-  if (!rows?.length) return;
-  const base = rows.map(r => ({ ...r, linked_transfer_id: null, transfer_pair_id: null }));
-  await _upsertRows('transactions', base);
-  const refs = rows.filter(r => r.linked_transfer_id || r.transfer_pair_id);
-  for (const row of refs) {
-    const patch = {};
-    if (row.linked_transfer_id) patch.linked_transfer_id = row.linked_transfer_id;
-    if (row.transfer_pair_id) patch.transfer_pair_id = row.transfer_pair_id;
-    const { error } = await sb.from('transactions').update(patch).eq('id', row.id);
-    if (error) throw new Error(`transactions(refs): ${error.message}`);
-  }
-}
-
-async function _restoreAllBackupData(payload, onProgress) {
-  const data = _normalizeBackupPayload(payload);
-  const warnings = [];
-
-  const progress = msg => { if (typeof onProgress === 'function') onProgress(msg); };
-
-  progress('Restaurando família e vínculos...');
-  await _restoreFamiliesAndMembers(data, warnings);
-
-  const steps = [
-    ['account_groups', data.account_groups, _upsertRows],
-    ['accounts', data.accounts, _upsertRows],
-    ['categories', data.categories, _restoreCategories],
-    ['payees', data.payees, _upsertRows],
-    ['budgets', data.budgets, _upsertRows],
-    ['scheduled_transactions', data.scheduled_transactions, _upsertRows],
-    ['transactions', data.transactions, _restoreTransactions],
-    ['scheduled_occurrences', data.scheduled_occurrences, _upsertRows],
-    ['scheduled_run_logs', data.scheduled_run_logs, _upsertRows],
-    ['price_items', data.price_items, _upsertRows],
-    ['price_stores', data.price_stores, _upsertRows],
-    ['price_history', data.price_history, _upsertRows],
+async function _reloadAfterRestore() {
+  const tasks = [
+    typeof loadAccounts === 'function' ? loadAccounts() : Promise.resolve(),
+    typeof loadCategories === 'function' ? loadCategories() : Promise.resolve(),
+    typeof loadPayees === 'function' ? loadPayees() : Promise.resolve(),
+    typeof loadTransactions === 'function' ? loadTransactions() : Promise.resolve(),
+    typeof loadBudgets === 'function' ? loadBudgets() : Promise.resolve(),
+    typeof loadScheduledTransactions === 'function' ? loadScheduledTransactions() : Promise.resolve(),
+    typeof loadPriceItems === 'function' ? loadPriceItems() : Promise.resolve(),
+    typeof loadPriceStores === 'function' ? loadPriceStores() : Promise.resolve(),
+    typeof refreshDashboard === 'function' ? refreshDashboard() : Promise.resolve()
   ];
-
-  for (const [table, rows, fn] of steps) {
-    if (!rows?.length) continue;
-    progress(`Restaurando ${table}...`);
-    if (fn === _upsertRows) await fn(table, rows);
-    else if (fn === _restoreCategories) await fn(rows);
-    else if (fn === _restoreTransactions) await fn(rows);
-  }
-
-  progress('Recarregando a interface...');
-  await _reloadAppDataAfterRestore();
-
-  return { data, warnings };
-}
-
-async function _reloadAppDataAfterRestore() {
-  try { if (typeof _loadCurrentUserContext === 'function') await _loadCurrentUserContext().catch(()=>{}); } catch (_) {}
-  try { if (typeof loadAccounts === 'function') await loadAccounts(); } catch (_) {}
-  try { if (typeof loadCategories === 'function') await loadCategories(); } catch (_) {}
-  try { if (typeof loadPayees === 'function') await loadPayees(); } catch (_) {}
-  try { if (typeof loadBudgets === 'function') await loadBudgets(); } catch (_) {}
-  try { if (typeof loadScheduled === 'function') await loadScheduled(); } catch (_) {}
-  try { if (typeof _loadPricesData === 'function') await _loadPricesData(); } catch (_) {}
-  try { if (typeof populateSelects === 'function') populateSelects(); } catch (_) {}
-  try { if (typeof loadTransactions === 'function' && state?.currentPage === 'transactions') await loadTransactions(); } catch (_) {}
-  try { if (typeof loadDashboard === 'function' && state?.currentPage === 'dashboard') await loadDashboard(); } catch (_) {}
-  try {
-    if (typeof _populatePricesStoreFilter === 'function') _populatePricesStoreFilter();
-    if (typeof _renderPricesPage === 'function' && state?.currentPage === 'prices') _renderPricesPage();
-  } catch (_) {}
+  await Promise.allSettled(tasks);
+  try { populateSelects?.(); } catch (_) {}
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -266,9 +375,18 @@ async function exportBackup() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Exportando...'; }
   const status = document.getElementById('backupStatus');
   try {
-    const fid = await _resolveBackupFamilyId();
-    if (!fid) throw new Error('Não foi possível determinar a família ativa.');
-    const backup = await _buildBackupSnapshot(fid);
+    const fid = await _resolveActiveFamilyId();
+    if (!fid) throw new Error('Não foi possível determinar a família ativa');
+    const payload = await _fetchBackupPayload(fid);
+    const counts = _backupCounts(payload);
+    const backup = {
+      version: BACKUP_VERSION,
+      app: 'JF Family FinTrack',
+      family_id: fid,
+      exported_at: new Date().toISOString(),
+      counts,
+      data: payload,
+    };
     const json = JSON.stringify(backup, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
@@ -278,7 +396,7 @@ async function exportBackup() {
     a2.click();
     URL.revokeObjectURL(url);
     if (status) {
-      status.textContent = `✓ ${_backupSummary(backup.counts)} · ${(json.length / 1024).toFixed(0)} KB`;
+      status.textContent = `✓ ${Object.values(counts).reduce((a,b)=>a+b,0)} registros · ${(json.length / 1024).toFixed(0)} KB`;
       status.style.color = 'var(--green)';
     }
     toast('Backup exportado!', 'success');
@@ -297,25 +415,24 @@ async function restoreBackup(event) {
   if (status) status.textContent = '⏳ Lendo arquivo...';
   try {
     const backup = JSON.parse(await file.text());
-    if (!backup.version || !(backup.data || backup.payload)) throw new Error('Arquivo de backup inválido');
+    const payload = _normalizePayload(backup);
+    if (!backup.version || !payload) throw new Error('Arquivo de backup inválido');
 
-    const data = _normalizeBackupPayload(backup);
-    const counts = _backupTableCounts(data);
+    const report = await _buildDryRunReport(payload, backup.family_id);
     const ok = confirm(
       `Restaurar backup de ${backup.exported_at?.slice(0, 10) || '?'}?\n\n` +
-      `${_backupSummary(counts)}\n\n` +
-      `Dados existentes serão mantidos (upsert).`
+      `${_reportSummary(report)}\n\n` +
+      `${_formatIssues(report, 10)}\n\n` +
+      `${report.criticalErrors.length ? 'Há erros críticos. Recomendado cancelar.' : 'Deseja continuar com o restore?'}`
     );
     if (!ok) { if (status) status.textContent = ''; return; }
+    if (report.criticalErrors.length) throw new Error('Restore cancelado: backup com erros críticos de integridade.');
 
-    const result = await _restoreAllBackupData(backup, msg => { if (status) status.textContent = `⏳ ${msg}`; });
-    if (status) {
-      status.textContent = result.warnings.length
-        ? `✓ Restaurado com avisos: ${result.warnings.join(' | ')}`
-        : '✓ Restaurado com sucesso!';
-      status.style.color = result.warnings.length ? 'var(--amber)' : 'var(--green)';
-    }
-    toast(result.warnings.length ? 'Backup restaurado com avisos' : 'Backup restaurado!', result.warnings.length ? 'warning' : 'success');
+    if (status) status.textContent = '⏳ Restaurando...';
+    await _restorePayload(payload, status);
+    await _reloadAfterRestore();
+    if (status) { status.textContent = '✓ Restaurado com sucesso!'; status.style.color = 'var(--green)'; }
+    toast('Backup restaurado!', 'success');
   } catch (e) {
     if (status) { status.textContent = '✗ ' + e.message; status.style.color = 'var(--red)'; }
     toast('Erro: ' + e.message, 'error');
@@ -345,20 +462,22 @@ async function createDbBackup(label = '') {
       return;
     }
 
-    const fid = await _resolveBackupFamilyId();
+    const fid = await _resolveActiveFamilyId();
     if (!fid) {
       toast('Não foi possível determinar a família ativa. Recarregue a página e tente novamente.', 'error');
       return;
     }
 
-    const snapshot = await _buildBackupSnapshot(fid);
+    const payload = await _fetchBackupPayload(fid);
+    const counts = _backupCounts(payload);
+
     const row = {
       family_id: fid,
       label: label || `Backup manual — ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
       created_by: currentUser?.name || currentUser?.email || 'sistema',
-      payload: snapshot.data,
-      counts: snapshot.counts,
-      size_kb: Math.round(_backupPayloadBytes(snapshot.data) / 1024),
+      payload,
+      counts,
+      size_kb: Math.round(JSON.stringify(payload).length / 1024),
       backup_type: 'manual',
     };
 
@@ -377,9 +496,7 @@ async function createDbBackup(label = '') {
 async function loadDbBackups() {
   const container = document.getElementById('dbBackupList');
   if (!container) return;
-
   container.innerHTML = '<div style="color:var(--muted);font-size:.83rem;padding:12px 0">⏳ Carregando...</div>';
-
   try {
     const hasTable = await _checkBackupTable();
     if (!hasTable) {
@@ -388,19 +505,18 @@ async function loadDbBackups() {
       return;
     }
 
-    const listFid = await _resolveBackupFamilyId();
+    const fid = await _resolveActiveFamilyId();
     let backupQuery = sb.from('app_backups')
-      .select('id, label, created_at, created_by, counts, size_kb, backup_type')
+      .select('id, label, created_at, created_by, counts, size_kb, backup_type, family_id')
       .order('created_at', { ascending: false })
       .limit(20);
-    if (listFid) backupQuery = backupQuery.eq('family_id', listFid);
+    if (fid) backupQuery = backupQuery.eq('family_id', fid);
 
     const { data, error } = await backupQuery;
     if (error) throw error;
 
     _dbBackupList = data || [];
-    const hint = document.getElementById('dbBackupMigrationHint');
-    if (hint?.style) hint.style.display = 'none';
+    document.getElementById('dbBackupMigrationHint')?.style && (document.getElementById('dbBackupMigrationHint').style.display = 'none');
 
     if (!_dbBackupList.length) {
       container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:.83rem">
@@ -411,9 +527,10 @@ async function loadDbBackups() {
     }
 
     container.innerHTML = _dbBackupList.map(b => {
-      const dt = new Date(b.created_at);
+      const dt  = new Date(b.created_at);
       const ago = _timeAgo(dt);
       const typeIcon = b.backup_type === 'auto' ? '🤖' : '👤';
+      const total = Object.values(b.counts || {}).reduce((a,b)=>a+(b||0),0);
       return `<div class="db-backup-row">
         <div class="db-backup-row-info">
           <div class="db-backup-row-label">${typeIcon} ${esc(b.label || 'Backup')}</div>
@@ -423,10 +540,11 @@ async function loadDbBackups() {
             · por ${esc(b.created_by || '—')}
             · ${b.size_kb || '?'} KB
           </div>
-          <div class="db-backup-row-counts">${esc(_backupSummary(b.counts || {}))}</div>
+          <div class="db-backup-row-counts">${total} registros · ${b.counts?.transactions || 0} txs · ${b.counts?.accounts || 0} contas</div>
         </div>
         <div class="db-backup-row-actions">
           <button class="btn btn-ghost btn-sm" onclick="downloadDbBackup('${b.id}')" title="Baixar JSON">⬇️</button>
+          <button class="btn btn-ghost btn-sm" onclick="previewDbBackup('${b.id}')" title="Pré-validar restore">🔎</button>
           <button class="btn btn-ghost btn-sm" onclick="restoreDbBackup('${b.id}')" title="Restaurar este snapshot">↩️ Restaurar</button>
           <button class="btn-icon" onclick="deleteDbBackup('${b.id}')" title="Excluir backup" style="color:var(--red)">🗑️</button>
         </div>
@@ -443,20 +561,20 @@ async function downloadDbBackup(id) {
     if (error) throw error;
     const exportObj = {
       version: BACKUP_VERSION,
-      app: BACKUP_APP_NAME,
-      family_id: data.family_id || (await _resolveBackupFamilyId()),
+      app: 'JF Family FinTrack',
+      family_id: data.family_id,
       exported_at: data.created_at,
       source: 'db_backup',
       label: data.label,
       counts: data.counts,
-      data: _normalizeBackupPayload(data.payload),
+      data: data.payload,
     };
     const json = JSON.stringify(exportObj, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
     a.href = url;
-    a.download = `FinTrack_Backup_${String(data.created_at).slice(0, 10)}_${String(id).slice(0, 8)}.json`;
+    a.download = `FinTrack_Backup_${data.created_at.slice(0, 10)}_${id.slice(0, 8)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast('Backup baixado!', 'success');
@@ -465,21 +583,41 @@ async function downloadDbBackup(id) {
   }
 }
 
+async function previewDbBackup(id) {
+  try {
+    const { data, error } = await sb.from('app_backups').select('payload,family_id,label').eq('id', id).single();
+    if (error) throw error;
+    const report = await _buildDryRunReport(_normalizePayload({ data: data.payload }), data.family_id);
+    alert(`Pré-validação: ${data.label || 'backup'}\n\n${_reportSummary(report)}\n\n${_formatIssues(report, 12)}`);
+  } catch (e) {
+    toast('Erro ao pré-validar: ' + e.message, 'error');
+  }
+}
+
 async function restoreDbBackup(id) {
   const backup = _dbBackupList.find(b => b.id === id);
-  const label = backup?.label || 'este backup';
-  if (!confirm(`⚠️ Restaurar "${label}"?\n\nOs dados atuais serão sobrescritos (upsert). Esta ação não pode ser desfeita.\n\nDeseja continuar?`)) return;
-
+  const label  = backup?.label || 'este backup';
   const btn = document.querySelector(`[onclick="restoreDbBackup('${id}')"]`);
   if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
 
   try {
-    const { data, error } = await sb.from('app_backups').select('payload').eq('id', id).single();
+    const { data, error } = await sb.from('app_backups').select('payload,family_id').eq('id', id).single();
     if (error) throw error;
-    const result = await _restoreAllBackupData({ data: data.payload }, msg => {
-      if (btn) btn.textContent = `⏳ ${msg.slice(0, 14)}`;
-    });
-    toast(result.warnings.length ? '✅ Snapshot restaurado com avisos!' : '✅ Snapshot restaurado com sucesso!', result.warnings.length ? 'warning' : 'success');
+
+    const payload = _normalizePayload({ data: data.payload });
+    const report = await _buildDryRunReport(payload, data.family_id);
+    const ok = confirm(
+      `⚠️ Restaurar "${label}"?\n\n` +
+      `${_reportSummary(report)}\n\n` +
+      `${_formatIssues(report, 10)}\n\n` +
+      `${report.criticalErrors.length ? 'Há erros críticos. Recomendado cancelar.' : 'Deseja continuar?'}`
+    );
+    if (!ok) return;
+    if (report.criticalErrors.length) throw new Error('Restore cancelado: backup com erros críticos de integridade.');
+
+    await _restorePayload(payload);
+    await _reloadAfterRestore();
+    toast('✅ Snapshot restaurado com sucesso!', 'success');
   } catch (e) {
     toast('Erro ao restaurar: ' + e.message, 'error');
   } finally {
@@ -508,9 +646,9 @@ function _showDbBackupMigrationHint() {
 
 function _timeAgo(dt) {
   const diff = (Date.now() - dt.getTime()) / 1000;
-  if (diff < 60) return 'agora mesmo';
-  if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
+  if (diff < 60)     return 'agora mesmo';
+  if (diff < 3600)   return `${Math.floor(diff / 60)} min atrás`;
+  if (diff < 86400)  return `${Math.floor(diff / 3600)}h atrás`;
   if (diff < 604800) return `${Math.floor(diff / 86400)} dias atrás`;
   return dt.toLocaleDateString('pt-BR');
 }
