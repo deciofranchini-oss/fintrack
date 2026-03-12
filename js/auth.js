@@ -1380,21 +1380,27 @@ async function loadFamiliesList() {
   // ── Carregar famílias ──────────────────────────────────────────────────────
   let families = [];
   try {
-    const { data, error } = await sb.from('families').select('*').order('name');
-    if (error) throw error;
-    families = data || [];
+    const { data: rpcData, error: rpcErr } = await sb.rpc('get_manageable_families');
+    if (!rpcErr && Array.isArray(rpcData)) {
+      families = rpcData;
+    } else {
+      const { data, error } = await sb.from('families').select('*').order('name');
+      if (error) throw error;
+      families = data || [];
+    }
   } catch(e) {
     const el = document.getElementById('familiesList');
     if (el) el.innerHTML = `<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:8px;padding:14px;font-size:.82rem">
-      ⚠️ <strong>Tabela "families" não encontrada.</strong><br>
-      Execute <code>migration_families.sql</code> e <code>migration_multi_family.sql</code> no Supabase.
+      ⚠️ <strong>Não foi possível carregar as famílias.</strong><br>
+      Verifique as RPCs de gestão de família no Supabase.<br><br>
+      <span style="color:var(--muted)">Erro técnico: ${esc(e?.message || 'desconhecido')}</span>
     </div>`;
     return;
   }
   _families = (families || []).map(f => ({
     ...f,
     name: (f?.name && f.name !== f.id) ? f.name : _familyDisplayName(f.id, f?.name || '')
-  }));
+  })).map(f => ({ ...f, name: _familyDisplayName(f.id, f.name || '') || f.id }));
 
   const el = document.getElementById('familiesList');
   if (!el) return;
@@ -1460,9 +1466,7 @@ async function loadFamiliesList() {
   const isGlobalAdmin = currentUser?.role === 'admin'; // owner vê só as suas famílias
 
   // If not global admin, show only families where user is owner
-  const visibleFamilies = isGlobalAdmin
-    ? _families
-    : _families.filter(f => (currentUser?.families||[]).some(uf => uf.id === f.id && uf.role === 'owner'));
+  const visibleFamilies = isGlobalAdmin ? _families : _ownedFamilies();
 
   if (!visibleFamilies.length && !isGlobalAdmin) {
     el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:.83rem">Você não é owner de nenhuma família.<br>Apenas owners podem gerenciar famílias.</div>';
@@ -1520,7 +1524,6 @@ async function loadFamiliesList() {
           </label>
           ${(isGlobalAdmin || membersByFamily[f.id]?.some(m => m.user_email === currentUser?.email && m.member_role === 'owner')) ? `
             <button class="btn btn-ghost btn-sm" onclick="editFamily('${f.id}')" style="padding:3px 10px;font-size:.73rem">✏️ Editar</button>
-            <button class="btn btn-ghost btn-sm" onclick="openDbBackupCreateForFamily('${f.id}','${esc(_familyDisplayName(f.id, f.name||'')).replace(/'/g,"\'")}')" style="padding:3px 10px;font-size:.73rem" title="Criar snapshot desta família">📸 Backup</button>
             <button class="btn btn-ghost btn-sm" id="wipeFamBtn-${f.id}" onclick="wipeFamilyData('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem;color:var(--amber,#f59e0b)" title="Apagar todos os dados desta família">🗑️ Dados</button>
             <button class="btn btn-ghost btn-sm" onclick="deleteFamily('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:.73rem;color:var(--red)" title="Excluir família">✕ Excluir</button>
           ` : ''}
@@ -1603,46 +1606,33 @@ async function saveFamily() {
   const isFamOwner    = !id || (currentUser?.families||[]).some(f => f.id === id && f.role === 'owner');
   if (!isGlobalAdmin && !isFamOwner) { toast('Sem permissão para editar esta família','error'); return; }
 
-  const data = { name, description: desc||null };
-  let error, newFam;
-  if (id) {
-    ({ error } = await sb.from('families').update(data).eq('id', id));
-  } else {
-    const res = await sb.from('families').insert(data).select().single();
-    error  = res.error;
-    newFam = res.data;
-  }
-  if (error) { toast('Erro: '+error.message,'error'); return; }
-
-  // Quando uma nova família é criada: vincular o usuário logado como owner
-  if (!id && newFam?.id && currentUser?.id) {
-    // Buscar app_users.id do usuário logado (currentUser.id é auth.uid)
-    const { data: appRow } = await sb.from('app_users').select('id, family_id, preferred_family_id').eq('email', currentUser.email).maybeSingle();
-    if (appRow?.id) {
-      await sb.from('family_members').upsert(
-        { user_id: appRow.id, family_id: newFam.id, role: 'owner' },
-        { onConflict: 'user_id,family_id' }
-      ).catch(()=>{});
-
-      // Em bases legadas, manter a primeira família também em app_users para compatibilidade
-      if (!appRow.family_id) {
-        await sb.from('app_users').update({ family_id: newFam.id }).eq('id', appRow.id).catch(()=>{});
-      }
-      if (!appRow.preferred_family_id) {
-        await sb.from('app_users').update({ preferred_family_id: newFam.id }).eq('id', appRow.id).catch(()=>{});
-      }
+  let error = null;
+  try {
+    if (id) {
+      const rpc = await sb.rpc('update_family_as_owner', {
+        p_family_id: id,
+        p_name: name,
+        p_description: desc || null
+      });
+      if (rpc.error) throw rpc.error;
+    } else {
+      const rpc = await sb.rpc('create_family_with_owner', {
+        p_name: name,
+        p_description: desc || null
+      });
+      if (rpc.error) throw rpc.error;
     }
+  } catch (e) {
+    error = e;
   }
+  if (error) { toast('Erro: ' + error.message,'error'); return; }
 
   toast(id ? '✓ Família atualizada!' : '✓ Família criada! Você é o owner.','success');
   document.getElementById('familyFormArea').style.display = 'none';
+  await _loadCurrentUserContext().catch(()=>{});
   await loadFamiliesList();
-  // Recarregar famílias do usuário no contexto
-  if (!id && newFam?.id) {
-    await _loadCurrentUserContext().catch(()=>{});
-    updateUserUI();
-    _renderFamilySwitcher();
-  }
+  updateUserUI();
+  _renderFamilySwitcher();
 }
 
 async function deleteFamily(id, name) {
@@ -1660,11 +1650,18 @@ async function deleteFamily(id, name) {
     }
   }
 
-  if (!confirm(`Excluir a família "${name}"?\n\nOs usuários vinculados ficarão sem família, mas seus dados (transações, contas, etc.) NÃO serão apagados.\n\nEsta ação não pode ser desfeita.`)) return;
-  const { error } = await sb.from('families').delete().eq('id', id);
+  if (!confirm(`Excluir a família "${name}"?
+
+Todos os registros relacionados a esta família serão excluídos do banco de dados.
+
+Esta ação não pode ser desfeita.`)) return;
+  const { error } = await sb.rpc('delete_family_cascade', { p_family_id: id });
   if (error) { toast('Erro: '+error.message,'error'); return; }
   toast('Família removida','success');
+  await _loadCurrentUserContext().catch(()=>{});
   await loadFamiliesList();
+  updateUserUI();
+  _renderFamilySwitcher();
 }
 
 async function wipeFamilyData(id, name) {
@@ -2127,7 +2124,6 @@ async function saveUser() {
     can_export:      document.getElementById('pExport').checked,
     can_import:      document.getElementById('pImport').checked,
     can_admin:         role === 'admin',
-    can_manage_family: role === 'admin' || role === 'owner',
     show_school_link: document.getElementById('pSchoolLink')?.checked ?? true,
   };
   if (avatarUrl !== undefined) record.avatar_url = avatarUrl;
@@ -2921,8 +2917,8 @@ async function openMyFamilyMgmt() {
   // Garantir que _families está populado (pode estar vazio se veio direto do perfil)
   if (!_families?.length) {
     try {
-      const { data } = await sb.from('families').select('*').order('name');
-      _families = data || [];
+      const { data } = await sb.rpc('get_manageable_families');
+      _families = (data || []).map(f => ({ ...f, name: _familyDisplayName(f.id, f.name || '') || f.id }));
     } catch(_) {}
   }
 
