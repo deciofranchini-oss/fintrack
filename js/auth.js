@@ -662,6 +662,9 @@ function updateUserUI() {
 
   // Apply permission restrictions
   applyPermissions();
+
+  // Apply user-scoped feature flags (topbar / family-scoped modules)
+  try { applyUserFeatureFlags?.(); } catch {}
 }
 
 function applyPermissions() {
@@ -2168,7 +2171,10 @@ async function saveUser() {
     document.getElementById('userFormArea').style.display = 'none';
     if (userId === currentUser?.id) {
       if (record.avatar_url !== undefined) currentUser.avatar_url = record.avatar_url;
+      currentUser.show_school_link = record.show_school_link !== false;
       _applyCurrentUserAvatar();
+      try { applyUserFeatureFlags?.(); } catch {}
+      updateUserUI();
     }
     await loadUsersList();
     await loadFamiliesList();

@@ -853,6 +853,25 @@ function applySettingsVisibility(vis) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// FEATURE FLAGS / VISIBILIDADE POR USUÁRIO
+// ═══════════════════════════════════════════════════════════════════
+
+function currentUserFeatureEnabled(featureKey, fallback = true) {
+  if (typeof currentUser === 'undefined' || currentUser === null) return fallback;
+  switch (featureKey) {
+    case 'schoolLink':
+      return currentUser.show_school_link !== false;
+    default:
+      return fallback;
+  }
+}
+
+async function applyUserFeatureFlags() {
+  try { applySchoolLink?.(); } catch {}
+  try { await applyPricesFeature?.(); } catch {}
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // LINK DA ESCOLA — configuração e aplicação
 // ═══════════════════════════════════════════════════════════════════
 
@@ -879,7 +898,7 @@ function initSchoolLinkForm() {
   if (titleEl) titleEl.value = cfg.title || 'Gerenciamento Escola';
   if (iconEl) iconEl.value = cfg.icon || '🎓';
   if (toggle) toggle.style.background = (cfg.enabled !== false) ? 'var(--accent)' : '#ccc';
-  applySchoolLink(cfg);
+  applyUserFeatureFlags();
 }
 
 async function saveSchoolLinkConfig() {
@@ -894,7 +913,7 @@ async function saveSchoolLinkConfig() {
   await saveAppSetting('school_link', cfg);
   if (!_appSettingsCache) _appSettingsCache = {};
   _appSettingsCache['school_link'] = cfg;
-  applySchoolLink(cfg);
+  applyUserFeatureFlags();
 }
 
 function applySchoolLink(cfg) {
@@ -903,9 +922,7 @@ function applySchoolLink(cfg) {
   if (!btn) return;
 
   // Verificar permissão do usuário logado (show_school_link, default true)
-  const userAllowed = typeof currentUser === 'undefined' || currentUser === null
-    ? true
-    : currentUser.show_school_link !== false;
+  const userAllowed = currentUserFeatureEnabled('schoolLink', true);
 
   if (!cfg.enabled || !cfg.url || !userAllowed) {
     btn.style.display = 'none';
