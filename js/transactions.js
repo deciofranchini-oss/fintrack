@@ -935,6 +935,14 @@ async function saveTransaction(){
   }
   if(err){toast(err.message,'error');return;}
 
+  // Create IOF mirror transaction if international (new transactions only)
+  // Keep this BEFORE attachment upload. Otherwise an attachment upload failure would
+  // skip the IOF launch even though the original transaction was already saved.
+  const isIntl = document.getElementById('txIsInternational')?.checked;
+  if(isIntl && !id && txResult?.id) {
+    await createIofMirrorTx({ ...data, family_id: data.family_id || txResult.family_id || famId() }, txResult.id);
+  }
+
   // Upload pending attachment BEFORE closing modal — keeps UX in sync
   const pendingFile = window._txPendingFile;
   const savedId     = id || txResult?.id;
@@ -953,12 +961,6 @@ async function saveTransaction(){
       if(state.currentPage==='dashboard')loadDashboard();
       return;
     }
-  }
-
-  // Create IOF mirror transaction if international (new transactions only)
-  const isIntl = document.getElementById('txIsInternational')?.checked;
-  if(isIntl && !id && txResult?.id) {
-    await createIofMirrorTx(data, txResult.id);
   }
   toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
   closeModal('txModal');

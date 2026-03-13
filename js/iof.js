@@ -52,26 +52,35 @@ async function createIofMirrorTx(originalData, originalTxId) {
   try {
     const accountId = originalData.account_id;
     const acct = state.accounts.find(a=>a.id===accountId);
-    const rate = acct?.iof_rate || 3.38;
-    const baseAmount = Math.abs(originalData.amount);
+    if (!accountId || !acct) throw new Error('Conta da transação original não encontrada.');
+    const rate = Number(acct?.iof_rate || 3.38);
+    const baseAmount = Math.abs(Number(originalData.amount) || 0);
     const iofAmount = baseAmount * rate / 100;
+    if (!iofAmount) return null;
     const iofData = {
       date: originalData.date,
-      description: `IOF – ${originalData.description}`,
-      amount: -iofAmount,  // always expense
+      description: `IOF – ${originalData.description || 'compra internacional'}`,
+      amount: -Math.abs(iofAmount),
+      currency: originalData.currency || acct.currency || 'BRL',
+      brl_amount: originalData.brl_amount != null ? Math.abs(Number(originalData.brl_amount || 0)) * rate / 100 : null,
       account_id: accountId,
       payee_id: null,
       category_id: null,
-      memo: `IOF ${rate}% sobre compra internacional: ${originalData.description}. Tx original: ${originalTxId}`,
+      memo: `IOF ${rate}% sobre compra internacional: ${originalData.description || ''}. Tx original: ${originalTxId}`,
       tags: ['IOF', 'internacional'],
       is_transfer: false,
+      is_card_payment: false,
+      status: originalData.status || 'confirmed',
       updated_at: new Date().toISOString(),
+      family_id: originalData.family_id || famId() || null,
     };
-    iofData.family_id = famId(); const { error } = await sb.from('transactions').insert(iofData);
+    const { data, error } = await sb.from('transactions').insert(iofData).select().single();
     if(error) throw error;
     toast(`IOF de ${fmt(iofAmount)} lançado automaticamente!`, 'success');
+    return data;
   } catch(e) {
     toast('Erro ao criar IOF: ' + e.message, 'error');
+    return null;
   }
 }
 
