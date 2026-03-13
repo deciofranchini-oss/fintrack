@@ -246,6 +246,11 @@ function filterTransactions(){
   state.txFilter.status=(document.getElementById('txStatusFilter')?.value)||'';
   state.txPage=0;
   if(state.txView==='flat') document.getElementById('txSummaryBar').style.display='none';
+  // Mark active chip-selects with visual indicator
+  ['txMonth','txAccount','txType','txStatusFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-active', !!el.value);
+  });
   loadTransactions();
 }
 
@@ -285,7 +290,12 @@ function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSor
 function txRow(t, showAccount=true, runningBalance=null) {
   const isPending = (t.status||'confirmed') === 'pending';
 
-  // Category chip
+  // Compact date: "13 Mar"
+  const d   = t.date ? new Date(t.date + 'T12:00:00') : new Date();
+  const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const dateStr = `${d.getDate()} ${MON[d.getMonth()]}`;
+
+  // Category chip (goes ABOVE the amount, not in meta)
   const cat = t.categories
     ? `<span class="tx-cat-chip" style="--c:${t.categories.color}">${esc(t.categories.name)}</span>`
     : '';
@@ -299,28 +309,30 @@ function txRow(t, showAccount=true, runningBalance=null) {
     amtHtml += `<span class="tx-v2-brl">${fmt(t.brl_amount,'BRL')}</span>`;
   }
 
-  // Running balance sub-line (shown when single account filtered)
+  // Running balance
   const balHtml = (runningBalance !== null)
-    ? `<span class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance)}</span>`
+    ? `<div class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance)}</div>`
     : '';
 
-  // Meta line: compact  dd Mmm · Conta · Beneficiário · Categoria
-  const parts = [];
-  if (showAccount && t.accounts?.name) parts.push(`<span class="tx-v2-acct">${esc(t.accounts.name)}</span>`);
-  if (t.payees?.name)                  parts.push(`<span class="tx-v2-pay">${esc(t.payees.name)}</span>`);
-  if (cat)                             parts.push(cat);
-  const meta = parts.length ? `<div class="tx-v2-meta">${parts.join('<span class="tx-v2-dot"> · </span>')}</div>` : '';
+  // Meta line: Conta · Beneficiário  (category removed — placed near amount)
+  const metaParts = [];
+  if (showAccount && t.accounts?.name) metaParts.push(`<span class="tx-v2-acct">${esc(t.accounts.name)}</span>`);
+  if (t.payees?.name)                  metaParts.push(`<span class="tx-v2-pay">${esc(t.payees.name)}</span>`);
+  const meta = metaParts.length
+    ? `<div class="tx-v2-meta">${metaParts.join('<span class="tx-v2-dot"> · </span>')}</div>`
+    : '';
 
-  const attach = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
-  const pendBadge = isPending ? '<span class="tx-v2-pend">Pendente</span>' : '';
+  const attach   = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
+  const pendDot  = isPending ? '<span class="tx-v2-pend">⏳</span>' : '';
 
   return `<tr class="tx-row-clickable${isPending?' tx-pending':''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')">
-    <td class="tx-v2-date">${fmtDate(t.date)}</td>
+    <td class="tx-v2-date">${dateStr}${pendDot}</td>
     <td class="tx-v2-body">
-      <div class="tx-v2-title">${esc(t.description||'—')}${attach}${pendBadge}</div>
+      <div class="tx-v2-title">${esc(t.description||'—')}${attach}</div>
       ${meta}
     </td>
     <td class="tx-v2-right">
+      ${cat}
       <div class="tx-v2-amt-wrap">${amtHtml}</div>
       ${balHtml}
     </td>
@@ -339,6 +351,12 @@ function setTxView(v) {
   state.txView = v;
   document.getElementById('viewBtnFlat').classList.toggle('active', v==='flat');
   document.getElementById('viewBtnGroup').classList.toggle('active', v==='group');
+  // Also update new tx-view-btn class
+  document.querySelectorAll('.tx-view-btn').forEach(b => {
+    const isFlat  = b.id === 'viewBtnFlat';
+    const isGroup = b.id === 'viewBtnGroup';
+    b.classList.toggle('active', (isFlat && v==='flat') || (isGroup && v==='group'));
+  });
   document.getElementById('txFlatCard').style.display = v==='flat' ? '' : 'none';
   document.getElementById('txGroupContainer').style.display = v==='group' ? '' : 'none';
   renderTransactions();
