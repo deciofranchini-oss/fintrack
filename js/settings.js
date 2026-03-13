@@ -639,26 +639,45 @@ function _getMenuVisibilityFromCache() {
 
 function applyMenuVisibility(vis) {
   if (!vis || typeof vis !== 'object') vis = _getMenuVisibilityFromCache();
-  const map = {
-    dashboard: 'dashboardNav',
-    transactions: 'transactionsNav',
-    accounts: 'accountsNav',
-    reports: 'reportsNav',
-    budgets: 'budgetsNav',
-    scheduled: 'scheduledNav',
-    categories: 'categoriesNav',
-    payees: 'payeesNav',
-    import: 'importNav',
-    // audit and settings excluded: their visibility is managed solely by updateUserUI()
-    // in auth.js. Including them here caused a race condition — applyMenuVisibility runs
-    // inside bootApp() in parallel with auth loading, so currentUser may not be set yet,
-    // causing the buttons to be hidden even for admin/owner users (flash then disappear).
-  };
-  Object.keys(map).forEach(key => {
-    const el = document.getElementById(map[key]);
-    if (!el) return;
-    el.style.display = vis[key] ? '' : 'none';
+
+  // Keys admin can toggle — querySelectorAll('[data-nav="key"]') hits
+  // sidebar nav-items, topbar icon buttons, and bottom nav tabs all at once.
+  const STANDARD_KEYS = [
+    'dashboard', 'transactions', 'accounts', 'reports', 'budgets',
+    'scheduled', 'categories', 'payees', 'import',
+    'grocery', 'prices',
+  ];
+
+  STANDARD_KEYS.forEach(key => {
+    const show = vis[key] !== false; // default true when not explicitly set
+    document.querySelectorAll('[data-nav="' + key + '"]').forEach(el => {
+      el.style.display = show ? '' : 'none';
+    });
   });
+
+  // audit + settings: only apply menu_visibility AFTER currentUser is loaded,
+  // because these pages are admin-only by role — we must not show them to
+  // non-admin users even if menu_visibility says "true".
+  // If currentUser is not ready yet, auth.js updateUserUI() will call us again.
+  if (typeof currentUser !== 'undefined' && currentUser) {
+    const isAdmin = !!(currentUser.can_admin);
+
+    ['audit', 'settings'].forEach(key => {
+      const wantVisible = vis[key] !== false;
+      document.querySelectorAll('[data-nav="' + key + '"]').forEach(el => {
+        // Role wins: non-admin users can never see these pages.
+        // Admin users respect the menu_visibility preference.
+        el.style.display = (isAdmin && wantVisible) ? '' : 'none';
+      });
+    });
+
+    // adminNavSection wrapper: show if either audit or settings is visible
+    const adminSec = document.getElementById('adminNavSection');
+    if (adminSec) {
+      const anyAdmin = ['audit', 'settings'].some(key => vis[key] !== false);
+      adminSec.style.display = (isAdmin && anyAdmin) ? '' : 'none';
+    }
+  }
 }
 
 function _renderMenuVisibilityForm() {

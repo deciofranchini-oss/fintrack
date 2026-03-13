@@ -647,11 +647,12 @@ function updateUserUI() {
       : 'Gerenciar minha família · Owner';
   }
 
-  // Configurações e Auditoria: APENAS admin (sidebar + topbar)
-  const auditNavEls    = document.querySelectorAll('#auditNav, #auditNavTopbar');
-  const settingsNavEls = document.querySelectorAll('#settingsNav, #settingsNavTopbar');
-  auditNavEls.forEach(el    => el.style.display = currentUser.can_admin ? 'flex' : 'none');
-  settingsNavEls.forEach(el => el.style.display = currentUser.can_admin ? 'flex' : 'none');
+  // Configurações e Auditoria: APENAS admin (sidebar + topbar via data-nav)
+  const adminShow = currentUser.can_admin ? '' : 'none';
+  document.querySelectorAll('[data-nav="audit"]').forEach(el    => el.style.display = adminShow);
+  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display = adminShow);
+  const adminSec = document.getElementById('adminNavSection');
+  if (adminSec) adminSec.style.display = currentUser.can_admin ? '' : 'none';
   if (currentUser.can_admin) _checkPendingApprovals();
 
   // Family switcher (only when user has 2+ families)
@@ -681,19 +682,20 @@ function applyPermissions() {
     document.querySelectorAll('[data-perm="edit"]').forEach(el => el.style.display='none');
   }
   if (!p.can_import) {
-    const importNav = document.querySelector('.nav-item[onclick="navigate(\'import\')"]');
-    if (importNav) importNav.style.display='none';
+    // Hide all nav elements for 'import' (sidebar + topbar) via data-nav
+    document.querySelectorAll('[data-nav="import"]').forEach(el => el.style.display='none');
   }
 
-// Hide admin-only screens for non-admin
+// Hide admin-only screens for non-admin (sidebar + topbar via data-nav)
 if (!p.can_admin) {
-  const settingsNav = document.querySelector('.nav-item[onclick="navigate(\'settings\')"]');
-  if (settingsNav) settingsNav.style.display='none';
-  const auditNav = document.getElementById('auditNav');
-  if (auditNav) auditNav.style.display='none';
+  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display='none');
+  document.querySelectorAll('[data-nav="audit"]').forEach(el => el.style.display='none');
+  const adminSec = document.getElementById('adminNavSection');
+  if (adminSec) adminSec.style.display='none';
 } else {
-  const auditNav = document.getElementById('auditNav');
-  if (auditNav) auditNav.style.display='';
+  // Admin: restore visibility (menu_visibility preference may override later)
+  document.querySelectorAll('[data-nav="audit"]').forEach(el => el.style.display='');
+  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display='');
 }
 
   // Módulos por família: visibilidade depende de feature flag
