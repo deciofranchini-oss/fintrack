@@ -363,7 +363,44 @@ function renderScheduled(list) {
     return;
   }
 
-  container.innerHTML = list.map(sc => {
+  // Feature 10: separate active/paused from finished
+  const activeList   = list.filter(sc => sc.status !== 'finished' && sc.status !== 'paused' || sc.status === 'paused');
+  const finishedList = list.filter(sc => {
+    const st = scStatusLabel(sc); return st.label.includes('Concluído');
+  });
+  const renderableActive   = list.filter(sc => { const st=scStatusLabel(sc); return !st.label.includes('Concluído'); });
+  const renderableFinished = list.filter(sc => { const st=scStatusLabel(sc); return st.label.includes('Concluído'); });
+
+  const activeHtml   = renderableActive.map(sc => _scCardHtml(sc)).join('');
+  const finishedHtml = renderableFinished.map(sc => _scCardHtml(sc)).join('');
+
+  let finishedSection = '';
+  if (renderableFinished.length) {
+    finishedSection = `
+    <div class="sc-finished-section" id="scFinishedSection" style="margin-top:16px">
+      <button class="sc-finished-toggle" onclick="toggleScFinished()" id="scFinishedToggleBtn"
+        style="width:100%;display:flex;align-items:center;justify-content:space-between;
+               padding:10px 16px;background:var(--surface2);border:1px solid var(--border);
+               border-radius:var(--r-sm);cursor:pointer;font-size:.82rem;font-weight:600;
+               color:var(--muted);font-family:inherit">
+        <span>✓ Concluídos (${renderableFinished.length})</span>
+        <svg id="scFinishedArrow" width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+             style="transition:transform .2s;transform:rotate(-90deg)">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      <div id="scFinishedBody" style="display:none;margin-top:6px">${finishedHtml}</div>
+    </div>`;
+  }
+
+  container.innerHTML = activeHtml + finishedSection;
+  return;
+
+}
+
+function _scCardHtml(sc) {
+
     const st = scStatusLabel(sc);
     const next = getNextOccurrence(sc);
     const today = new Date().toISOString().slice(0,10);
@@ -440,7 +477,16 @@ function renderScheduled(list) {
         </div>
       </div>
     </div>`;
-  }).join('');
+}
+
+function toggleScFinished() {
+  const body  = document.getElementById('scFinishedBody');
+  const arrow = document.getElementById('scFinishedArrow');
+  const btn   = document.getElementById('scFinishedToggleBtn');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
 function renderUpcoming() {
@@ -463,9 +509,11 @@ function renderUpcoming() {
   const card    = document.getElementById('scheduledUpcomingCard');
   const listEl  = document.getElementById('scheduledUpcomingList');
   const totalEl = document.getElementById('scheduledUpcomingTotal');
+  const cntEl   = document.getElementById('scheduledUpcomingCount');
   if(!upcoming.length) { if(card) card.style.display='none'; return; }
 
   if(card) card.style.display = '';
+  if(cntEl) cntEl.textContent = upcoming.length + ' item' + (upcoming.length>1?'s':'');
   if(totalEl) {
     const tot = upcoming.reduce((s,{sc}) => {
       const isExp = sc.type==='expense'||sc.type==='card_payment'||sc.type==='transfer';
@@ -474,6 +522,8 @@ function renderUpcoming() {
     totalEl.textContent = (tot>=0?'+':'') + fmt(tot);
     totalEl.className = 'badge ' + (tot>=0?'badge-green':'badge-red');
   }
+  // Feature 1: list starts collapsed; user can expand
+  if(listEl && listEl.style.display === undefined) listEl.style.display = 'none';
 
   // Agrupar por data
   const byDate = {};
@@ -500,14 +550,30 @@ function renderUpcoming() {
       const icon  = sc.type==='card_payment'?'💳':sc.type==='transfer'?'🔄':isExp?'💸':'💰';
       const dest  = (sc.type==='transfer'||sc.type==='card_payment')
                     ? state.accounts.find(a=>a.id===sc.transfer_to_account_id) : null;
+      // Feature 9: badge for non-auto-register
+      const autoRegBadge = !sc.auto_register
+        ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:.65rem;font-weight:600;
+                        color:var(--amber,#b45309);background:var(--amber-lt,#fef3c7);
+                        border:1px solid rgba(180,83,9,.2);border-radius:10px;padding:1px 6px;
+                        white-space:nowrap" title="Precisa de registro manual">⚠ Manual</span>`
+        : '';
+      // Feature 7: ignore button
+      const ignoreBtn = `<button class="btn btn-ghost btn-sm sc-upcoming-btn"
+        style="font-size:.68rem;padding:3px 7px;color:var(--muted)"
+        title="Ignorar esta ocorrência"
+        onclick="event.stopPropagation();ignoreOccurrence('${sc.id}','${date}')">🚫</button>`;
       return `<div class="sc-upcoming-item${isToday?' sc-upcoming-today':''}">
         <div class="sc-upcoming-left">
-          <span class="sc-upcoming-desc">${icon} ${esc(sc.description)}</span>
-          <span class="sc-upcoming-acct" style="font-size:.72rem;color:var(--muted)">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span class="sc-upcoming-desc">${icon} ${esc(sc.description)}</span>
+            ${autoRegBadge}
+          </div>
+          <span class="sc-upcoming-acct" style="font-size:.68rem;color:var(--muted)">
             ${esc(sc.accounts?.name||'—')}${dest?` → ${esc(dest.name)}`:''}</span>
         </div>
-        <div class="sc-upcoming-right">
-          <span class="${isExp?'amount-neg':'amount-pos'} sc-upcoming-amt">${isExp?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
+        <div class="sc-upcoming-right" style="flex-direction:row;align-items:center;gap:5px">
+          <span class="${isExp?'amount-neg':'amount-pos'} sc-upcoming-amt" style="font-size:.88rem">${isExp?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
+          ${ignoreBtn}
           <button class="btn btn-primary btn-sm sc-upcoming-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓</button>
         </div>
       </div>`;
@@ -525,6 +591,16 @@ function renderUpcoming() {
       <div class="sc-upcoming-group-rows" id="${gid}">${rows}</div>
     </div>`;
   }).join('');
+}
+
+// Feature 1: toggle entire upcoming panel open/closed
+function toggleUpcomingCard() {
+  const listEl = document.getElementById('scheduledUpcomingList');
+  const arrow  = document.getElementById('upcomingCardArrow');
+  if (!listEl) return;
+  const open = listEl.style.display !== 'none';
+  listEl.style.display = open ? 'none' : '';
+  if (arrow) arrow.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
 function toggleScCard(id) {
@@ -615,7 +691,10 @@ function openScheduledModal(id='') {
   const ndDiv = document.getElementById('scNotifyEmailDetails');
   if(arEl) arEl.checked = sc?.auto_register || false;
   const acEl = document.getElementById('scAutoConfirm');
-  if(acEl) acEl.checked = (sc?.auto_confirm ?? true);
+  if(acEl) {
+    acEl.checked = (sc?.auto_confirm ?? true);
+    _updateAutoConfirmHint();
+  }
 
   if(neEl) {
     neEl.checked = sc?.notify_email || false;
@@ -897,6 +976,34 @@ async function toggleScStatus(id) {
   if(error) { toast(error.message,'error'); return; }
   sc.status = newStatus;
   filterScheduled();
+}
+
+// Feature 8: Update hint for auto_confirm status
+function _updateAutoConfirmHint() {
+  const el  = document.getElementById('scAutoConfirm');
+  const hint = document.getElementById('scAutoConfirmHint');
+  if (!hint) return;
+  const confirmed = el ? el.checked : true;
+  hint.textContent = confirmed
+    ? '✅ Lançará como Confirmada'
+    : '⏳ Lançará como Pendente';
+  hint.style.color = confirmed ? 'var(--green,#16a34a)' : 'var(--amber,#b45309)';
+}
+
+// ── Feature 7: Ignorar uma ocorrência específica ──────────────────────────
+async function ignoreOccurrence(scId, date) {
+  if (!confirm(`Ignorar a ocorrência de ${fmtDate(date)}?\n\nApenas esta data será desconsiderada. As próximas ocorrências continuam normais.`)) return;
+  const { error } = await sb.from('scheduled_occurrences').upsert({
+    scheduled_id: scId,
+    scheduled_date: date,
+    actual_date: date,
+    amount: 0,
+    execution_status: 'skipped',
+    executed_at: new Date().toISOString(),
+  }, { onConflict: 'scheduled_id,scheduled_date' });
+  if (error) { toast('Erro ao ignorar ocorrência: ' + error.message, 'error'); return; }
+  toast('Ocorrência ignorada. Próximas datas não são afetadas.', 'success');
+  await loadScheduled();
 }
 
 // ── Register Occurrence ────────────────────────────────

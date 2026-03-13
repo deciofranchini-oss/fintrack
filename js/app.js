@@ -302,9 +302,11 @@ async function bootApp(){
   updateUserUI();
   // Aplica visibilidade do módulo de preços conforme feature flag da família
   if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
+  if (typeof applyGroceryFeature === 'function') applyGroceryFeature().catch(() => {});
 }
 
-const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações',prices:'Gestão de Preços'};
+const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações',prices:'Gestão de Preços',
+  grocery:'🛒 Lista de Mercado'};
 async function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
   const btn=document.getElementById('privacyToggleBtn');
@@ -425,6 +427,7 @@ function navigate(page){
   else if(page==='settings')loadSettings();
   else if(page==='audit')loadAuditLogs();
   else if(page==='prices')initPricesPage();
+  else if(page==='grocery')initGroceryPage();
 
   setTimeout(() => _scrollActivePageToTop(page), 0);
   setTimeout(() => _scrollActivePageToTop(page), 120);

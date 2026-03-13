@@ -869,6 +869,7 @@ function currentUserFeatureEnabled(featureKey, fallback = true) {
 async function applyUserFeatureFlags() {
   try { applySchoolLink?.(); } catch {}
   try { await applyPricesFeature?.(); } catch {}
+  try { await applyGroceryFeature?.(); } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════════

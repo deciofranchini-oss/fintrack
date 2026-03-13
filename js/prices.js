@@ -48,6 +48,21 @@ async function toggleFamilyPrices(familyId, enabled) {
 // PAGE INIT & DATA LOAD
 // ─────────────────────────────────────────────────────────────────────────────
 
+async function applyGroceryFeature() {
+  const famId = currentUser?.family_id;
+  if (!famId) return;
+  const on = await isGroceryEnabled();
+  const navEl = document.getElementById('groceryNav');
+  if (navEl) navEl.style.display = on ? '' : 'none';
+}
+
+async function isGroceryEnabled() {
+  const famId = currentUser?.family_id;
+  if (!famId) return false;
+  const val = await getAppSetting('grocery_enabled_' + famId, false);
+  return val === true || val === 'true';
+}
+
 async function initPricesPage() {
   const on = await isPricesEnabled();
   if (!on) { toast('Recurso de preços não está ativo para esta família.', 'warning'); navigate('dashboard'); return; }
@@ -451,6 +466,72 @@ function _pifStoreNew() {
 // REGISTER PRICES FROM RECEIPT
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Feature 11: Gestão de relacionamento Estabelecimento ↔ Beneficiário ─────
+
+async function openStorePayeeMap() {
+  await _loadPricesData();
+  _renderStorePayeeMap();
+  openModal('storePayeeMapModal');
+}
+
+function _renderStorePayeeMap() {
+  const el = document.getElementById('storePayeeMapBody');
+  if (!el) return;
+
+  const stores = (_px.stores || []).slice().sort((a,b) => a.name.localeCompare(b.name));
+  const payees = (state.payees || []).slice().sort((a,b) => a.name.localeCompare(b.name));
+  const payeeOpts = '<option value="">— Nenhum —</option>' +
+    payees.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  if (!stores.length) {
+    el.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted)">Nenhum estabelecimento cadastrado ainda.</div>';
+    return;
+  }
+
+  el.innerHTML = stores.map(store => {
+    const linkedPayee = store.payees;
+    const payeeOptsSelected = payeeOpts.replace(
+      linkedPayee ? `value="${linkedPayee.id}"` : 'value="">',
+      linkedPayee ? `value="${linkedPayee.id}" selected` : 'value="" selected>'
+    );
+    const locParts = [store.address, store.city, store.state_uf].filter(Boolean);
+    const locLine  = locParts.join(', ');
+    return `<div class="spm-row" id="spmRow-${store.id}">
+      <div class="spm-store">
+        <div class="spm-store-name">${esc(store.name)}</div>
+        ${locLine ? `<div class="spm-store-addr">${esc(locLine)}</div>` : ''}
+        ${store.cnpj ? `<div class="spm-store-cnpj">🪪 ${esc(store.cnpj)}</div>` : ''}
+      </div>
+      <div class="spm-arrow">→</div>
+      <div class="spm-payee">
+        <select class="spm-payee-select" id="spmPayee-${store.id}"
+          onchange="saveStorePayeeLink('${store.id}', this.value)"
+          style="font-size:.82rem;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);max-width:180px">
+          ${payeeOptsSelected}
+        </select>
+        ${linkedPayee ? `<div style="font-size:.7rem;color:var(--green,#16a34a);margin-top:3px">✓ ${esc(linkedPayee.name)}</div>` : '<div style="font-size:.7rem;color:var(--muted);margin-top:3px">Sem vínculo</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveStorePayeeLink(storeId, payeeId) {
+  const { error } = await sb.from('price_stores')
+    .update({ payee_id: payeeId || null, updated_at: new Date().toISOString() })
+    .eq('id', storeId);
+  if (error) { toast('Erro ao salvar vínculo: ' + error.message, 'error'); return; }
+
+  // Update local cache
+  const store = (_px.stores||[]).find(s=>s.id===storeId);
+  if (store) {
+    const payee = (state.payees||[]).find(p=>p.id===payeeId);
+    store.payee_id = payeeId||null;
+    store.payees   = payee||null;
+  }
+  toast('Vínculo salvo!', 'success');
+  _renderStorePayeeMap(); // re-render to update hints
+}
+
 async function openRegisterPricesFromReceipt() {
   const result = window._lastReceiptAiResult;
   if (!result) { toast('Leia o recibo com IA primeiro.', 'warning'); return; }
@@ -557,73 +638,76 @@ function _renderRpmRows(items) {
   const el = document.getElementById('rpmItemList');
   if (!el) return;
   window._rpmItems = items.map((it, idx) => ({ ...it, idx }));
-  el.innerHTML = `
-  <table class="rpm-table">
-    <thead>
-      <tr>
-        <th style="width:36px">#</th>
-        <th>Descrição</th>
-        <th style="width:70px;text-align:center">Qtd</th>
-        <th style="width:100px;text-align:right">Preço Unit.</th>
-        <th style="width:130px">Categoria</th>
-        <th style="width:160px">Vincular Item</th>
-        <th style="width:52px"></th>
-      </tr>
-    </thead>
-    <tbody id="rpmTableBody">
-      ${window._rpmItems.map(it => _rpmRowHtml(it)).join('')}
-    </tbody>
-  </table>`;
+  // Feature 2: responsive grid — cards on mobile, compact table on desktop
+  el.innerHTML = `<div class="rpm-grid" id="rpmTableBody">
+    ${window._rpmItems.map(it => _rpmRowHtml(it)).join('')}
+  </div>`;
   window._rpmItems.forEach(it => _rpmAutoLink(it.idx));
 }
 
 function _rpmRowHtml(it) {
   const idx      = it.idx;
-  const catOpts  = (state.categories || []).filter(c => c.type !== 'income')
-    .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   const itemOpts = _px.items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
+
+  // Feature 6: hierarchical category options (parent → child indented)
+  const cats = (state.categories || []).filter(c => c.type !== 'income');
+  const parents  = cats.filter(c => !c.parent_id).sort((a,b)=>a.name.localeCompare(b.name));
+  const children = cats.filter(c => !!c.parent_id);
   const catMatch = it.category
-    ? (state.categories || []).find(c => c.name.toLowerCase() === (it.category||'').toLowerCase())
+    ? cats.find(c => c.name.toLowerCase() === (it.category||'').toLowerCase())
     : null;
-  const catOptsSelected = catMatch
-    ? catOpts.replace(`value="${catMatch.id}"`, `value="${catMatch.id}" selected`)
-    : catOpts;
-  const rawName = esc(it.description || it.ai_name || '');
-  const rawDesc = esc(it.ai_name && it.ai_name !== it.description ? it.ai_name : '');
+  const selectedId = catMatch?.id || '';
+  let catOptsHtml = '<option value="">— Categoria —</option>';
+  parents.forEach(p => {
+    catOptsHtml += `<option value="${p.id}"${selectedId===p.id?' selected':''}>${p.icon||'📦'} ${esc(p.name)}</option>`;
+    children.filter(c=>c.parent_id===p.id).sort((a,b)=>a.name.localeCompare(b.name)).forEach(c => {
+      catOptsHtml += `<option value="${c.id}"${selectedId===c.id?' selected':''}>&nbsp;&nbsp;↳ ${esc(c.name)}</option>`;
+    });
+  });
+
+  const rawName   = esc(it.description || it.ai_name || '');
+  const aiHint    = (it.ai_name && it.ai_name !== it.description) ? esc(it.ai_name) : '';
   const unitPrice = (it.unit_price || 0).toFixed(2);
-  return `<tr class="rpm-row" id="rpmItem-${idx}">
-    <td class="rpm-td-num">${idx + 1}</td>
-    <td class="rpm-td-desc">
-      <input type="text" id="rpmDesc-${idx}" class="rpm-inline-input"
-             value="${rawName}" placeholder="Descrição…"
-             oninput="_rpmAutoLink(${idx})" title="${rawDesc}">
-      ${rawDesc ? `<div class="rpm-ai-name">${rawDesc}</div>` : ''}
-    </td>
-    <td class="rpm-td-qty">
-      <input type="number" id="rpmQty-${idx}" class="rpm-inline-input rpm-input-center"
-             value="${it.quantity ?? 1}" min="0.001" step="any">
-    </td>
-    <td class="rpm-td-price">
-      <input type="number" id="rpmPrice-${idx}" class="rpm-inline-input rpm-input-right"
-             value="${unitPrice}" min="0" step="0.01">
-    </td>
-    <td class="rpm-td-cat">
-      <select id="rpmCat-${idx}" class="rpm-inline-select">
-        <option value="">—</option>
-        ${catOptsSelected}
-      </select>
-    </td>
-    <td class="rpm-td-link">
-      <select id="rpmLink-${idx}" class="rpm-inline-select">
-        <option value="">+ novo</option>
-        ${itemOpts}
-      </select>
-    </td>
-    <td class="rpm-td-act">
+
+  // Feature 2: card layout — each item is a card, not a table row
+  return `<div class="rpm-card" id="rpmItem-${idx}">
+    <div class="rpm-card-num">${idx + 1}</div>
+    <div class="rpm-card-body">
+      <div class="rpm-card-row">
+        <input type="text" id="rpmDesc-${idx}" class="rpm-inline-input rpm-desc-input"
+               value="${rawName}" placeholder="Descrição do item…"
+               oninput="_rpmAutoLink(${idx})">
+        ${aiHint ? `<div class="rpm-ai-name" title="Nome original do recibo">${aiHint}</div>` : ''}
+      </div>
+      <div class="rpm-card-fields">
+        <div class="rpm-field-group">
+          <label class="rpm-field-label">Qtd</label>
+          <input type="number" id="rpmQty-${idx}" class="rpm-inline-input rpm-input-center"
+                 value="${it.quantity ?? 1}" min="0.001" step="any" style="width:70px">
+        </div>
+        <div class="rpm-field-group">
+          <label class="rpm-field-label">Preço Unit.</label>
+          <input type="number" id="rpmPrice-${idx}" class="rpm-inline-input rpm-input-right"
+                 value="${unitPrice}" min="0" step="0.01" style="width:100px">
+        </div>
+        <div class="rpm-field-group" style="flex:1;min-width:120px">
+          <label class="rpm-field-label">Categoria</label>
+          <select id="rpmCat-${idx}" class="rpm-inline-select">${catOptsHtml}</select>
+        </div>
+        <div class="rpm-field-group" style="flex:1;min-width:130px">
+          <label class="rpm-field-label">Vincular Item</label>
+          <select id="rpmLink-${idx}" class="rpm-inline-select">
+            <option value="">+ novo item</option>
+            ${itemOpts}
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="rpm-card-actions">
       <button class="rpm-ai-btn" onclick="rpmNormalizeAI(${idx})" title="Normalizar com IA">🤖</button>
-      <button class="rpm-del-btn" onclick="rpmRemoveRow(${idx})" title="Remover linha">✕</button>
-    </td>
-  </tr>`;
+      <button class="rpm-del-btn" onclick="rpmRemoveRow(${idx})" title="Remover">✕</button>
+    </div>
+  </div>`;
 }
 
 function _rpmAutoLink(idx) {

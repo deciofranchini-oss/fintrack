@@ -14,6 +14,42 @@ function switchUATab(tab) {
 
 // ── FAMILIES ──────────────────────────────────────────────────────
 
+// Feature 3: Generic family feature toggle
+async function toggleFamilyFeature(familyId, key, enabled) {
+  await saveAppSetting(key, enabled);
+  if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
+  window._familyFeaturesCache[key] = enabled;
+  toast(enabled ? '✓ Módulo ativado' : 'Módulo desativado', 'success');
+  // Apply specific side-effects
+  if (key.startsWith('prices_enabled_')) {
+    try { await applyPricesFeature?.(); } catch {}
+  }
+  if (key.startsWith('grocery_enabled_')) {
+    try { await applyGroceryFeature?.(); } catch {}
+  }
+  await loadFamiliesList();
+}
+
+// Pre-load feature flags before rendering families
+async function _loadFamilyFeatures(families) {
+  window._familyFeaturesCache = window._familyFeaturesCache || {};
+  const keys = [];
+  families.forEach(f => {
+    keys.push('prices_enabled_'+f.id, 'grocery_enabled_'+f.id,
+              'backup_enabled_'+f.id, 'snapshot_enabled_'+f.id);
+  });
+  // Load from app_settings in batch
+  try {
+    const { data } = await sb.from('app_settings')
+      .select('key,value')
+      .in('key', keys)
+      .eq('family_id', currentUser?.family_id || '');
+    (data||[]).forEach(row => {
+      window._familyFeaturesCache[row.key] = (row.value === true || row.value === 'true');
+    });
+  } catch {}
+}
+
 async function loadFamiliesList() {
   let families = [];
   try {
@@ -35,6 +71,7 @@ async function loadFamiliesList() {
     return;
   }
   _families = (families || []).map(f => ({ ...f, name: (f?.name && f.name !== f.id) ? f.name : (window._familyDisplayName ? _familyDisplayName(f.id, f.name || '') : (f.name || f.id)) }));
+  await _loadFamilyFeatures(_families);
 
   // Populate family select in user form
   const sel = document.getElementById('uFamilyId');
@@ -86,24 +123,69 @@ async function loadFamiliesList() {
     const memberIds = new Set((members||[]).map(u => u.id));
     const available = (allUsers||[]).filter(u => !memberIds.has(u.id));
 
-    return `<div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:1.3rem">🏠</span>
+    // Feature 3: compute feature states for this family
+    const fid = f.id;
+    // We read from app_settings synchronously from cache; async toggle updates via toggleFamilyFeature
+    const pricesKey  = 'prices_enabled_'  + fid;
+    const groceryKey = 'grocery_enabled_' + fid;
+    const backupKey  = 'backup_enabled_'  + fid;
+    const snapshotKey= 'snapshot_enabled_'+ fid;
+    // Features read from _familyFeaturesCache (populated by loadFamiliesList)
+    const fc = window._familyFeaturesCache || {};
+    const pricesOn   = !!(fc[pricesKey]);
+    const groceryOn  = !!(fc[groceryKey]);
+    const backupOn   = fc[backupKey]  !== undefined ? !!fc[backupKey]  : true; // default on
+    const snapshotOn = fc[snapshotKey]!== undefined ? !!fc[snapshotKey]: true;
+
+    function featureToggleHtml(key, familyId, label, icon, enabled, tip) {
+      return `<div class="fam-feature-item" title="${esc(tip)}">
+        <span class="fam-feature-icon">${icon}</span>
+        <span class="fam-feature-label">${label}</span>
+        <span class="fam-feature-tip" title="${esc(tip)}">ℹ</span>
+        <button class="fam-feature-toggle ${enabled?'on':''}"
+          onclick="toggleFamilyFeature('${familyId}','${key}',${!enabled})"
+          title="${enabled?'Desativar':'Ativar'} ${label}">
+          ${enabled?'Ativo':'Inativo'}
+        </button>
+      </div>`;
+    }
+
+    const featuresHtml = `
+    <div class="fam-features-grid">
+      ${featureToggleHtml(pricesKey,  fid, 'Preços',         '🏷️', pricesOn,   'Habilita o módulo de histórico de preços por item e estabelecimento')}
+      ${featureToggleHtml(groceryKey, fid, 'Lista de Mercado','🛒', groceryOn,  'Habilita listas de compras baseadas no histórico de preços')}
+      ${featureToggleHtml(backupKey,  fid, 'Backup',          '☁️', backupOn,   'Permite exportar e importar backup completo dos dados da família')}
+      ${featureToggleHtml(snapshotKey,fid, 'Snapshot',        '📸', snapshotOn, 'Registra snapshots periódicos de saldo para histórico patrimonial')}
+    </div>`;
+
+    return `<div class="card fam-card" style="margin-bottom:14px">
+      <div class="card-header" style="padding-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:40px;height:40px;border-radius:12px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🏠</div>
           <div>
-            <div style="font-weight:700">${esc(f.name)}</div>
+            <div style="font-weight:700;font-size:.95rem">${esc(f.name)}</div>
             ${f.description ? `<div style="font-size:.75rem;color:var(--muted)">${esc(f.description)}</div>` : ''}
+            <div style="font-size:.72rem;color:var(--muted);margin-top:2px">${members.length} membro${members.length!==1?'s':''}</div>
           </div>
         </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost btn-sm" onclick="editFamily('${f.id}')" style="padding:3px 10px;font-size:.73rem">✏️ Editar</button>
-          <button class="btn btn-ghost btn-sm" onclick="deleteFamily('${f.id}','${esc(f.name)}')" style="padding:3px 10px;font-size:.73rem;color:var(--red)">🗑️</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="editFamily('${f.id}')" style="padding:3px 10px;font-size:.73rem" title="Editar nome e descrição">✏️ Editar</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteFamily('${f.id}','${esc(f.name)}')" style="padding:3px 10px;font-size:.73rem;color:var(--red)" title="Excluir família e todos os dados">🗑️</button>
         </div>
       </div>
-      <div style="padding:4px 0">
-        <div style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
-          Membros (${members.length})
+
+      <!-- Feature 3: Módulos habilitados -->
+      <div style="border-top:1px solid var(--border);padding:10px 0 4px">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:5px">
+          Módulos
+          <span title="Ative ou desative funcionalidades para esta família" style="font-size:.75rem;color:var(--muted);cursor:help">ℹ</span>
         </div>
+        ${featuresHtml}
+      </div>
+
+      <!-- Membros -->
+      <div style="border-top:1px solid var(--border);padding:10px 0 4px">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">Membros</div>
         ${membersHtml}
         ${available.length ? `
         <div style="display:flex;gap:8px;align-items:center;margin-top:10px">

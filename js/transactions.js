@@ -1257,6 +1257,7 @@ async function openTxDetail(id) {
 
 function _txDetailAction(action) {
   if (!_txDetailId) return;
+  if (action === 'makeScheduled') { convertTxToScheduled(_txDetailId); return; }
   closeModal('txDetailModal');
   if (action === 'edit') editTransaction(_txDetailId);
   else if (action === 'dup') duplicateTransaction(_txDetailId);
@@ -1375,6 +1376,88 @@ function applyTxCompactPreference(){
     const isCompact = pref === true || pref === 'true' || localStorage.getItem('tx_compact_view')==='1';
     document.body.classList.toggle('tx-compact', !!isCompact);
   }catch(e){}
+}
+
+// ── Feature 5: Converter transação normal em Programada ──────────────────
+async function convertTxToScheduled(txId) {
+  if (!txId) return;
+  // Load full transaction data
+  const { data: t, error } = await sb.from('transactions')
+    .select('*, accounts!transactions_account_id_fkey(name,currency), categories(name,color), payees(name)')
+    .eq('id', txId).single();
+  if (error || !t) { toast('Erro ao carregar transação.', 'error'); return; }
+
+  // Pre-fill the convertToScheduledModal
+  const el = id => document.getElementById(id);
+  if (!el('convertToScheduledModal')) { toast('Modal de programação não encontrado.', 'error'); return; }
+
+  el('ctsTxId').value    = txId;
+  el('ctsDesc').value    = t.description || '';
+  el('ctsAmount').value  = Math.abs(t.amount || 0).toFixed(2).replace('.', ',');
+  el('ctsAccount').textContent = t.accounts?.name || '—';
+  el('ctsDate').value    = t.date || new Date().toISOString().slice(0,10);
+  el('ctsMemo').value    = t.memo || '';
+  el('ctsType').value    = t.is_transfer ? 'transfer' : (t.amount < 0 ? 'expense' : 'income');
+
+  // Pre-select account
+  const accSel = el('ctsAccountId');
+  if (accSel) {
+    accSel.innerHTML = (state.accounts||[]).map(a =>
+      `<option value="${a.id}"${a.id===t.account_id?' selected':''}>${esc(a.name)} (${a.currency})</option>`
+    ).join('');
+  }
+  // Note: original transaction is kept. The scheduled starts from the chosen date forward.
+  const noteEl = el('ctsNote');
+  if (noteEl) noteEl.innerHTML =
+    `<strong>Nota:</strong> A transação original de <strong>${fmtDate(t.date)}</strong> 
+     permanece lançada. A programação será criada para as próximas ocorrências a partir da data escolhida.`;
+
+  closeModal('txDetailModal');
+  openModal('convertToScheduledModal');
+}
+
+async function saveConvertToScheduled() {
+  const el = id => document.getElementById(id);
+  const txId   = el('ctsTxId')?.value;
+  const desc   = el('ctsDesc')?.value?.trim();
+  const amount = parseFloat((el('ctsAmountInput')?.value||'0').replace(',','.')) || 0;
+  const accId  = el('ctsAccountId')?.value;
+  const startDate = el('ctsDate')?.value;
+  const freq   = document.querySelector('input[name=ctsFreq]:checked')?.value || 'monthly';
+  const memo   = el('ctsMemo')?.value || '';
+  const type   = el('ctsType')?.value || 'expense';
+
+  if (!desc)      { toast('Informe a descrição','error'); return; }
+  if (!accId)     { toast('Selecione a conta','error'); return; }
+  if (!startDate) { toast('Informe a data de início','error'); return; }
+
+  // Find original tx to copy category/payee
+  const orig = (state.transactions||[]).find(t=>t.id===txId) || {};
+
+  const data = {
+    description: desc,
+    type,
+    amount: (type==='expense') ? -Math.abs(amount) : Math.abs(amount),
+    account_id: accId,
+    payee_id: orig.payee_id || null,
+    category_id: orig.category_id || null,
+    memo,
+    tags: orig.tags || null,
+    status: 'active',
+    start_date: startDate,
+    frequency: freq,
+    auto_register: false,
+    auto_confirm: true,
+    updated_at: new Date().toISOString(),
+    family_id: famId(),
+  };
+
+  const { error } = await sb.from('scheduled_transactions').insert(data);
+  if (error) { toast('Erro ao criar programação: ' + error.message, 'error'); return; }
+
+  toast('✅ Programação criada! A transação original permanece inalterada.', 'success');
+  closeModal('convertToScheduledModal');
+  if (state.currentPage === 'scheduled') loadScheduled();
 }
 
 // Toggle status helper used by detail view + swipe
