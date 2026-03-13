@@ -290,35 +290,58 @@ function populateTxMonthFilter() {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSortAsc;else{state.txSortField=field;state.txSortAsc=false;}loadTransactions();}
-function txRow(t, showAccount=true) {
+function txRow(t, showAccount=true, runningBalance=null) {
   const isPending = (t.status||'confirmed') === 'pending';
-  const pendingBadge = isPending ? ' <span class="badge" style="margin-left:5px;background:var(--yellow-lt,#fef9c3);color:#92400e;border:1px solid #fcd34d;font-size:.65rem">Pendente</span>' : '';
+
+  // Category chip
   const cat = t.categories
-    ? `<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">${esc(t.categories.name)}</span>`
-    : '<span class="text-muted" style="font-size:.78rem">—</span>';
-  const acctCell = showAccount
-    ? `<td><span class="badge badge-muted" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">${esc(t.accounts?.name||'—')}</span></td>`
-    : `<td style="display:none"></td>`;
-  return `<tr class="tx-row-clickable${isPending?' tx-pending':''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer">
-    <td class="text-muted tx-col-date" style="white-space:nowrap;font-size:.8rem">${fmtDate(t.date)}${pendingBadge}</td>
-    ${acctCell}
-    <td class="tx-col-desc" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}${t.attachment_url?'<span title="Tem anexo" style="margin-left:4px;opacity:.6;font-size:.72rem">📎</span>':''}</td>
-    <td class="text-muted tx-col-pay" style="font-size:.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.payees?.name||'—')}</td>
-    <td class="tx-col-cat">${cat}</td>
-    <td class="${t.amount>=0?'amount-pos':'amount-neg'} tx-col-amt" style="white-space:nowrap;font-variant-numeric:tabular-nums">
-      ${(()=>{
-        const cur = (t.currency||t.accounts?.currency||'BRL').toUpperCase();
-        const mainFmt = fmt(t.amount, cur);
-        // Se moeda estrangeira E temos brl_amount, mostra conversão como tooltip/subtext
-        if (cur !== 'BRL' && t.brl_amount != null) {
-          return `<span title="${mainFmt} = ${fmt(t.brl_amount,'BRL')}">${mainFmt}<span style="display:block;font-size:.68rem;color:var(--muted);font-weight:400">${fmt(t.brl_amount,'BRL')}</span></span>`;
-        }
-        return mainFmt;
-      })()}
+    ? `<span class="tx-cat-chip" style="--c:${t.categories.color}">${esc(t.categories.name)}</span>`
+    : '';
+
+  // Amount
+  const cur = (t.currency || t.accounts?.currency || 'BRL').toUpperCase();
+  const mainAmt = fmt(t.amount, cur);
+  const amtClass = t.amount >= 0 ? 'amount-pos' : 'amount-neg';
+  let amtHtml = `<span class="tx-v2-amt ${amtClass}">${mainAmt}</span>`;
+  if (cur !== 'BRL' && t.brl_amount != null) {
+    amtHtml += `<span class="tx-v2-brl">${fmt(t.brl_amount,'BRL')}</span>`;
+  }
+
+  // Running balance sub-line (shown when single account filtered)
+  const balHtml = (runningBalance !== null)
+    ? `<span class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance)}</span>`
+    : '';
+
+  // Meta line: compact  dd Mmm · Conta · Beneficiário · Categoria
+  const parts = [];
+  if (showAccount && t.accounts?.name) parts.push(`<span class="tx-v2-acct">${esc(t.accounts.name)}</span>`);
+  if (t.payees?.name)                  parts.push(`<span class="tx-v2-pay">${esc(t.payees.name)}</span>`);
+  if (cat)                             parts.push(cat);
+  const meta = parts.length ? `<div class="tx-v2-meta">${parts.join('<span class="tx-v2-dot"> · </span>')}</div>` : '';
+
+  const attach = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
+  const pendBadge = isPending ? '<span class="tx-v2-pend">Pendente</span>' : '';
+
+  return `<tr class="tx-row-clickable${isPending?' tx-pending':''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')">
+    <td class="tx-v2-date">${fmtDate(t.date)}</td>
+    <td class="tx-v2-body">
+      <div class="tx-v2-title">${esc(t.description||'—')}${attach}${pendBadge}</div>
+      ${meta}
     </td>
-    <td class="tx-col-act" onclick="event.stopPropagation()"><div style="display:flex;gap:3px;justify-content:center"><button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏️</button><button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button><button class="btn-icon" title="Excluir" onclick="deleteTransaction('${t.id}')">🗑️</button></div></td>
+    <td class="tx-v2-right">
+      <div class="tx-v2-amt-wrap">${amtHtml}</div>
+      ${balHtml}
+    </td>
+    <td class="tx-v2-act" onclick="event.stopPropagation()">
+      <div class="tx-v2-btns">
+        <button class="btn-icon" title="Editar"   onclick="editTransaction('${t.id}')">✏️</button>
+        <button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button>
+        <button class="btn-icon" title="Excluir"  onclick="deleteTransaction('${t.id}')">🗑️</button>
+      </div>
+    </td>
   </tr>`;
 }
+
 
 function setTxView(v) {
   state.txView = v;
@@ -345,10 +368,25 @@ function renderTransactions(){
   // ── FLAT VIEW ──
   const body = document.getElementById('txBody');
   if(!txs.length){body.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Nenhuma transação encontrada</td></tr>';return;}
-  const pending = txs.filter(t => (t.status||'confirmed')==='pending');
+  const pending   = txs.filter(t => (t.status||'confirmed')==='pending');
   const confirmed = txs.filter(t => (t.status||'confirmed')!=='pending');
-  const sep = (pending.length && confirmed.length) ? `<tr><td colspan="7" style="padding:6px 10px;background:var(--bg2);color:var(--muted);font-size:.72rem;font-weight:700">CONFIRMADAS</td></tr>` : '';
-  body.innerHTML = pending.map(t => txRow(t, true)).join('') + sep + confirmed.map(t => txRow(t, true)).join('');
+  const sep = (pending.length && confirmed.length)
+    ? `<tr><td colspan="4" class="tx-v2-sep">CONFIRMADAS</td></tr>` : '';
+
+  // Running balance: only when a single account is selected
+  const singleAccId = state.txFilter?.account || '';
+  const acct = singleAccId ? (state.accounts||[]).find(a => a.id === singleAccId) : null;
+  let runBal = acct ? parseFloat(acct.initial_balance || 0) : null;
+
+  const renderRow = (t) => {
+    if (runBal !== null && (t.status||'confirmed') !== 'pending') {
+      runBal += parseFloat(t.amount || 0);
+      return txRow(t, !singleAccId, runBal);
+    }
+    return txRow(t, !singleAccId, null);
+  };
+
+  body.innerHTML = pending.map(t => txRow(t, !singleAccId, null)).join('') + sep + confirmed.map(renderRow).join('');
   const total=state.txTotal, page=state.txPage, ps=state.txPageSize;
   document.getElementById('txPagination').innerHTML=`<span>${page*ps+1}–${Math.min((page+1)*ps,total)} de ${total}</span><div style="display:flex;gap:5px"><button class="btn btn-ghost btn-sm" ${page===0?'disabled':''} onclick="changePage(-1)">‹ Anterior</button><button class="btn btn-ghost btn-sm" ${(page+1)*ps>=total?'disabled':''} onclick="changePage(1)">Próxima ›</button></div>`;
 

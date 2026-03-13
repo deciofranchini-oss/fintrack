@@ -719,6 +719,17 @@ async function resetMenuVisibility() {
 // ═══════════════════════════════════════════════════════════════════
 // CONTROLE DE VISIBILIDADE DAS CONFIGURAÇÕES (admin → usuários comuns)
 // ═══════════════════════════════════════════════════════════════════
+// ── Configurações: expand/collapse section ──────────────────────────
+function toggleCfgSection(bodyId) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  const isOpen = body.classList.toggle('open');
+  // Arrow indicator
+  const arrId = 'cfgArr_' + bodyId.replace('cfgSec_', '');
+  const arr = document.getElementById(arrId);
+  if (arr) arr.textContent = isOpen ? '▾' : '▸';
+}
+
 
 const DEFAULT_SETTINGS_VISIBILITY = {
   currentUser:   true,   // Dados do usuário (sempre visível — bloqueado)
