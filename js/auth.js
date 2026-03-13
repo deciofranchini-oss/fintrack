@@ -663,8 +663,8 @@ function updateUserUI() {
   // Apply permission restrictions
   applyPermissions();
 
-  // Apply user-scoped feature flags (topbar / family-scoped modules)
-  try { applyUserFeatureFlags?.(); } catch {}
+  // Reapply school shortcut visibility immediately after any user/UI refresh
+  try { applySchoolLink?.(); } catch(_) {}
 }
 
 function applyPermissions() {
@@ -2173,8 +2173,8 @@ async function saveUser() {
       if (record.avatar_url !== undefined) currentUser.avatar_url = record.avatar_url;
       currentUser.show_school_link = record.show_school_link !== false;
       _applyCurrentUserAvatar();
-      try { applyUserFeatureFlags?.(); } catch {}
-      updateUserUI();
+      try { updateUserUI(); } catch(_) {}
+      try { applySchoolLink?.(); } catch(_) {}
     }
     await loadUsersList();
     await loadFamiliesList();
