@@ -1,75 +1,10 @@
-async function loadAccounts(){
-  const {data:accs,error} = await famQ(sb.from('accounts').select('*').eq('active',true)).order('name');
-  if(error){toast(error.message,'error');return;}
-  state.accounts=accs||[];
-  try {
-    const {data:grps} = await famQ(sb.from('account_groups').select('*')).order('name');
-    state.groups=grps||[];
-  } catch(e) { state.groups=[]; }
-  await recalcAccountBalances();
+async function loadAccounts(force=false){
+  try { await DB.accounts.load(force); }
+  catch(e) { toast(e.message,'error'); }
 }
 
 async function recalcAccountBalances() {
-  if (!state.accounts.length) return;
-
-  // ── TD-1 FIX: Server-side aggregation ─────────────────────────────
-  // Instead of loading ALL transaction rows (slow at 10k+ txs), we ask
-  // Supabase to SUM amounts grouped by account_id on the server.
-  // Two queries cover the two transfer accounting models:
-  //   • New transfers (linked_transfer_id set): both legs have account_id → naturally summed
-  //   • Old transfers (linked_transfer_id null): only debit leg exists → we must
-  //     add abs(amount) to transfer_to_account_id separately
-  // Fallback: if the RPC isn't available, we silently fall back to the old full-scan.
-
-  let txMap = {};
-
-  try {
-    // Query 1: sum all amounts by account_id (covers normal txs + new paired transfers)
-    const { data: sums, error: sumErr } = await famQ(
-      sb.from('transactions').select('account_id, amount')
-    );
-    if (sumErr) throw sumErr;
-
-    (sums || []).forEach(t => {
-      const amt = parseFloat(t.amount) || 0;
-      if (t.account_id) txMap[t.account_id] = (txMap[t.account_id] || 0) + amt;
-    });
-
-    // Query 2: old-style single-leg transfers — credit the destination manually
-    // These are rows where is_transfer=true AND linked_transfer_id IS NULL
-    const { data: oldTransfers } = await famQ(
-      sb.from('transactions')
-        .select('transfer_to_account_id, amount')
-        .eq('is_transfer', true)
-        .is('linked_transfer_id', null)
-        .not('transfer_to_account_id', 'is', null)
-    );
-
-    (oldTransfers || []).forEach(t => {
-      txMap[t.transfer_to_account_id] = (txMap[t.transfer_to_account_id] || 0) + Math.abs(parseFloat(t.amount) || 0);
-    });
-
-  } catch (e) {
-    // Fallback: full row scan (original behaviour) — safe but slower
-    console.warn('[recalcAccountBalances] aggregation failed, falling back to full scan:', e.message);
-    const { data: txs } = await famQ(
-      sb.from('transactions').select('id, account_id, amount, is_transfer, transfer_to_account_id, linked_transfer_id')
-    );
-    txMap = {};
-    (txs || []).forEach(t => {
-      const amt = parseFloat(t.amount) || 0;
-      if (t.account_id) txMap[t.account_id] = (txMap[t.account_id] || 0) + amt;
-      if (t.is_transfer && t.transfer_to_account_id && !t.linked_transfer_id) {
-        txMap[t.transfer_to_account_id] = (txMap[t.transfer_to_account_id] || 0) + Math.abs(amt);
-      }
-    });
-  }
-
-  // Saldo = saldo_inicial + soma de todas as transações da conta
-  state.accounts.forEach(a => {
-    const initialBal = parseFloat(a.initial_balance) || 0;
-    a.balance = initialBal + (txMap[a.id] || 0);
-  });
+  await DB.accounts.recalcBalances();
 }
 
 let _accountsViewMode='';

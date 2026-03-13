@@ -64,23 +64,8 @@ async function loadDashboardRecent(){
 async function loadDashboard(){
   // Garante que cotações estejam disponíveis antes de computar totais
   await initFxRates().catch(()=>{});
-  const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,brl_amount,currency,is_transfer,status,account_id')).eq('status','confirmed').gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
-  let income=0,expense=0;
-  (monthTxs||[]).filter(t=>!t.is_transfer).forEach(t=>{
-    // Usa brl_amount se disponível; senão converte usando câmbio cached
-    const cur = t.currency || 'BRL';
-    const brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, cur);
-    if(brl>0) income+=brl; else expense+=Math.abs(brl);
-  });
-  // Patrimônio: soma dos saldos de todas as contas ativas (já carregadas em state)
-  await loadAccounts(); // garante dados frescos
-  // Patrimônio total convertido para BRL
-  const total = state.accounts.reduce((s,a)=>{
-    const bal = parseFloat(a.balance) || 0;
-    const cur = a.currency || 'BRL';
-    return s + toBRL(bal, cur);
-  },0);
+  // Single orchestrated call: accounts (TTL-cached) + month txs + pending count
+  const { income, expense, total, pendingCount: _pendCount } = await DB.dashboard.loadKPIs();
   const statTotalEl = document.getElementById('statTotal');
   const statIncomeEl = document.getElementById('statIncome');
   const statExpensesEl = document.getElementById('statExpenses');
@@ -103,11 +88,9 @@ async function loadDashboard(){
     balEl.textContent = dashFmt(bal,'BRL');
     balEl.className = 'stat-value ' + (bal >= 0 ? 'amount-pos' : 'amount-neg');
   }
-  // Pending transactions badge
+  // Pending badge — count already loaded by DB.dashboard.loadKPIs() above
   try {
-    const { count: pendingCount } = await famQ(
-      sb.from('transactions').select('id', { count: 'exact', head: true })
-    ).eq('status','pending');
+    const pendingCount = _pendCount;
     const pb = document.getElementById('dashPendingBadge');
     if (pb) {
       if ((pendingCount || 0) > 0) {
@@ -188,31 +171,14 @@ async function renderCashflowChart(){
     if(curVal) sel.value = curVal; // restore selection
   }
   const accId = sel ? sel.value : '';
-  const months=[];
-  for(let i=5;i>=0;i--){
-    const d=new Date();d.setMonth(d.getMonth()-i);
-    months.push({y:d.getFullYear(),m:String(d.getMonth()+1).padStart(2,'0')});
-  }
-  const MONTH_NAMES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const labels=months.map(({y,m})=>{
-    const d=new Date(+y,+m-1,1);
-    return MONTH_NAMES[d.getMonth()]+'/'+String(y).slice(2);
-  });
-  const incomes=[],expenses=[],balances=[];
-  for(const{y,m}of months){
-    let q=famQ(sb.from('transactions').select('amount,brl_amount,currency,is_transfer'))
-      .gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
-    if(accId) q=q.eq('account_id',accId);
-    const{data}=await q;
-    let inc=0,exp=0;
-    (data||[]).filter(t=>!t.is_transfer).forEach(t=>{
-      const brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, t.currency || 'BRL');
-      if(brl>0) inc+=brl; else exp+=Math.abs(brl);
-    });
-    incomes.push(+inc.toFixed(2));
-    expenses.push(+exp.toFixed(2));
-    balances.push(+(inc-exp).toFixed(2));
-  }
+  const labels=[];
+  // ONE query for all 6 months (replaces 6 serial queries)
+  const cashRows = await DB.dashboard.loadCashflow(accId);
+  const incomes  = cashRows.map(r => r.income);
+  const expenses = cashRows.map(r => r.expense);
+  const balances = cashRows.map(r => r.balance);
+  labels.length = 0;
+  cashRows.forEach(r => labels.push(r.label));
   renderChart('cashflowChart','bar',labels,[
     {label:'Receitas',data:incomes,backgroundColor:'rgba(42,122,74,.8)',borderRadius:6,borderSkipped:false,order:2},
     {label:'Despesas',data:expenses,backgroundColor:'rgba(192,57,43,.75)',borderRadius:6,borderSkipped:false,order:2},

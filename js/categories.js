@@ -5,10 +5,9 @@ let _catTxCounts = {};
 
 // ── Load ──────────────────────────────────────────────────────────────────
 
-async function loadCategories() {
-  const { data, error } = await famQ(sb.from('categories').select('*')).order('name');
-  if (error) { toast(error.message, 'error'); return; }
-  state.categories = data || [];
+async function loadCategories(force=false) {
+  try { await DB.categories.load(force); }
+  catch(e) { toast(e.message,'error'); }
 }
 
 // Carrega contagem de transações por categoria (chamado ao abrir a página)
@@ -282,7 +281,7 @@ async function saveCategory() {
 
   toast('Categoria salva!', 'success');
   closeModal('categoryModal');
-  await loadCategories();
+  DB.categories.bust(); await loadCategories(true);
   populateSelects();
   renderCategories();
 
@@ -432,7 +431,7 @@ async function _doDeleteCategory(id) {
   const { error } = await sb.from('categories').delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
   toast('Categoria excluída', 'success');
-  await loadCategories();
+  DB.categories.bust(); await loadCategories(true);
   await _loadCatTxCounts();
   populateSelects();
   renderCategories();

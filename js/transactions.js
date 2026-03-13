@@ -224,27 +224,19 @@ async function confirmTxClipImport() {
 }
 
 async function loadTransactions(){
-  const f=state.txFilter;
-  const isGroup = state.txView === 'group';
-  let q=famQ(sb.from('transactions').select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon)',{count:'exact'})).order('status',{ascending:false}).order(state.txSortField,{ascending:state.txSortAsc});
-  // Pagination only in flat view; grouped view loads all for the current filter set
-  if(!isGroup) q=q.range(state.txPage*state.txPageSize,(state.txPage+1)*state.txPageSize-1);
-  if(f.month){
-    if(f.month.startsWith('year:')) {
-      const y = f.month.split(':')[1];
-      q=q.gte('date',`${y}-01-01`).lte('date',`${y}-12-31`);
-    } else {
-      const[y,m]=f.month.split('-');
-      const lastDay = new Date(+y, +m, 0).getDate(); // day 0 of next month = last day of this month
-      q=q.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-${String(lastDay).padStart(2,'0')}`);
-    }
-  }
-  if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');
-  if(f.type==='income')q=q.gt('amount',0).eq('is_transfer',false);else if(f.type==='expense')q=q.lt('amount',0).eq('is_transfer',false);else if(f.type==='transfer')q=q.eq('is_transfer',true).eq('is_card_payment',false);else if(f.type==='card_payment')q=q.eq('is_card_payment',true);
-  // Status filter: pending | confirmed | all
-  if(f.status==='pending') q=q.eq('status','pending');
-  else if(f.status==='confirmed') q=q.eq('status','confirmed');
-  const{data,count,error}=await q;if(error){toast(error.message,'error');return;}state.transactions=data||[];state.txTotal=count||0;renderTransactions();
+  try {
+    const result = await DB.transactions.load({
+      filter:    state.txFilter,
+      page:      state.txPage,
+      pageSize:  state.txPageSize,
+      sortField: state.txSortField,
+      sortAsc:   state.txSortAsc,
+      view:      state.txView,
+    });
+    state.transactions = result.data;
+    state.txTotal      = result.count;
+    renderTransactions();
+  } catch(e) { toast(e.message,'error'); }
 }
 function filterTransactions(){
   state.txFilter.search=document.getElementById('txSearch').value;
@@ -1101,7 +1093,7 @@ async function saveTransaction(){
       return;
     }
   }
-  toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
+  DB.accounts.bust(); toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
   closeModal('txModal');
   if(!id && savedId) {
     await _goToSavedTransaction(savedId, { ...data, id: savedId, status: data.status, date: data.date });

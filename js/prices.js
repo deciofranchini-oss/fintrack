@@ -798,33 +798,19 @@ async function saveRegisterPrices() {
         resolvedStoreId = ns.id;
       }
     }
+    // Collect grid rows then batch-save (2 queries instead of N*3)
     const rows = document.querySelectorAll('tr.rpm-row');
-    let saved  = 0;
-    for (const row of rows) {
+    const items = [];
+    rows.forEach(row => {
       const idx   = row.id.replace('rpmItem-', '');
       const desc  = el(`rpmDesc-${idx}`)?.value?.trim();
       const qty   = parseFloat(el(`rpmQty-${idx}`)?.value)   || 1;
       const price = parseFloat(el(`rpmPrice-${idx}`)?.value) || 0;
       const catId = el(`rpmCat-${idx}`)?.value  || null;
-      const link  = el(`rpmLink-${idx}`)?.value || null;
-      if (!desc || price <= 0) continue;
-      let itemId = link;
-      if (!itemId) {
-        const { data: ni, error: niErr } = await sb.from('price_items')
-          .insert({ family_id: fid, name: desc, category_id: catId }).select('id').single();
-        if (niErr) { console.warn('price_item insert:', niErr.message); continue; }
-        itemId = ni.id;
-      } else if (catId) {
-        await sb.from('price_items').update({ category_id: catId }).eq('id', itemId);
-      }
-      const { error: hErr } = await sb.from('price_history').insert({
-        family_id: fid, item_id: itemId, store_id: resolvedStoreId,
-        unit_price: price, quantity: qty, purchased_at: date,
-      });
-      if (hErr) { console.warn('price_history insert:', hErr.message); continue; }
-      await _refreshItemStats(itemId);
-      saved++;
-    }
+      const itemId= el(`rpmLink-${idx}`)?.value || null;
+      if (desc && price > 0) items.push({ desc, qty, price, catId, itemId });
+    });
+    const { saved } = await DB.prices.saveReceipt(fid, resolvedStoreId, date, items);
     toast(`✓ ${saved} preço${saved !== 1 ? 's' : ''} registrado${saved !== 1 ? 's' : ''}!`, 'success');
     closeModal('registerPricesModal');
     if (state.currentPage === 'prices') { await _loadPricesData(); _populatePricesStoreFilter(); _renderPricesPage(); }

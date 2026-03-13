@@ -274,7 +274,12 @@ async function bootApp(){
 
   // Carregar dados base
   try {
-    await Promise.all([loadAccounts(),loadCategories(),loadPayees(),loadAppSettings(),loadScheduled().catch(()=>{})]);
+    // DB.preload: accounts + categories + payees in parallel (TTL-cached)
+    await Promise.all([
+      DB.preload(),
+      loadAppSettings(),
+      loadScheduled().catch(() => {}),
+    ]);
   } catch(e) {
     toast('Erro ao carregar dados: '+e.message,'error');
     return;

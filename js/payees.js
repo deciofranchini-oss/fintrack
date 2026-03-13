@@ -138,7 +138,7 @@ async function applyNormalizePayees() {
   }
 
   closeModal('normalizePayeesModal');
-  await loadPayees();
+  DB.payees.bust(); await loadPayees(true);
   populateSelects();
   renderPayees();
 
@@ -151,7 +151,10 @@ async function applyNormalizePayees() {
   window._normPayeeChanges = [];
 }
 
-async function loadPayees(){const{data,error}=await famQ(sb.from('payees').select('id,name,type,notes,default_category_id,address,city,state_uf,zip_code,phone,whatsapp,website,cnpj_cpf,family_id, categories(name)')).order('name');if(error){toast(error.message,'error');return;}state.payees=data||[];}
+async function loadPayees(force=false){
+  try { await DB.payees.load(force); }
+  catch(e) { toast(e.message,'error'); }
+}
 
 // ── Contagem de transações por payee ──────────────────────────────────────
 let _payeeTxCounts = {};
@@ -491,7 +494,7 @@ async function savePayee(){
   };
   if(!data.name){toast('Informe o nome','error');return;}
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('payees').update(data).eq('id',id));}else{({error:err}=await sb.from('payees').insert(data));}
-  if(err){toast(err.message,'error');return;}toast('Salvo!','success');closeModal('payeeModal');await loadPayees();populateSelects();renderPayees();
+  if(err){toast(err.message,'error');return;}toast('Salvo!','success');closeModal('payeeModal');DB.payees.bust(); await loadPayees(true);populateSelects();renderPayees();
 }
 async function deletePayee(id) {
   const payee = state.payees.find(p => p.id === id);
@@ -603,7 +606,7 @@ async function _doDeletePayee(id) {
   const { error } = await sb.from('payees').delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
   toast('Beneficiário excluído', 'success');
-  await loadPayees();
+  DB.payees.bust(); await loadPayees(true);
   await _loadPayeeTxCounts();
   renderPayees();
 }
@@ -762,7 +765,7 @@ async function confirmPayeeClipboardImport() {
       }
     }
 
-    await loadPayees();
+    DB.payees.bust(); await loadPayees(true);
     populateSelects();
     renderPayees();
     closeModal('payeeClipboardModal');
