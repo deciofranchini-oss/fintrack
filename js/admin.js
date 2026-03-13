@@ -42,7 +42,8 @@ async function _loadFamilyFeatures(families) {
   try {
     const { data } = await sb.from('app_settings')
       .select('key,value')
-      .in('key', keys);
+      .in('key', keys)
+      .eq('family_id', currentUser?.family_id || '');
     (data||[]).forEach(row => {
       window._familyFeaturesCache[row.key] = (row.value === true || row.value === 'true');
     });
