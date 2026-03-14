@@ -235,6 +235,18 @@ async function loadTransactions(){
     });
     state.transactions = result.data;
     state.txTotal      = result.count;
+    state.txRunningBalanceMap = {};
+
+    const singleAccId = state.txFilter?.account || '';
+    if (singleAccId && state.txView === 'flat') {
+      try {
+        state.txRunningBalanceMap = await buildAccountRunningBalanceMap(singleAccId);
+      } catch (e) {
+        console.warn('running balance map failed:', e?.message || e);
+        state.txRunningBalanceMap = {};
+      }
+    }
+
     renderTransactions();
   } catch(e) { toast(e.message,'error'); }
 }
@@ -287,6 +299,30 @@ function populateTxMonthFilter() {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSortAsc;else{state.txSortField=field;state.txSortAsc=false;}loadTransactions();}
+
+async function buildAccountRunningBalanceMap(accountId) {
+  if (!accountId || !sb) return {};
+  const acct = (state.accounts || []).find(a => a.id === accountId);
+  let running = parseFloat(acct?.initial_balance || 0) || 0;
+
+  const { data, error } = await famQ(
+    sb.from('transactions')
+      .select('id,amount,date,created_at,status')
+      .eq('account_id', accountId)
+      .eq('status', 'confirmed')
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+  );
+  if (error) throw error;
+
+  const map = {};
+  (data || []).forEach(t => {
+    running += parseFloat(t.amount || 0) || 0;
+    map[t.id] = running;
+  });
+  return map;
+}
 function txRow(t, showAccount=true, runningBalance=null) {
   const isPending = (t.status||'confirmed') === 'pending';
 
@@ -295,7 +331,7 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const dateStr = `${d.getDate()} ${MON[d.getMonth()]}`;
 
-  const categoryLine = `<div class="tx-v2-category">${t.categories?.name ? esc(t.categories.name) : '&nbsp;'}</div>`;
+  const categoryLine = t.categories?.name ? `<div class="tx-v2-category">${esc(t.categories.name)}</div>` : '';
 
   // Amount
   const cur = (t.currency || t.accounts?.currency || 'BRL').toUpperCase();
@@ -315,7 +351,7 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const metaParts = [];
   if (showAccount && t.accounts?.name) metaParts.push(`<span class="tx-v2-acct">${esc(t.accounts.name)}</span>`);
   if (t.payees?.name)                  metaParts.push(`<span class="tx-v2-pay">${esc(t.payees.name)}</span>`);
-  const meta = `<div class="tx-v2-meta">${metaParts.length ? metaParts.join('<span class="tx-v2-dot"> · </span>') : '&nbsp;'}</div>`;
+  const meta = metaParts.length ? `<div class="tx-v2-meta">${metaParts.join('<span class="tx-v2-dot"> · </span>')}</div>` : '';
 
   const attach   = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
   const pendDot  = isPending ? '<span class="tx-v2-pend">⏳</span>' : '';
@@ -374,15 +410,13 @@ function renderTransactions(){
 
   // Running balance: only when a single account is selected
   const singleAccId = state.txFilter?.account || '';
-  const acct = singleAccId ? (state.accounts||[]).find(a => a.id === singleAccId) : null;
-  let runBal = acct ? parseFloat(acct.initial_balance || 0) : null;
+  const balMap = singleAccId ? (state.txRunningBalanceMap || {}) : null;
 
   const renderRow = (t) => {
-    if (runBal !== null && (t.status||'confirmed') !== 'pending') {
-      runBal += parseFloat(t.amount || 0);
-      return txRow(t, !singleAccId, runBal);
-    }
-    return txRow(t, !singleAccId, null);
+    const runningBal = (balMap && Object.prototype.hasOwnProperty.call(balMap, t.id))
+      ? balMap[t.id]
+      : null;
+    return txRow(t, !singleAccId, runningBal);
   };
 
   body.innerHTML = pending.map(t => txRow(t, !singleAccId, null)).join('') + sep + confirmed.map(renderRow).join('');
