@@ -1101,6 +1101,205 @@ function closeEmailPopup() {
   document.getElementById('emailPopup').style.display = 'none';
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   _buildReportEmailHTML
+   Gera HTML rico do relatório para envio via EmailJS em {{report_content}}.
+   Compatível com Gmail, Outlook e iOS Mail (CSS inline, sem media queries).
+   Usa o mesmo padrão de buildScheduledEmailReportContent em auto_register.js.
+══════════════════════════════════════════════════════════════════ */
+function _buildReportEmailHTML(txs, from, to, viewLabel, filters, pdfUrl) {
+  const GREEN      = '#163a2a';
+  const GREEN_LT   = '#2a7a4a';
+  const GREEN_BG   = '#e8f5ee';
+  const RED        = '#c0392b';
+  const RED_BG     = '#fdf0ee';
+  const MUTED      = '#6b7280';
+  const BORDER     = '#e5e7eb';
+  const BG         = '#f5f7fb';
+  const WHITE      = '#ffffff';
+
+  const totInc = txs.filter(t => t.amount > 0).reduce((s,t) => s + t.amount, 0);
+  const totExp = txs.filter(t => t.amount < 0).reduce((s,t) => s + Math.abs(t.amount), 0);
+  const bal    = totInc - totExp;
+  const savingsRate = totInc > 0 ? ((totInc - totExp) / totInc * 100) : 0;
+
+  const periodLabel = fmtDate(from) + ' a ' + fmtDate(to);
+  const generatedAt = new Date().toLocaleString('pt-BR');
+  const familyName  = currentUser?.name || currentUser?.email || 'Família';
+
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function money(v) { return fmt(v); }
+
+  // ── KPI row ──────────────────────────────────────────────────────
+  const kpiHtml = `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:6px 0;margin:16px 0">
+      <tr>
+        ${[
+          ['Receitas',  money(totInc), GREEN_LT, GREEN_BG],
+          ['Despesas',  money(totExp), RED,      RED_BG],
+          ['Saldo',     money(bal),    bal>=0?GREEN_LT:RED, bal>=0?GREEN_BG:RED_BG],
+          ['Transações',String(txs.length), '#374151', '#f3f4f6'],
+        ].map(([lbl,val,color,bg]) => `
+          <td width="25%" style="padding:0">
+            <div style="background:${bg};border-radius:8px;padding:10px 8px;border-top:3px solid ${color};text-align:center">
+              <div style="font-size:10px;font-weight:700;color:${MUTED};text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${lbl}</div>
+              <div style="font-size:14px;font-weight:800;color:${color};white-space:nowrap">${val}</div>
+            </div>
+          </td>`).join('')}
+      </tr>
+    </table>`;
+
+  // ── Health bar (savings rate indicator) ──────────────────────────
+  const srColor = savingsRate >= 20 ? GREEN_LT : savingsRate >= 5 ? '#b45309' : RED;
+  const srLabel = savingsRate >= 20 ? 'Saudável 💚' : savingsRate >= 5 ? 'Atenção 🟡' : 'Crítico 🔴';
+  const healthHtml = totInc > 0 ? `
+    <div style="background:#f8fafc;border:1px solid ${BORDER};border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:700;color:${srColor}">Taxa de poupança: ${savingsRate.toFixed(1)}% — ${srLabel}</div>
+        <div style="background:#e5e7eb;border-radius:4px;height:5px;margin-top:5px;overflow:hidden">
+          <div style="background:${srColor};height:5px;width:${Math.min(savingsRate,100).toFixed(0)}%;border-radius:4px"></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:${MUTED};white-space:nowrap">${(totExp/totInc*100).toFixed(0)}% gasto</div>
+    </div>` : '';
+
+  // ── Category breakdown (top 8) ───────────────────────────────────
+  const catMap = {};
+  txs.filter(t => t.amount < 0).forEach(t => {
+    const k = t.categories?.name || 'Sem categoria';
+    if (!catMap[k]) catMap[k] = { total: 0, count: 0, color: t.categories?.color || '#888' };
+    catMap[k].total += Math.abs(t.amount);
+    catMap[k].count++;
+  });
+  const catRows = Object.entries(catMap).sort((a,b) => b[1].total - a[1].total).slice(0, 8);
+  const catGrand = catRows.reduce((s,[,v]) => s + v.total, 0);
+
+  const catHtml = catRows.length ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:${GREEN};text-transform:uppercase;letter-spacing:.06em;
+                  border-bottom:2px solid ${GREEN_BG};padding-bottom:5px;margin-bottom:8px">
+        Despesas por Categoria
+      </div>
+      ${catRows.map(([name, v]) => {
+        const pct = catGrand > 0 ? (v.total / catGrand * 100) : 0;
+        return `
+        <div style="margin-bottom:5px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+            <span style="font-size:12px;color:#374151">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${esc(v.color)};margin-right:5px;vertical-align:middle"></span>
+              ${esc(name)}
+              <span style="font-size:10px;color:${MUTED}"> (${v.count}x)</span>
+            </span>
+            <span style="font-size:12px;font-weight:700;color:${RED}">${money(v.total)}</span>
+          </div>
+          <div style="background:#e5e7eb;border-radius:3px;height:4px;overflow:hidden">
+            <div style="background:${esc(v.color)};height:4px;width:${pct.toFixed(0)}%;border-radius:3px"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  // ── Top payees (top 5) ────────────────────────────────────────────
+  const payMap = {};
+  txs.filter(t => t.amount < 0).forEach(t => {
+    const k = t.payees?.name || t.description || 'Sem beneficiário';
+    if (!payMap[k]) payMap[k] = { total: 0, count: 0 };
+    payMap[k].total += Math.abs(t.amount);
+    payMap[k].count++;
+  });
+  const payRows = Object.entries(payMap).sort((a,b) => b[1].total - a[1].total).slice(0, 5);
+  const payHtml = payRows.length ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:${GREEN};text-transform:uppercase;letter-spacing:.06em;
+                  border-bottom:2px solid ${GREEN_BG};padding-bottom:5px;margin-bottom:8px">
+        Top Beneficiários
+      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px">
+        ${payRows.map(([name,v],i) => `
+          <tr style="background:${i%2===0?WHITE:'#f8fafc'}">
+            <td style="padding:5px 8px;color:#374151">${esc(name)}</td>
+            <td style="padding:5px 8px;text-align:center;color:${MUTED};font-size:11px">${v.count}x</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:700;color:${RED}">${money(v.total)}</td>
+          </tr>`).join('')}
+      </table>
+    </div>` : '';
+
+  // ── Last 10 transactions ─────────────────────────────────────────
+  const recentTxs = [...txs].sort((a,b) => b.date < a.date ? -1 : 1).slice(0, 10);
+  const txHtml = recentTxs.length ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:${GREEN};text-transform:uppercase;letter-spacing:.06em;
+                  border-bottom:2px solid ${GREEN_BG};padding-bottom:5px;margin-bottom:8px">
+        Últimas Transações
+      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:11px">
+        <tr style="background:${GREEN};color:${WHITE}">
+          <th style="padding:5px 8px;text-align:left;font-weight:600">Data</th>
+          <th style="padding:5px 8px;text-align:left;font-weight:600">Descrição</th>
+          <th style="padding:5px 8px;text-align:left;font-weight:600">Categoria</th>
+          <th style="padding:5px 8px;text-align:right;font-weight:600">Valor</th>
+        </tr>
+        ${recentTxs.map((t,i) => `
+          <tr style="background:${i%2===0?WHITE:'#f8fafc'}">
+            <td style="padding:5px 8px;color:${MUTED};white-space:nowrap">${fmtDate(t.date)}</td>
+            <td style="padding:5px 8px;color:#374151;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(t.description||'—')}</td>
+            <td style="padding:5px 8px;color:${MUTED}">${esc(t.categories?.name||'—')}</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:700;color:${t.amount>=0?GREEN_LT:RED}">${money(t.amount)}</td>
+          </tr>`).join('')}
+      </table>
+      ${txs.length > 10 ? `<div style="text-align:center;padding:6px;font-size:11px;color:${MUTED}">+ ${txs.length-10} transações no PDF completo</div>` : ''}
+    </div>` : '';
+
+  // ── PDF link button ───────────────────────────────────────────────
+  const pdfBtnHtml = pdfUrl ? `
+    <div style="text-align:center;margin:20px 0 8px">
+      <a href="${esc(pdfUrl)}"
+         style="display:inline-block;background:${GREEN};color:${WHITE};text-decoration:none;
+                font-weight:700;font-size:13px;padding:12px 28px;border-radius:8px;
+                letter-spacing:.02em">
+        📄 Baixar Relatório PDF Completo
+      </a>
+      <div style="font-size:10px;color:${MUTED};margin-top:6px">
+        Arquivo: ${esc(pdfUrl.split('/').pop()?.split('?')[0] || 'relatório.pdf')}
+      </div>
+    </div>` : '';
+
+  // ── Assemble ─────────────────────────────────────────────────────
+  return `
+<div style="font-family:Arial,Helvetica,sans-serif;background:${BG};padding:16px;margin:0">
+  <div style="max-width:560px;margin:0 auto">
+
+    <!-- Header -->
+    <div style="background:${GREEN};border-radius:12px 12px 0 0;padding:20px 24px;border-left:5px solid ${GREEN_LT}">
+      <div style="font-size:18px;font-weight:800;color:${WHITE};margin-bottom:4px">
+        Relatório Financeiro — ${esc(viewLabel)}
+      </div>
+      <div style="font-size:11px;color:#a7d4be;line-height:1.6">
+        📅 ${esc(periodLabel)} &nbsp;·&nbsp; 👤 ${esc(familyName)}<br>
+        ${filters !== 'Todos os dados' ? `🔍 ${esc(filters)} &nbsp;·&nbsp; ` : ''}
+        🕐 Gerado em ${esc(generatedAt)}
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div style="background:${WHITE};border:1px solid ${BORDER};border-top:none;border-radius:0 0 12px 12px;padding:20px 24px">
+      ${kpiHtml}
+      ${healthHtml}
+      ${catHtml}
+      ${payHtml}
+      ${txHtml}
+      ${pdfBtnHtml}
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center;padding:12px;font-size:10px;color:${MUTED}">
+      Family FinTrack &nbsp;·&nbsp; Relatório Confidencial &nbsp;·&nbsp; ${esc(generatedAt)}
+    </div>
+
+  </div>
+</div>`;
+}
+
 async function sendReportByEmail() {
   const emailToEl = document.getElementById('emailTo');
   const toAddr    = (emailToEl.value || '').trim();
@@ -1147,12 +1346,20 @@ async function sendReportByEmail() {
     const viewLabel   = { regular:'Análise por Categoria', transactions:'Lista de Transações', forecast:'Previsão' }[rptState.view] || '';
     const filters     = _getActiveFiltersLabel();
 
+    // Build rich HTML report body — sent as {{report_content}} which is what the
+    // shared EmailJS template uses in its Body (same as auto_register.js does).
+    // {{message}} remains as plain-text fallback for simpler template configurations.
+    const reportHtml = _buildReportEmailHTML(txs, from, to, viewLabel, filters, pdfUrl);
+
     const templateParams = {
       to_email: toAddr, to: toAddr, email: toAddr, recipient: toAddr,
       dest_email: toAddr, reply_to: toAddr,
       from_name:      'JF Family FinTrack',
       subject,
-      message:        userMessage,
+      // Plain-text fallback (used by other template functions)
+      message:        userMessage || `Relatório ${viewLabel} — ${fmtDate(from)} a ${fmtDate(to)}`,
+      // Rich HTML body — {{report_content}} in the EmailJS template Body
+      report_content: reportHtml,
       report_period:  `${fmtDate(from)} a ${fmtDate(to)}`,
       report_view:    viewLabel,
       report_filters: filters,
