@@ -5557,3 +5557,118 @@ tr.tx-pending { background: rgba(251,191,36,.05); }
     padding: 12px 12px 10px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   FAM-CARD-V2 — Card de família redesenhado (Gerenciar Famílias)
+══════════════════════════════════════════════════════════════════ */
+.fam-card-v2 {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-bottom: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm, 0 1px 4px rgba(0,0,0,.06));
+}
+
+/* Header */
+.fam-cv2-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.fam-cv2-avatar {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: var(--accent-lt);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.25rem; flex-shrink: 0;
+}
+.fam-cv2-info { flex: 1; min-width: 0; }
+.fam-cv2-name  { font-weight: 700; font-size: .95rem; color: var(--text); }
+.fam-cv2-desc  { font-size: .73rem; color: var(--muted); margin-top: 1px; }
+.fam-cv2-meta  { font-size: .7rem; color: var(--muted); margin-top: 3px; }
+
+/* Action buttons in header */
+.fam-cv2-actions {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  align-items: flex-start; flex-shrink: 0;
+}
+.fam-cv2-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: .85rem;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  color: var(--text);
+}
+.fam-cv2-btn:hover { background: var(--bg2); border-color: var(--border2); }
+.fam-cv2-btn.danger { color: var(--red); }
+.fam-cv2-btn.danger:hover { background: var(--red-lt, #fef2f2); border-color: var(--red); }
+
+/* Sections */
+.fam-cv2-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.fam-cv2-section:last-child { border-bottom: none; }
+.fam-cv2-section-label {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+
+/* Module toggle buttons */
+.fam-cv2-modules {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.fam-cv2-module-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: .8rem; font-weight: 600;
+  color: var(--text2);
+  transition: all .18s ease;
+  user-select: none;
+}
+.fam-cv2-module-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+  color: var(--accent);
+}
+.fam-cv2-module-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+  color: var(--accent);
+}
+.fam-cv2-mod-icon  { font-size: .95rem; }
+.fam-cv2-mod-label { font-size: .8rem; }
+.fam-cv2-mod-status {
+  font-size: .65rem;
+  opacity: .6;
+  transition: opacity .15s;
+}
+.fam-cv2-module-btn.active .fam-cv2-mod-status {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* Members list */
+.fam-cv2-members { display: flex; flex-direction: column; gap: 6px; }
+
+@media (max-width: 480px) {
+  .fam-cv2-actions { gap: 3px; }
+  .fam-cv2-btn { width: 28px; height: 28px; font-size: .78rem; }
+  .fam-cv2-module-btn { padding: 6px 10px; font-size: .76rem; }
+}
