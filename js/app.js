@@ -267,45 +267,33 @@ function setAppLogo(url){
 // Keep keys stable to avoid breaking filtering and saved preferences.
 let state={accounts:[],groups:[],categories:[],payees:[],transactions:[],budgets:[],txPage:0,txPageSize:50,txTotal:0,txSortField:'date',txSortAsc:false,txFilter:{search:'',month:'',account:'',type:'',status:''},txView:'flat',currentPage:'dashboard',chartInstances:{},privacyMode:false};
 
-// Activa a página na UI sem disparar carregamento de dados
-// (usado no boot para evitar race condition com loadDashboard)
-function _activatePageUI(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.bn-item').forEach(b => b.classList.remove('active'));
-  const pageEl = document.getElementById('page-' + page);
-  if (pageEl) pageEl.classList.add('active');
-  const ni = document.querySelector(`.nav-item[onclick="navigate('${page}')"]`);
-  if (ni) ni.classList.add('active');
-  const bi = document.querySelector(`.bn-item[data-page="${page}"]`);
-  if (bi) bi.classList.add('active');
-  const titleEl = document.getElementById('pageTitle');
-  if (titleEl) titleEl.textContent = pageTitles[page] || page;
-  state.currentPage = page;
-  if (_navHistory[_navHistory.length-1] !== page) _navHistory.push(page);
-  _syncBackBtn?.();
-}
-
 async function bootApp(){
   registerServiceWorkerSafe();
   // Logos (can be overridden by app_settings)
   setAppLogo(APP_LOGO_URL);
 
-  // Fase 1: carregar dados essenciais para o dashboard (rápido)
+  // Carregar dados essenciais (accounts, categories, payees, settings)
   try {
     await Promise.all([
-      DB.preload(),        // accounts + categories + payees (TTL-cached)
-      loadAppSettings(),   // logo, menu visibility, emailjs config
+      DB.preload(),
+      loadAppSettings(),
     ]);
   } catch(e) {
     toast('Erro ao carregar dados: '+e.message,'error');
     return;
   }
+  // Dados secundários em background — não bloqueiam o dashboard
+  loadScheduled().catch(() => {});
+  initFxRates().catch(e => console.warn('[FX] boot init failed:', e.message));
+  if (typeof runScheduledAutoRegister === 'function') {
+    runScheduledAutoRegister().catch(() => {});
+  }
 
-  // Configurar UI e navegar imediatamente — usuário vê o dashboard sem esperar
   populateSelects();
+  // Start auto-check timer if configured
   const _cfg = getAutoCheckConfig();
   if(_cfg.enabled && _cfg.method === 'browser') applyAutoCheckTimer(_cfg);
+  // Datas padrão
   const ym=new Date().toISOString().slice(0,7);
   populateTxMonthFilter();
   const txMonthEl=document.getElementById('txMonth');if(txMonthEl)txMonthEl.value=ym;
@@ -313,24 +301,11 @@ async function bootApp(){
   const budEl=document.getElementById('budgetMonth');if(budEl)budEl.value=ym;
   const budInEl=document.getElementById('budgetMonthInput');if(budInEl)budInEl.value=ym;
   state.txFilter.month=ym;
-  updateUserUI();
+  // Navegar para dashboard
+  navigate('dashboard');
   initEmailJSStatus();
-
-  // Activar página e carregar dashboard — dados já estão em state
-  _activatePageUI('dashboard');
-  await loadDashboard().catch(e => console.warn('[boot] loadDashboard:', e.message));
-
-  // Fase 2: carregar dados secundários em background (não bloqueia a tela)
-  Promise.all([
-    loadScheduled().catch(() => {}),
-    initFxRates().catch(e => console.warn('[FX] boot init failed:', e.message)),
-  ]).then(() => {
-    if (typeof runScheduledAutoRegister === 'function') {
-      runScheduledAutoRegister().catch(() => {});
-    }
-  });
-
-  // Módulos opcionais
+  updateUserUI();
+  // Aplica visibilidade do módulo de preços conforme feature flag da família
   if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
   if (typeof applyGroceryFeature === 'function') applyGroceryFeature().catch(() => {});
 }
