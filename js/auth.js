@@ -1504,9 +1504,6 @@ async function loadFamiliesList() {
 
   el.innerHTML = visibleFamilies.map(f => {
     const members = membersByFamily[f.id] || [];
-    // Feature flags para esta família
-    const _pricesOn  = !!_fc['prices_enabled_'  + f.id];
-    const _groceryOn = !!_fc['grocery_enabled_' + f.id];
 
     const membersHtml = members.length
       ? members.map(m => `

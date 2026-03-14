@@ -117,28 +117,27 @@ async function _updatePricesGroceryBanner() {
   if (bannerOn)  bannerOn.style.display  = groceryOn ? 'flex' : 'none';
   if (bannerOff) bannerOff.style.display = groceryOn ? 'none' : 'flex';
 }
+
+async function _pricesPageActivateGrocery() {
   const btn = document.querySelector('#pricesGroceryActivateBanner button');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Ativando…'; }
   const famId = currentUser?.family_id;
   if (!famId) { toast('Nenhuma família ativa', 'error'); return; }
   const key = 'grocery_enabled_' + famId;
-  // Gravar via estratégia tripla
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
   window._familyFeaturesCache[key] = true;
   try { localStorage.setItem(key, 'true'); } catch {}
-  if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) _appSettingsCache[key] = true;
+  try { if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) _appSettingsCache[key] = true; } catch {}
   let saved = false;
   if (sb) {
+    // Tenta RPC SECURITY DEFINER primeiro
     try {
-      const { data: upd } = await sb.from('app_settings').update({ value: true }).eq('key', key).eq('family_id', famId).select('key');
-      if (upd && upd.length > 0) { saved = true; }
+      const { error: rpcErr } = await sb.rpc('set_family_feature_flag', { p_family_id: famId, p_key: key, p_value: true });
+      if (!rpcErr) saved = true;
     } catch {}
-    if (!saved) {
-      try { await sb.from('app_settings').insert({ key, value: true, family_id: famId }); saved = true; } catch {}
-    }
-    if (!saved) {
-      try { await sb.from('app_settings').update({ value: true }).eq('key', key); saved = true; } catch {}
-    }
+    // Fallbacks diretos
+    if (!saved) { try { await sb.from('app_settings').update({ value: true, family_id: famId }).eq('key', key); saved = true; } catch {} }
+    if (!saved) { try { await sb.from('app_settings').insert({ key, value: true, family_id: famId }); saved = true; } catch {} }
   }
   try { await applyGroceryFeature(); } catch {}
   toast('🛒 Módulo Mercado ativado!', 'success');
