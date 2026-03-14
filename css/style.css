@@ -5481,3 +5481,22 @@ tr.tx-pending { background: rgba(251,191,36,.05); }
   color:var(--accent); font-size:.82rem;
   background:var(--accent-lt);
 }
+
+/* ── Topbar page icon (mobile only) ────────────────────────────────── */
+.topbar-page-icon {
+  display: none;           /* hidden on desktop */
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent-lt);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.topbar-page-icon svg { display: block; }
+
+@media (max-width: 768px) {
+  .topbar-page-icon { display: flex; }   /* show icon on mobile */
+  .topbar-title     { display: none; }   /* hide text on mobile */
+}
