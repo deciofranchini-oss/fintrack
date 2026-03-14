@@ -167,7 +167,7 @@ const _transactions = {
           'payees(name), categories(name,color,icon)',
           { count: 'exact' }
         )
-      ).order('status', { ascending: false }).order(sortField, { ascending: sortAsc });
+      ).order('status', { ascending: false }).order(sortField, { ascending: sortAsc }).order('created_at', { ascending: sortAsc }).order('id', { ascending: sortAsc });
 
       if (view !== 'group') q = q.range(page * pageSize, (page + 1) * pageSize - 1);
 

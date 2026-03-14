@@ -303,17 +303,19 @@ function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSor
 async function buildAccountRunningBalanceMap(accountId) {
   if (!accountId || !sb) return {};
   const acct = (state.accounts || []).find(a => a.id === accountId);
-  let running = parseFloat(acct?.initial_balance || 0) || 0;
 
-  // Query 1: all transactions owned by this account
+  // ── Query ALL confirmed transactions in the SAME sort order as the display ──
+  // Display uses: date DESC, created_at DESC, id DESC
+  // We fetch in that same order, then REVERSE to get chronological ASC.
+  // This guarantees same-date tie-breaking is identical between map and display.
   const { data: ownRows, error: e1 } = await famQ(
     sb.from('transactions')
       .select('id,amount,date,created_at,is_transfer,linked_transfer_id,transfer_to_account_id,account_id')
       .eq('account_id', accountId)
       .eq('status', 'confirmed')
-      .order('date',       { ascending: true })
-      .order('created_at', { ascending: true })
-      .order('id',         { ascending: true })
+      .order('date',       { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id',         { ascending: false })
   );
   if (e1) throw e1;
 
@@ -325,25 +327,34 @@ async function buildAccountRunningBalanceMap(accountId) {
       .is('linked_transfer_id', null)
       .eq('transfer_to_account_id', accountId)
       .eq('status', 'confirmed')
+      .order('date',       { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id',         { ascending: false })
   );
 
-  // Merge and sort chronologically
-  const all = [
+  // Merge in display order (DESC), then reverse to get chronological ASC.
+  // This is the key: the reversed order exactly matches how rows appear
+  // bottom→top on screen, so map[id] = balance after that tx reading upward.
+  const displayOrder = [
     ...(ownRows  || []).map(t => ({ ...t, _legacyIn: false })),
     ...(legacyIn || []).filter(t => t.account_id !== accountId).map(t => ({ ...t, _legacyIn: true })),
   ].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
-    return a.id < b.id ? -1 : 1;
+    // Sort DESC (same as display) then we'll reverse
+    if (a.date !== b.date) return a.date > b.date ? -1 : 1;
+    if (a.created_at !== b.created_at) return a.created_at > b.created_at ? -1 : 1;
+    return a.id > b.id ? -1 : 1;
   });
 
+  // Reverse → chronological ASC = bottom-to-top reading order
+  const chronological = [...displayOrder].reverse();
+
+  let running = parseFloat(acct?.initial_balance || 0) || 0;
   const map = {};
-  all.forEach(t => {
+  chronological.forEach(t => {
     let delta = parseFloat(t.amount || 0) || 0;
-    // Legacy inbound: amount is negative (debit on source) — treat as positive credit here
-    if (t._legacyIn) delta = Math.abs(delta);
+    if (t._legacyIn) delta = Math.abs(delta); // legacy inbound credit
     running += delta;
-    map[t.id] = running; // balance AFTER this transaction
+    map[t.id] = running; // balance AFTER this tx, reading bottom→top
   });
   return map;
 }
