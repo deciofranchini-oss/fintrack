@@ -366,9 +366,10 @@ function txRow(t, showAccount=true, runningBalance=null) {
     amtHtml += `<span class="tx-v2-brl">${fmt(t.brl_amount,'BRL')}</span>`;
   }
 
-  // Running balance
+  // Running balance — use account's native currency (balance is stored in account currency)
+  const balCur = (t.accounts?.currency || t.currency || 'BRL').toUpperCase();
   const balHtml = (runningBalance !== null)
-    ? `<div class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance)}</div>`
+    ? `<div class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance, balCur)}</div>`
     : '';
 
   // Meta line: Conta · Beneficiário
@@ -870,9 +871,13 @@ async function _goToSavedTransaction(txId, txData = {}) {
   try { setTxView('flat'); } catch (_) {}
 
   // Set filters to show the month of the saved transaction with no other filters
+  // Filter to the account of the saved transaction so only that account's
+  // transactions are shown — the new row is highlighted within its context
+  const savedAccountId = txData?.account_id || '';
+
   state.txFilter = state.txFilter || {};
   state.txFilter.search  = '';
-  state.txFilter.account = '';
+  state.txFilter.account = savedAccountId;
   state.txFilter.type    = '';
   state.txFilter.month   = txData?.date ? String(txData.date).slice(0, 7) : (state.txFilter.month || '');
   state.txFilter.status  = (txData?.status || 'confirmed') === 'pending' ? 'pending' : '';
@@ -887,7 +892,7 @@ async function _goToSavedTransaction(txId, txData = {}) {
   const statEl   = document.getElementById('txStatusFilter');
   const searchEl = document.getElementById('txSearch');
   if (monthEl)  monthEl.value  = state.txFilter.month || '';
-  if (accEl)    accEl.value    = '';
+  if (accEl)    accEl.value    = savedAccountId;
   if (typeEl)   typeEl.value   = '';
   if (statEl)   statEl.value   = state.txFilter.status || '';
   if (searchEl) searchEl.value = '';
