@@ -61,7 +61,7 @@ async function loadForecast() {
           if (originAmount !== 0) {
             scheduledItems.push({
               date,
-              description: sc.description + ' 📅',
+              description: sc.description,
               amount: originAmount,
               account_id: sc.account_id,
               categories: sc.categories,
@@ -79,7 +79,7 @@ async function loadForecast() {
           if (sc.fx_mode === 'fixed' && sc.fx_rate > 0) creditAmt = creditAmt * sc.fx_rate;
           scheduledItems.push({
             date,
-            description: sc.description + ' 📅',
+            description: sc.description,
             amount: creditAmt,
             account_id: sc.transfer_to_account_id,
             categories: sc.categories,
@@ -219,7 +219,7 @@ function renderForecastTables(allItems, accounts) {
       const balClass = isNeg ? 'forecast-row-negative' : '';
       const scheduledBadge = t.isScheduled
         ? `<span class="badge" style="background:var(--amber-lt);color:var(--amber);border:1px solid rgba(180,83,9,.2);font-size:.65rem">${
-            t.transferLeg === 'credit' ? '📅 prog.↑' : t.transferLeg === 'debit' ? '📅 prog.↓' : '📅 prog.'
+            t.transferLeg === 'credit' ? 'Prog.↑' : t.transferLeg === 'debit' ? 'Prog.↓' : 'Programada'
           }</span>`
         : '';
       const catLine = t.categories

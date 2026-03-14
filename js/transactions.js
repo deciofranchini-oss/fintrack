@@ -295,10 +295,8 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const dateStr = `${d.getDate()} ${MON[d.getMonth()]}`;
 
-  // Category chip (goes ABOVE the amount, not in meta)
-  const cat = t.categories
-    ? `<span class="tx-cat-chip" style="--c:${t.categories.color}">${esc(t.categories.name)}</span>`
-    : '';
+  // Category line: directly below description, no extra visual chrome
+  const cat = t.categories ? esc(t.categories.name) : '';
 
   // Amount
   const cur = (t.currency || t.accounts?.currency || 'BRL').toUpperCase();
@@ -321,7 +319,7 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const meta = metaParts.length
     ? `<div class="tx-v2-meta">${metaParts.join('<span class="tx-v2-dot"> · </span>')}</div>`
     : '';
-  const catLine = cat ? `<div class="tx-v2-catline">${cat}</div>` : '';
+  const catLine = cat ? `<div class="tx-v2-category">${cat}</div>` : '';
 
   const attach   = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
   const pendDot  = isPending ? '<span class="tx-v2-pend">⏳</span>' : '';
