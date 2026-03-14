@@ -171,6 +171,10 @@ function _renderPricesPage() {
           <div class="price-stat-col"><span class="price-stat-lbl">Último</span><span class="price-stat-val">${last}</span></div>
           <div class="price-stat-col"><span class="price-stat-lbl">Registros</span><span class="price-stat-val">${item.record_count || 0}</span></div>
         </div>
+        <button class="price-card-add-btn" title="Adicionar a uma lista de compras"
+                onclick="event.stopPropagation();openAddToGroceryList('${item.id}','${esc(item.name).replace(/'/g,'\u0027')}','${esc(item.unit||'un')}',${item.last_price ?? 'null'})">
+          🛒
+        </button>
         <div class="price-card-chevron">›</div>
       </div>`;
     }).join('') + `</div>`;
@@ -1132,4 +1136,90 @@ async function _callPricesVision(apiKey, pending) {
   try { parsed = JSON.parse(clean); } catch { throw new Error('Resposta inválida da IA'); }
   if (parsed.error) throw new Error(parsed.error);
   return parsed;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   ADD TO GROCERY LIST — from the prices page
+══════════════════════════════════════════════════════════════════ */
+
+let _addToGrocery_item = null;
+
+async function openAddToGroceryList(itemId, itemName, itemUnit, lastPrice) {
+  _addToGrocery_item = { id: itemId, name: itemName, unit: itemUnit || 'un', lastPrice };
+
+  if (typeof _loadGroceryLists === 'function' && (!_grocery.lists || !_grocery.lists.length)) {
+    try { await _loadGroceryLists(); } catch(e) { console.warn('[prices→grocery]', e.message); }
+  }
+
+  const listSel = document.getElementById('addToGroceryListSel');
+  const itemLbl = document.getElementById('addToGroceryItemLabel');
+  const qtyEl   = document.getElementById('addToGroceryQty');
+  const priceEl = document.getElementById('addToGroceryPrice');
+
+  if (itemLbl) itemLbl.textContent = itemName + (itemUnit && itemUnit !== 'un' ? ` (${itemUnit})` : '');
+  if (qtyEl)   qtyEl.value   = '1';
+  if (priceEl) priceEl.value = lastPrice != null ? Number(lastPrice).toFixed(2) : '';
+
+  if (listSel) {
+    const lists = (_grocery.lists || []).filter(l => l.status !== 'done');
+    if (!lists.length) {
+      listSel.innerHTML = '<option value="">— Crie uma lista no Mercado primeiro —</option>';
+    } else {
+      listSel.innerHTML = '<option value="">Selecione a lista…</option>' +
+        lists.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+      if (_grocery.currentList) listSel.value = _grocery.currentList;
+    }
+  }
+
+  if (typeof openModal === 'function') openModal('addToGroceryModal');
+}
+
+async function confirmAddToGroceryList() {
+  const item   = _addToGrocery_item;
+  if (!item) return;
+
+  const listId = document.getElementById('addToGroceryListSel')?.value;
+  const qty    = parseFloat(document.getElementById('addToGroceryQty')?.value) || 1;
+  const price  = parseFloat(document.getElementById('addToGroceryPrice')?.value) || null;
+
+  if (!listId) { toast('Selecione uma lista', 'error'); return; }
+
+  const btn = document.getElementById('addToGroceryConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Adicionando…'; }
+
+  try {
+    const { error } = await sb.from('grocery_items').insert({
+      list_id:         listId,
+      family_id:       famId(),
+      name:            item.name,
+      unit:            item.unit,
+      qty,
+      price_item_id:   item.id,
+      suggested_price: price,
+      needs_mapping:   false,
+      checked:         false,
+    });
+    if (error) throw error;
+
+    await sb.from('grocery_lists')
+      .update({ status: 'open', updated_at: new Date().toISOString() })
+      .eq('id', listId);
+
+    if (typeof _loadGroceryLists === 'function') await _loadGroceryLists().catch(() => {});
+
+    if (_grocery.currentList === listId && typeof _loadGroceryItems === 'function') {
+      await _loadGroceryItems(listId);
+      if (typeof _renderGroceryItems === 'function') _renderGroceryItems();
+    }
+
+    const listName = (_grocery.lists || []).find(l => l.id === listId)?.name || 'lista';
+    toast(`✅ "${item.name}" adicionado à lista "${listName}"`, 'success');
+    if (typeof closeModal === 'function') closeModal('addToGroceryModal');
+    _addToGrocery_item = null;
+  } catch(e) {
+    toast('Erro ao adicionar: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Adicionar'; }
+  }
 }

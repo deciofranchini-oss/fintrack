@@ -229,35 +229,54 @@ async function removeGroceryItem(itemId) {
 // ─────────────────────────────────────────────────────────────────────────
 // ADICIONAR ITEM — modal com busca em price_items ou novo item
 // ─────────────────────────────────────────────────────────────────────────
-function openAddGroceryItem() {
+async function openAddGroceryItem() {
   const searchEl = document.getElementById('groceryItemSearch');
+  const sugEl    = document.getElementById('groceryItemSuggestions');
+  const formEl   = document.getElementById('groceryItemForm');
+  const badgeEl  = document.getElementById('groceryItemMappingBadge');
+
   if (searchEl) searchEl.value = '';
-  const sugEl = document.getElementById('groceryItemSuggestions');
-  if (sugEl) sugEl.innerHTML = '';
-  const formEl = document.getElementById('groceryItemForm');
-  if (formEl) formEl.style.display = 'none';
+  if (sugEl)    { sugEl.innerHTML = ''; sugEl.style.display = 'none'; }
+  if (formEl)   formEl.style.display = 'none';
+  if (badgeEl)  badgeEl.innerHTML = '';
+
   openModal('groceryAddItemModal');
-  setTimeout(() => searchEl?.focus(), 100);
+
+  // Ensure price_items are loaded — they live in prices.js _px.items
+  // If the user hasn't visited the Prices page yet, _px.items is empty.
+  // Load directly here so the catalog is always available.
+  if (!_px.items || !_px.items.length) {
+    if (typeof _loadPricesData === 'function') {
+      try { await _loadPricesData(); } catch(e) { console.warn('[grocery] _loadPricesData:', e.message); }
+    }
+  }
+
+  // Show full catalog immediately on open
+  setTimeout(() => {
+    searchGroceryItem('');
+    searchEl?.focus();
+  }, 80);
 }
 
 function searchGroceryItem(val) {
   const sugEl = document.getElementById('groceryItemSuggestions');
   if (!sugEl) return;
 
+  const allItems = _px?.items || [];
+
   if (!val || val.length < 1) {
-    // Show all price_items when empty (up to 20)
-    const allItems = (_px?.items || []).slice(0, 20);
-    if (!allItems.length) { sugEl.innerHTML = ''; return; }
-    _renderGrocerySearchResults(allItems, val);
+    // Show full catalog (up to 20) when field is empty
+    if (!allItems.length) {
+      sugEl.innerHTML = '<div style="padding:10px 12px;font-size:.8rem;color:var(--muted)">Catálogo de preços vazio. Adicione itens na página Preços.</div>';
+      sugEl.style.display = '';
+      return;
+    }
+    _renderGrocerySearchResults(allItems.slice(0, 20), val);
     return;
   }
 
   const q = val.toLowerCase().trim();
-  // Match against price_items
-  const matched = (_px?.items || []).filter(i =>
-    i.name.toLowerCase().includes(q)
-  ).slice(0, 10);
-
+  const matched = allItems.filter(i => i.name.toLowerCase().includes(q)).slice(0, 10);
   _renderGrocerySearchResults(matched, val);
 }
 
@@ -288,7 +307,9 @@ function _renderGrocerySearchResults(items, typedVal) {
       </div>`
     : '';
 
-  sugEl.innerHTML = rows.join('') + newRow;
+  const content = rows.join('') + newRow;
+  sugEl.innerHTML = content;
+  sugEl.style.display = content.trim() ? '' : 'none';
 }
 
 async function _fillGroceryItemForm(priceItemId, name, unit) {
