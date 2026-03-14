@@ -234,7 +234,10 @@ function renderForecastTables(allItems, accounts) {
           ${categoryLine}
           ${payeeLine}
         </td>
-        <td class="forecast-amount-cell ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">${(parseFloat(t.amount)||0)>=0?'+':''}${fmt(t.amount)}</td>
+        <td class="forecast-amount-cell ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">
+          <div class="forecast-amount-main">${(parseFloat(t.amount)||0)>=0?'+':''}${fmt(t.amount)}</div>
+          <div class="forecast-balance-mobile ${isNeg?'amount-neg':''}">Saldo: ${fmt(runningBalance,a.currency)}</div>
+        </td>
         <td class="forecast-balance forecast-balance-cell ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</td>
       </tr>`;
     }).join('');
@@ -259,7 +262,7 @@ function renderForecastTables(allItems, accounts) {
         ${txs.length ? `
         <div class="table-wrap" style="margin:0">
           <table>
-            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th><th style="text-align:right">Saldo Prev.</th></tr></thead>
+            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th><th class="forecast-balance-head" style="text-align:right">Saldo Prev.</th></tr></thead>
             <tbody>${rows}</tbody>
             <tfoot>
               <tr style="background:var(--surface2);font-weight:600">
