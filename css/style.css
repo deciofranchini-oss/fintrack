@@ -5794,3 +5794,34 @@ tr.tx-row-new td:first-child {
   font-weight: 400;
   margin-top: 1px;
 }
+
+/* ── Dashboard: favorite account cards ──────────────────────────── */
+.dash-acc-favs-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dash-acc-fav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-lt);
+  background: var(--accent-lt);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  position: relative;
+}
+.dash-acc-fav-row::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+}
+.dash-acc-fav-row--hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+}
