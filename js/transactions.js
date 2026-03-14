@@ -295,8 +295,7 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const dateStr = `${d.getDate()} ${MON[d.getMonth()]}`;
 
-  // Category line: directly below description, no extra visual chrome
-  const cat = t.categories ? esc(t.categories.name) : '';
+  const categoryLine = `<div class="tx-v2-category">${t.categories?.name ? esc(t.categories.name) : '&nbsp;'}</div>`;
 
   // Amount
   const cur = (t.currency || t.accounts?.currency || 'BRL').toUpperCase();
@@ -312,14 +311,11 @@ function txRow(t, showAccount=true, runningBalance=null) {
     ? `<div class="tx-v2-bal ${runningBalance >= 0 ? '' : 'neg'}">${fmt(runningBalance)}</div>`
     : '';
 
-  // Meta line: categoria -> conta -> beneficiário (all fixed on the left block)
+  // Meta line: Conta · Beneficiário
   const metaParts = [];
   if (showAccount && t.accounts?.name) metaParts.push(`<span class="tx-v2-acct">${esc(t.accounts.name)}</span>`);
   if (t.payees?.name)                  metaParts.push(`<span class="tx-v2-pay">${esc(t.payees.name)}</span>`);
-  const meta = metaParts.length
-    ? `<div class="tx-v2-meta">${metaParts.join('<span class="tx-v2-dot"> · </span>')}</div>`
-    : '';
-  const catLine = cat ? `<div class="tx-v2-category">${cat}</div>` : '';
+  const meta = `<div class="tx-v2-meta">${metaParts.length ? metaParts.join('<span class="tx-v2-dot"> · </span>') : '&nbsp;'}</div>`;
 
   const attach   = t.attachment_url ? ' <span class="tx-v2-clip" title="Anexo">📎</span>' : '';
   const pendDot  = isPending ? '<span class="tx-v2-pend">⏳</span>' : '';
@@ -328,13 +324,14 @@ function txRow(t, showAccount=true, runningBalance=null) {
     <td class="tx-v2-date">${dateStr}${pendDot}</td>
     <td class="tx-v2-body">
       <div class="tx-v2-title">${esc(t.description||'—')}${attach}</div>
-      ${catLine}
+      ${categoryLine}
       ${meta}
     </td>
     <td class="tx-v2-right">
       <div class="tx-v2-amt-wrap">${amtHtml}</div>
       ${balHtml}
     </td>
+    <td class="tx-v2-act"></td>
   </tr>`;
 }
 
@@ -369,7 +366,7 @@ function renderTransactions(){
 
   // ── FLAT VIEW ──
   const body = document.getElementById('txBody');
-  if(!txs.length){body.innerHTML='<tr><td colspan="3" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Nenhuma transação encontrada</td></tr>';return;}
+  if(!txs.length){body.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Nenhuma transação encontrada</td></tr>';return;}
   const pending   = txs.filter(t => (t.status||'confirmed')==='pending');
   const confirmed = txs.filter(t => (t.status||'confirmed')!=='pending');
   const sep = (pending.length && confirmed.length)

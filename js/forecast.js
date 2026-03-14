@@ -61,7 +61,7 @@ async function loadForecast() {
           if (originAmount !== 0) {
             scheduledItems.push({
               date,
-              description: sc.description,
+              description: sc.description + ' 📅',
               amount: originAmount,
               account_id: sc.account_id,
               categories: sc.categories,
@@ -79,7 +79,7 @@ async function loadForecast() {
           if (sc.fx_mode === 'fixed' && sc.fx_rate > 0) creditAmt = creditAmt * sc.fx_rate;
           scheduledItems.push({
             date,
-            description: sc.description,
+            description: sc.description + ' 📅',
             amount: creditAmt,
             account_id: sc.transfer_to_account_id,
             categories: sc.categories,
@@ -217,28 +217,25 @@ function renderForecastTables(allItems, accounts) {
       const isNeg    = runningBalance < 0;
       const rowClass = isPast ? 'forecast-row-past' : isToday ? 'forecast-row-today' : '';
       const balClass = isNeg ? 'forecast-row-negative' : '';
-      const scheduledBadge = t.isScheduled
-        ? `<span class="badge" style="background:var(--amber-lt);color:var(--amber);border:1px solid rgba(180,83,9,.2);font-size:.65rem">${
-            t.transferLeg === 'credit' ? 'Prog.↑' : t.transferLeg === 'debit' ? 'Prog.↓' : 'Programada'
-          }</span>`
-        : '';
-      const catLine = t.categories
-        ? `<div class="forecast-category">${esc(t.categories.name)}</div>`
-        : '';
-      const todayMarker = isToday ? '<span style="color:var(--accent);font-size:.65rem;margin-left:4px">●hoje</span>' : '';
-      // Feature 6: compact row — description + badges on one line, payee inline
-      return `<tr class="forecast-row ${rowClass} ${balClass}">
-        <td class="forecast-col-date" style="color:${isToday?'var(--accent)':'var(--muted)'}">${fmtDate(t.date)}${todayMarker}</td>
-        <td class="forecast-col-body">
-          <div class="forecast-desc-line">
-            <span class="forecast-desc-text">${esc(t.description||'')}</span>
-            ${scheduledBadge}
-          </div>
-          ${catLine}
-          ${t.payees?.name ? `<div class="forecast-payee">${esc(t.payees.name)}</div>` : ''}
+      const dateMeta = t.isScheduled
+        ? `<span class="forecast-date-flag">${t.transferLeg === 'credit' ? 'prog.↑' : t.transferLeg === 'debit' ? 'prog.↓' : 'prog.'}</span>`
+        : '<span class="forecast-date-flag">&nbsp;</span>';
+      const todayMarker = isToday ? '<span class="forecast-date-today">hoje</span>' : '<span class="forecast-date-today">&nbsp;</span>';
+      const categoryLine = `<div class="forecast-line forecast-category">${t.categories?.name ? esc(t.categories.name) : '&nbsp;'}</div>`;
+      const payeeLine = `<div class="forecast-line forecast-payee">${t.payees?.name ? esc(t.payees.name) : '&nbsp;'}</div>`;
+      return `<tr class="${rowClass} ${balClass} forecast-tx-row">
+        <td class="forecast-date-cell ${isToday ? 'forecast-date-cell--today' : ''}">
+          <div class="forecast-date-main">${fmtDate(t.date)}</div>
+          ${dateMeta}
+          ${todayMarker}
         </td>
-        <td class="forecast-col-amount ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">${(parseFloat(t.amount)||0)>=0?'+':''}${fmt(t.amount)}</td>
-        <td class="forecast-col-balance forecast-balance ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</td>
+        <td class="forecast-desc-cell">
+          <div class="forecast-line forecast-title">${esc(t.description||'')}</div>
+          ${categoryLine}
+          ${payeeLine}
+        </td>
+        <td class="forecast-amount-cell ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">${(parseFloat(t.amount)||0)>=0?'+':''}${fmt(t.amount)}</td>
+        <td class="forecast-balance forecast-balance-cell ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</td>
       </tr>`;
     }).join('');
 
@@ -261,14 +258,14 @@ function renderForecastTables(allItems, accounts) {
       <div class="forecast-table-wrap" id="forecastBody-${a.id}">
         ${txs.length ? `
         <div class="table-wrap" style="margin:0">
-          <table class="forecast-table">
-            <thead><tr><th class="forecast-th-date">Data</th><th class="forecast-th-desc">Descrição</th><th class="forecast-th-amount">Valor</th><th class="forecast-th-balance">Saldo Prev.</th></tr></thead>
+          <table>
+            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th><th style="text-align:right">Saldo Prev.</th></tr></thead>
             <tbody>${rows}</tbody>
             <tfoot>
-              <tr class="forecast-total-row">
-                <td colspan="2" class="forecast-total-label">Total do período</td>
-                <td class="forecast-total-amount ${periodSum>=0?'amount-pos':'amount-neg'}">${periodSum>=0?'+':''}${fmt(periodSum,a.currency)}</td>
-                <td class="forecast-total-balance forecast-balance ${finalBalance<0?'amount-neg':''}">${fmt(finalBalance,a.currency)}</td>
+              <tr style="background:var(--surface2);font-weight:600">
+                <td colspan="2" style="padding:7px 8px;font-size:.78rem">Total do período</td>
+                <td class="${periodSum>=0?'amount-pos':'amount-neg'}" style="text-align:right;padding:7px 8px">${periodSum>=0?'+':''}${fmt(periodSum,a.currency)}</td>
+                <td class="forecast-balance ${finalBalance<0?'amount-neg':''}" style="text-align:right;padding:7px 8px">${fmt(finalBalance,a.currency)}</td>
               </tr>
             </tfoot>
           </table>

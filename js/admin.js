@@ -27,6 +27,7 @@ async function toggleFamilyFeature(familyId, key, enabled) {
   if (key.startsWith('grocery_enabled_')) {
     try { await applyGroceryFeature?.(); } catch {}
   }
+  try { applyMenuVisibility?.(); } catch {}
   await loadFamiliesList();
 }
 
@@ -38,6 +39,7 @@ async function _loadFamilyFeatures(families) {
     keys.push('prices_enabled_'+f.id, 'grocery_enabled_'+f.id,
               'backup_enabled_'+f.id, 'snapshot_enabled_'+f.id);
   });
+  // Load from app_settings in batch
   try {
     const { data } = await sb.from('app_settings')
       .select('key,value,family_id')
@@ -46,16 +48,6 @@ async function _loadFamilyFeatures(families) {
       window._familyFeaturesCache[row.key] = (row.value === true || row.value === 'true');
     });
   } catch {}
-
-  // Fallback to localStorage so the Mercado flag never disappears from the family screen
-  keys.forEach(key => {
-    if (window._familyFeaturesCache[key] !== undefined) return;
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw === null) return;
-      window._familyFeaturesCache[key] = (raw === 'true' || raw === true);
-    } catch {}
-  });
 }
 
 async function loadFamiliesList() {
@@ -133,16 +125,13 @@ async function loadFamiliesList() {
     const backupOn   = fc[backupKey]   !== undefined ? !!fc[backupKey]   : true;
     const snapshotOn = fc[snapshotKey] !== undefined ? !!fc[snapshotKey] : true;
 
-    function modCheckbox(key, famId, label, emoji, on, force=false) {
-      return `<label class="fam-mod-check ${on?'on':''} ${force?'force':''}" title="${on?'Desativar':'Ativar'} ${label}">
-        <input type="checkbox" ${on ? 'checked' : ''}
-          onchange="toggleFamilyFeature('${famId}','${key}',this.checked)">
-        <span class="fam-mod-check-ui"></span>
-        <span class="fam-mod-check-text">${emoji} ${label}</span>
+    function flagCheckbox(label, famId, key, checked) {
+      return `<label class="fam-flag-item">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleFamilyFeature('${famId}','${key}',this.checked)">
+        <span>${label}</span>
       </label>`;
     }
 
-    // Member row
     const membersHtml = members.length
       ? members.map(u => `
         <div class="fam-member-row">
@@ -157,31 +146,31 @@ async function loadFamiliesList() {
         </div>`).join('')
       : '<div class="fam-empty-members">Nenhum membro nesta família</div>';
 
-    return `<div class="fam-card2">
-      <div class="fam-card2-header fam-card2-header--stacked">
-        <div class="fam-card2-topline">
+    return `<div class="fam-card2 fam-card2--stacked">
+      <div class="fam-card2-topline">
+        <div class="fam-card2-topmain">
           <div class="fam-card2-avatar">🏠</div>
           <div class="fam-card2-title-block">
             <div class="fam-card2-name">${esc(f.name)}</div>
             ${f.description ? `<div class="fam-card2-desc">${esc(f.description)}</div>` : ''}
-            <div class="fam-card2-count">${members.length} membro${members.length!==1?'s':''}</div>
           </div>
         </div>
-        <div class="fam-card2-actionsline">
-          <div class="fam-card2-flags">
-            ${modCheckbox(groceryKey,  fid, 'Mercado',  '🛒', groceryOn, true)}
-            ${modCheckbox(pricesKey,   fid, 'Preços',   '🏷️', pricesOn)}
-            ${modCheckbox(backupKey,   fid, 'Backup',   '☁️', backupOn)}
-            ${modCheckbox(snapshotKey, fid, 'Snapshot', '📸', snapshotOn)}
-          </div>
-          <div class="fam-card2-header-btns">
-            <button class="fam-hdr-btn" onclick="editFamily('${f.id}')" title="Editar">✏️</button>
-            <button class="fam-hdr-btn danger" onclick="deleteFamily('${f.id}','${esc(f.name)}')" title="Excluir">🗑</button>
-          </div>
+        <div class="fam-card2-header-btns">
+          <button class="fam-hdr-btn" onclick="editFamily('${f.id}')" title="Editar">✏️</button>
+          <button class="fam-hdr-btn danger" onclick="deleteFamily('${f.id}','${esc(f.name)}')" title="Excluir">🗑</button>
         </div>
       </div>
 
-      <!-- Members -->
+      <div class="fam-card2-subline">
+        <div class="fam-card2-count">${members.length} membro${members.length!==1?'s':''}</div>
+        <div class="fam-flags-row">
+          ${flagCheckbox('Mercado',  fid, groceryKey,  groceryOn)}
+          ${flagCheckbox('Preços',   fid, pricesKey,   pricesOn)}
+          ${flagCheckbox('Backup',   fid, backupKey,   backupOn)}
+          ${flagCheckbox('Snapshot', fid, snapshotKey, snapshotOn)}
+        </div>
+      </div>
+
       <div class="fam-section">
         <div class="fam-section-label">Membros</div>
         <div class="fam-members-list">${membersHtml}</div>

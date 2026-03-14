@@ -48,12 +48,12 @@ async function saveAppSetting(key, value) {
   }
   if (!sb) return;
   try {
-    let familyId = null;
-    const famScoped = String(key || '').match(/^(prices_enabled_|grocery_enabled_|backup_enabled_|snapshot_enabled_)(.+)$/);
-    if (famScoped?.[2]) familyId = famScoped[2];
+    let family_id = null;
+    const m = String(key||'').match(/^(prices_enabled_|grocery_enabled_|backup_enabled_|snapshot_enabled_)(.+)$/);
+    if (m) family_id = m[2];
 
-    const payload = { key, value };
-    if (familyId) payload.family_id = familyId;
+    const payload = { key, value: typeof value === 'object' ? value : value };
+    if (family_id) payload.family_id = family_id;
 
     // upsert: insert or update by key
     const { error } = await sb.from('app_settings')
@@ -624,8 +624,6 @@ const DEFAULT_MENU_VISIBILITY = {
   scheduled: true,
   categories: true,
   payees: true,
-  grocery: true,
-  prices: true,
   import: true,
   audit: true,
   settings: true
@@ -701,8 +699,6 @@ function _renderMenuVisibilityForm() {
     ['scheduled',   'Programados'],
     ['categories',  'Categorias'],
     ['payees',      'Beneficiários'],
-    ['grocery',     'Mercado'],
-    ['prices',      'Preços'],
     ['import',      'Importar'],
     ['audit',       'Auditoria (admin)'],
     ['settings',    'Configurações (admin)'],
