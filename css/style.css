@@ -5405,270 +5405,49 @@ tr.tx-pending { background: rgba(251,191,36,.05); }
   color:var(--muted);
 }
 @media (max-width: 640px) {
-  /* Colapsar completamente a coluna de saldo — sem espaço residual */
   .forecast-balance-head,
   .forecast-balance-cell {
     display:none !important;
     width:0 !important;
     min-width:0 !important;
-    max-width:0 !important;
     padding:0 !important;
     overflow:hidden !important;
-    white-space:nowrap !important;
   }
-  /* A tabela volta a layout automático para as 3 colunas restantes
-     ocuparem 100% da largura sem coluna "fantasma" */
   .forecast-table-wrap table {
     table-layout: auto !important;
   }
-  /* Coluna de valor expande para absorver o espaço liberado */
   .forecast-amount-cell {
     width: auto !important;
-    min-width: 96px;
+    min-width: 90px;
   }
-  /* Coluna de data mantém tamanho fixo pequeno */
-  .forecast-date-cell {
-    width: 70px !important;
-  }
-  /* Coluna de descrição ocupa todo o resto */
-  .forecast-desc-cell {
-    width: auto !important;
-  }
-  /* Mostrar saldo inline sob o valor */
   .forecast-balance-mobile {
     display:block;
   }
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   UX IMPROVEMENTS — v32
-   Melhorias visuais e interativas gerais
-══════════════════════════════════════════════════════════════════ */
+/* ── Módulo family toggle buttons ─────────────────────────────────── */
+.fam-mod-btn {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:5px 11px; border:1.5px solid var(--border);
+  border-radius:20px; background:var(--surface);
+  font-size:.78rem; font-weight:600; color:var(--text2);
+  cursor:pointer; transition:all .18s; user-select:none;
+}
+.fam-mod-btn:hover { border-color:var(--accent); background:var(--accent-lt); color:var(--accent); }
+.fam-mod-btn.active { border-color:var(--accent); background:var(--accent-lt); color:var(--accent); }
+.fam-mod-dot { font-size:.6rem; opacity:.7; }
+.fam-mod-btn.active .fam-mod-dot { opacity:1; }
 
-/* ── Budget card hover & clicável ────────────────────────────────── */
-.budget-card[style*="cursor:pointer"]:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0,0,0,.10);
-  transition: transform .18s ease, box-shadow .18s ease;
-}
-.budget-card {
-  transition: transform .18s ease, box-shadow .18s ease;
-}
+/* ── Budget card hover ───────────────────────────────────────────── */
+.budget-card { transition: transform .18s, box-shadow .18s; }
+.budget-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.10); }
 
-/* ── Budget child tags clicáveis ─────────────────────────────────── */
-.budget-child-tag {
-  transition: opacity .15s ease, transform .15s ease;
-}
-.budget-child-tag[onclick]:hover {
-  opacity: .82;
-  transform: scale(.97);
-}
-
-/* ── Cat tx-count badge hover ────────────────────────────────────── */
-.cat-tx-count[style*="cursor:pointer"] {
-  transition: background .15s, color .15s;
-}
-.cat-tx-count[style*="cursor:pointer"]:hover {
-  background: var(--accent-lt);
-  color: var(--accent);
-  border-radius: 20px;
-  padding: 1px 6px;
-}
-
-/* ── Family switching overlay ────────────────────────────────────── */
-.family-switching .content {
-  opacity: .45;
-  pointer-events: none;
-  transition: opacity .25s ease;
-}
-
-/* ── Loading skeleton pulse ──────────────────────────────────────── */
-@keyframes ft-skeleton-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .45; }
-}
-.ft-skeleton {
-  animation: ft-skeleton-pulse 1.3s ease-in-out infinite;
-  background: var(--bg2);
-  border-radius: 6px;
-  display: inline-block;
-}
-
-/* ── Budget drilldown & category history modal footer ────────────── */
-#budgetDrilldownModal .modal-footer,
-#categoryHistoryModal .modal-footer {
-  padding: 10px 16px;
-}
-
-/* ── Modals: smooth open on mobile ──────────────────────────────── */
-.modal-overlay.open .modal {
-  animation: ft-modal-in .22s cubic-bezier(.22,1,.36,1) both;
-}
-@keyframes ft-modal-in {
-  from { transform: translateY(24px) scale(.97); opacity: 0; }
-  to   { transform: translateY(0)    scale(1);   opacity: 1; }
-}
-
-/* ── Tx row running balance: align right & color ─────────────────── */
-.tx-v2-bal {
-  font-size: .7rem;
-  color: var(--accent);
-  font-weight: 600;
-  text-align: right;
-  margin-top: 2px;
-}
-.tx-v2-bal.neg {
-  color: var(--red);
-}
-
-/* ── Account card: balance always prominent ──────────────────────── */
-.account-balance {
-  font-size: 1.12rem;
-  font-weight: 700;
-  letter-spacing: -.01em;
-  margin-top: 4px;
-}
-
-/* ── Group modal existing list ───────────────────────────────────── */
-#groupList > div:hover {
-  background: var(--bg2) !important;
-  transition: background .15s;
-}
-
-/* ── Payee history & category history: alternating row ──────────── */
-#payeeHistoryBody tr:nth-child(even),
+/* ── History table alternating rows ─────────────────────────────── */
 #catHistoryBody tr:nth-child(even),
-#budgetDrillBody tr:nth-child(even) {
-  background: var(--surface2);
-}
-#payeeHistoryBody tr:hover,
+#budgetDrillBody tr:nth-child(even) { background:var(--surface2); }
 #catHistoryBody tr:hover,
-#budgetDrillBody tr:hover {
-  background: var(--accent-lt) !important;
-}
+#budgetDrillBody tr:hover { background:var(--accent-lt) !important; }
 
-/* ── Empty-state on small viewports ─────────────────────────────── */
-@media (max-width: 480px) {
-  .budget-child-tags {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .budget-card {
-    padding: 12px 12px 10px;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════════════
-   FAM-CARD-V2 — Card de família redesenhado (Gerenciar Famílias)
-══════════════════════════════════════════════════════════════════ */
-.fam-card-v2 {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  margin-bottom: 14px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm, 0 1px 4px rgba(0,0,0,.06));
-}
-
-/* Header */
-.fam-cv2-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface2);
-}
-.fam-cv2-avatar {
-  width: 40px; height: 40px;
-  border-radius: 10px;
-  background: var(--accent-lt);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.25rem; flex-shrink: 0;
-}
-.fam-cv2-info { flex: 1; min-width: 0; }
-.fam-cv2-name  { font-weight: 700; font-size: .95rem; color: var(--text); }
-.fam-cv2-desc  { font-size: .73rem; color: var(--muted); margin-top: 1px; }
-.fam-cv2-meta  { font-size: .7rem; color: var(--muted); margin-top: 3px; }
-
-/* Action buttons in header */
-.fam-cv2-actions {
-  display: flex; gap: 4px; flex-wrap: wrap;
-  align-items: flex-start; flex-shrink: 0;
-}
-.fam-cv2-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  font-size: .85rem;
-  cursor: pointer;
-  transition: background .15s, border-color .15s;
-  color: var(--text);
-}
-.fam-cv2-btn:hover { background: var(--bg2); border-color: var(--border2); }
-.fam-cv2-btn.danger { color: var(--red); }
-.fam-cv2-btn.danger:hover { background: var(--red-lt, #fef2f2); border-color: var(--red); }
-
-/* Sections */
-.fam-cv2-section {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.fam-cv2-section:last-child { border-bottom: none; }
-.fam-cv2-section-label {
-  font-size: .68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-
-/* Module toggle buttons */
-.fam-cv2-modules {
-  display: flex; gap: 8px; flex-wrap: wrap;
-}
-.fam-cv2-module-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface);
-  cursor: pointer;
-  font-size: .8rem; font-weight: 600;
-  color: var(--text2);
-  transition: all .18s ease;
-  user-select: none;
-}
-.fam-cv2-module-btn:hover {
-  border-color: var(--accent);
-  background: var(--accent-lt);
-  color: var(--accent);
-}
-.fam-cv2-module-btn.active {
-  border-color: var(--accent);
-  background: var(--accent-lt);
-  color: var(--accent);
-}
-.fam-cv2-mod-icon  { font-size: .95rem; }
-.fam-cv2-mod-label { font-size: .8rem; }
-.fam-cv2-mod-status {
-  font-size: .65rem;
-  opacity: .6;
-  transition: opacity .15s;
-}
-.fam-cv2-module-btn.active .fam-cv2-mod-status {
-  opacity: 1;
-  color: var(--accent);
-}
-
-/* Members list */
-.fam-cv2-members { display: flex; flex-direction: column; gap: 6px; }
-
-@media (max-width: 480px) {
-  .fam-cv2-actions { gap: 3px; }
-  .fam-cv2-btn { width: 28px; height: 28px; font-size: .78rem; }
-  .fam-cv2-module-btn { padding: 6px 10px; font-size: .76rem; }
-}
+/* ── Running balance in tx list ─────────────────────────────────── */
+.tx-v2-bal { font-size:.7rem; color:var(--accent); font-weight:600; text-align:right; margin-top:2px; }
+.tx-v2-bal.neg { color:var(--red); }
