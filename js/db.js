@@ -49,7 +49,8 @@ async function _wrap(label, fn, mode = 'load') {
 const _accounts = {
 
   async load(force = false) {
-    if (!force && _fresh('accounts') && state.accounts.length) return;
+    console.log('[DB] accounts.load force='+force+' fresh='+_fresh('accounts')+' len='+state.accounts.length);
+    if (!force && _fresh('accounts') && state.accounts.length) { console.log('[DB] accounts: returning from cache'); return; }
     return _once('accounts', () => _wrap('Carregando contas…', async () => {
       const cols = 'id,name,type,currency,color,icon,initial_balance,group_id,family_id,' +
                    'active,is_favorite,best_purchase_day,due_day,iof_rate,is_brazilian';

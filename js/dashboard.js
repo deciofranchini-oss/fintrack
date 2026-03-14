@@ -62,14 +62,20 @@ async function loadDashboardRecent(){
 
 
 async function loadDashboard(){
-  // Inicia FX em paralelo com os KPIs — nunca bloqueia o dashboard
-  // (FX pode demorar até 4s por moeda; KPIs são queries locais ao Supabase)
-  const fxPromise = initFxRates().catch(()=>{});
-  // Single orchestrated call: accounts (TTL-cached) + month txs + pending count
-  const [{ income, expense, total, pendingCount: _pendCount }] = await Promise.all([
-    DB.dashboard.loadKPIs(),
-    fxPromise,
-  ]);
+  console.log('[DASH] loadDashboard START, currentUser:', currentUser?.email, 'family_id:', currentUser?.family_id);
+  // Inicia FX em paralelo - não bloqueia
+  const fxPromise = initFxRates().catch(e => { console.warn('[DASH] FX error:', e); });
+  console.log('[DASH] calling loadKPIs...');
+  let kpiResult;
+  try {
+    kpiResult = await DB.dashboard.loadKPIs();
+    console.log('[DASH] loadKPIs OK:', kpiResult);
+  } catch(e) {
+    console.error('[DASH] loadKPIs FAILED:', e);
+    return;
+  }
+  await fxPromise;
+  const { income, expense, total, pendingCount: _pendCount } = kpiResult;
   const statTotalEl = document.getElementById('statTotal');
   const statIncomeEl = document.getElementById('statIncome');
   const statExpensesEl = document.getElementById('statExpenses');
