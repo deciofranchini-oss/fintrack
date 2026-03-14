@@ -291,8 +291,8 @@ async function bootApp(){
 
   populateSelects();
   // Start auto-check timer if configured
-  const _cfg = getAutoCheckConfig();
-  if(_cfg.enabled && _cfg.method === 'browser') applyAutoCheckTimer(_cfg);
+  const _cfg = (typeof getAutoCheckConfig === 'function') ? getAutoCheckConfig() : {};
+  if(_cfg.enabled && _cfg.method === 'browser' && typeof applyAutoCheckTimer === 'function') applyAutoCheckTimer(_cfg);
   // Datas padrão
   const ym=new Date().toISOString().slice(0,7);
   populateTxMonthFilter();
