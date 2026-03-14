@@ -236,9 +236,8 @@ function renderForecastTables(allItems, accounts) {
         </td>
         <td class="forecast-amount-cell ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">
           <div class="forecast-amount-main">${(parseFloat(t.amount)||0)>=0?'+':''}${fmt(t.amount)}</div>
-          <div class="forecast-balance-mobile ${isNeg?'amount-neg':''}">Saldo: ${fmt(runningBalance,a.currency)}</div>
+          <div class="forecast-balance-mobile ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</div>
         </td>
-        <td class="forecast-balance forecast-balance-cell ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</td>
       </tr>`;
     }).join('');
 
@@ -262,13 +261,16 @@ function renderForecastTables(allItems, accounts) {
         ${txs.length ? `
         <div class="table-wrap" style="margin:0">
           <table>
-            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th><th class="forecast-balance-head" style="text-align:right">Saldo Prev.</th></tr></thead>
+            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
             <tbody>${rows}</tbody>
             <tfoot>
               <tr style="background:var(--surface2);font-weight:600">
                 <td colspan="2" style="padding:7px 8px;font-size:.78rem">Total do período</td>
                 <td class="${periodSum>=0?'amount-pos':'amount-neg'}" style="text-align:right;padding:7px 8px">${periodSum>=0?'+':''}${fmt(periodSum,a.currency)}</td>
-                <td class="forecast-balance ${finalBalance<0?'amount-neg':''}" style="text-align:right;padding:7px 8px">${fmt(finalBalance,a.currency)}</td>
+              </tr>
+              <tr style="background:color-mix(in srgb,${accentColor} 8%,var(--surface));border-top:2px solid ${accentColor}40">
+                <td colspan="2" style="padding:7px 8px;font-size:.78rem;color:var(--muted);font-weight:600">Saldo final previsto</td>
+                <td class="${finalBalance<0?'amount-neg':''}" style="text-align:right;padding:7px 8px;font-weight:800;font-size:.95rem;font-family:var(--font-serif)">${fmt(finalBalance,a.currency)}</td>
               </tr>
             </tfoot>
           </table>
