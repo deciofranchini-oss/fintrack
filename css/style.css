@@ -5786,3 +5786,11 @@ tr.tx-row-new td:first-child {
   border-color: var(--accent);
   transform: scale(1.08);
 }
+
+/* ── Forecast: BRL equivalent line under foreign-currency amounts ─── */
+.forecast-amount-brl {
+  font-size: .72rem;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 1px;
+}
