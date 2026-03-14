@@ -1647,59 +1647,86 @@ async function _famToggleModule(famId, keyPrefix, cbId, btnId, applyFn) {
   const wasOn = cb.checked;
   const nowOn = !wasOn;
 
-  // Atualizar UI imediatamente (feedback instantâneo)
+  // 1. Feedback visual imediato — não espera o banco
   cb.checked = nowOn;
   btn.classList.toggle('active', nowOn);
   btn.querySelector('.fam-cv2-mod-status').textContent = nowOn ? '●' : '○';
   btn.title = (nowOn ? 'Desativar ' : 'Ativar ') + btn.querySelector('.fam-cv2-mod-label').textContent;
+  btn.disabled = true;
 
-  // Atualizar caches em memória e localStorage imediatamente
+  // 2. Caches locais — garantem funcionamento na sessão mesmo sem banco
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
   window._familyFeaturesCache[key] = nowOn;
   try { localStorage.setItem(key, String(nowOn)); } catch {}
-  if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) _appSettingsCache[key] = nowOn;
+  try { if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) _appSettingsCache[key] = nowOn; } catch {}
 
-  // Aplicar efeito visual na sidebar agora
+  // 3. Aplicar sidebar imediatamente
   try {
     if (applyFn && typeof window[applyFn] === 'function') await window[applyFn]();
-  } catch(e) { console.warn('[_famToggleModule] applyFn error:', e.message); }
+  } catch(e) { console.warn('[_famToggleModule] applyFn:', e.message); }
 
-  // Gravar no banco — estratégia tripla sem depender de constraints
+  // 4. Persistir no banco — 4 estratégias em cascata
+  let saved = false;
+  let lastErr = '';
+
   if (sb) {
-    let saved = false;
+    // A) RPC SECURITY DEFINER — bypassa RLS (requer migration_family_feature_flags.sql)
     try {
-      // Tentativa 1: UPDATE onde key E family_id batem
-      const { data: upd } = await sb.from('app_settings')
-        .update({ value: nowOn })
-        .eq('key', key)
-        .eq('family_id', famId)
-        .select('key');
-      if (upd && upd.length > 0) { saved = true; }
-    } catch {}
+      const { error: rpcErr } = await sb.rpc('set_family_feature_flag', {
+        p_family_id: famId,
+        p_key:       key,
+        p_value:     nowOn,
+      });
+      if (!rpcErr) { saved = true; }
+      else {
+        lastErr = rpcErr.message;
+        // Só loga se não for "function does not exist" (migration pendente)
+        if (!rpcErr.message?.includes('exist') && !rpcErr.message?.includes('function')) {
+          console.warn('[_famToggleModule] RPC:', rpcErr.message);
+        }
+      }
+    } catch(e) { lastErr = e.message; }
 
+    // B) Upsert direto (funciona para admin global com RLS permissiva)
     if (!saved) {
       try {
-        // Tentativa 2: INSERT direto
-        await sb.from('app_settings').insert({ key, value: nowOn, family_id: famId });
-        saved = true;
-      } catch(e2) {
-        // Pode falhar se já existe sem family_id — Tentativa 3: UPDATE só por key
-        try {
-          await sb.from('app_settings').update({ value: nowOn }).eq('key', key);
-          saved = true;
-        } catch {}
-      }
+        const { error: e } = await sb.from('app_settings')
+          .upsert({ key, value: nowOn, family_id: famId }, { onConflict: 'key' });
+        if (!e) { saved = true; } else { lastErr = e.message; }
+      } catch(e) { lastErr = e.message; }
     }
 
-    if (saved) {
-      toast(nowOn ? `✓ Módulo ativado` : 'Módulo desativado', 'success');
-    } else {
-      // Banco falhou mas localStorage tem o valor — funciona na sessão atual
-      toast(nowOn ? `✓ Ativado (salvo localmente)` : 'Desativado (salvo localmente)', 'warning');
-      console.warn('[_famToggleModule] DB save failed for key:', key, '— using localStorage');
+    // C) UPDATE por key (row já existe)
+    if (!saved) {
+      try {
+        const { error: e } = await sb.from('app_settings')
+          .update({ value: nowOn, family_id: famId }).eq('key', key);
+        if (!e) { saved = true; } else { lastErr = e.message; }
+      } catch(e) { lastErr = e.message; }
     }
+
+    // D) INSERT (row não existe ainda)
+    if (!saved) {
+      try {
+        const { error: e } = await sb.from('app_settings')
+          .insert({ key, value: nowOn, family_id: famId });
+        if (!e) { saved = true; } else { lastErr = e.message; }
+      } catch(e) { lastErr = e.message; }
+    }
+  }
+
+  btn.disabled = false;
+
+  if (!sb || saved) {
+    toast(nowOn ? '✓ Módulo ativado' : 'Módulo desativado', 'success');
   } else {
-    toast(nowOn ? `✓ Ativado` : 'Desativado', 'success');
+    console.error('[_famToggleModule] Todos os métodos falharam:', lastErr);
+    toast(
+      nowOn
+        ? '✓ Ativado nesta sessão · Aplique migration_family_feature_flags.sql para persistir'
+        : 'Desativado nesta sessão',
+      'warning'
+    );
   }
 }
 

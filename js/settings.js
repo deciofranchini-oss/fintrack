@@ -3,10 +3,17 @@ let _appSettingsCache = null; // in-memory cache after first load
 async function loadAppSettings() {
   if (!sb) return;
   try {
-    const { data, error } = await sb.from('app_settings').select('key, value').limit(200);
+    const { data, error } = await sb.from('app_settings').select('key, value, family_id').limit(500);
     if (error) throw error;
     _appSettingsCache = {};
     (data || []).forEach(row => { _appSettingsCache[row.key] = row.value; });
+    // Alimentar _familyFeaturesCache com flags de família vindos do banco
+    if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
+    (data || []).forEach(row => {
+      if (/^(grocery_enabled_|prices_enabled_|backup_enabled_|snapshot_enabled_)/.test(row.key)) {
+        window._familyFeaturesCache[row.key] = (row.value === true || row.value === 'true');
+      }
+    });
     // Apply logo override (if any)
     const logo = _appSettingsCache['app_logo_url'] || '';
     if (typeof setAppLogo === 'function') setAppLogo(logo);
@@ -40,73 +47,44 @@ async function loadAppSettings() {
 }
 
 async function saveAppSetting(key, value) {
-  // 1. Sempre persiste localmente — funciona mesmo sem banco
-  const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  try { localStorage.setItem(key, strVal); } catch {}
+  // Persiste localmente como fallback imediato
+  try { localStorage.setItem(key, typeof value === 'object' ? JSON.stringify(value) : String(value)); } catch {}
 
-  // 2. Atualizar cache em memória imediatamente
+  // Atualiza cache em memória
   if (!_appSettingsCache) _appSettingsCache = {};
   _appSettingsCache[key] = value;
 
   if (!sb) return;
 
   try {
-    // Detectar se é setting de família (tem family_id no key)
     const m = String(key || '').match(/^(prices_enabled_|grocery_enabled_|backup_enabled_|snapshot_enabled_)(.+)$/);
     const family_id = m ? m[2] : null;
-
     const payload = { key, value };
     if (family_id) payload.family_id = family_id;
 
-    // Estratégia robusta: tenta UPDATE primeiro.
-    // Se não atualizou nenhuma row (rowCount=0), faz INSERT.
-    // Isso evita dependência de constraints únicas específicas do banco.
-    let updated = false;
-
+    // Usa RPC SECURITY DEFINER para feature flags de família (bypassa RLS)
     if (family_id) {
-      const { data: upd, error: updErr } = await sb.from('app_settings')
-        .update({ value })
-        .eq('key', key)
-        .eq('family_id', family_id)
-        .select('key');
-      if (updErr) {
-        console.warn('[saveAppSetting] UPDATE error:', updErr.message, updErr.code);
-      } else {
-        updated = (upd && upd.length > 0);
-      }
-    } else {
-      const { data: upd, error: updErr } = await sb.from('app_settings')
-        .update({ value })
-        .eq('key', key)
-        .select('key');
-      if (updErr) {
-        console.warn('[saveAppSetting] UPDATE error:', updErr.message, updErr.code);
-      } else {
-        updated = (upd && upd.length > 0);
+      const { error: rpcErr } = await sb.rpc('set_family_feature_flag', {
+        p_family_id: family_id,
+        p_key:       key,
+        p_value:     !!value,
+      });
+      if (!rpcErr) return; // sucesso via RPC
+      // RPC não existe → fallback para upsert direto
+      if (!rpcErr.message?.includes('exist')) {
+        console.warn('[saveAppSetting] RPC error:', rpcErr.message);
       }
     }
 
-    // Se UPDATE não encontrou a row, INSERT
-    if (!updated) {
-      const { error: insErr } = await sb.from('app_settings').insert(payload);
-      if (insErr) {
-        console.warn('[saveAppSetting] INSERT error:', insErr.message, insErr.code);
-        // Última tentativa: upsert ignorando conflito
-        const { error: upsErr } = await sb.from('app_settings')
-          .upsert(payload, { onConflict: family_id ? 'key,family_id' : 'key', ignoreDuplicates: false });
-        if (upsErr) {
-          console.error('[saveAppSetting] All strategies failed for key:', key, upsErr.message);
-          throw upsErr;
-        }
-      }
-    }
+    // Upsert direto (funciona para admin global ou quando RPC não existe)
+    const { error } = await sb.from('app_settings')
+      .upsert(payload, { onConflict: 'key' });
+    if (error) throw error;
 
   } catch(e) {
-    // Não lançar — o valor já está salvo no localStorage como fallback
-    console.warn('[saveAppSetting] DB error (using localStorage fallback):', key, e.message);
+    console.warn('[saveAppSetting] DB error (localStorage ok):', e.message);
   }
 }
-
 async function getAppSetting(key, defaultValue = null) {
   if (_appSettingsCache && key in _appSettingsCache) return _appSettingsCache[key];
   // Fallback localStorage
