@@ -2055,24 +2055,55 @@ async function loadUsersList() {
 }
 
 function showNewUserForm() {
+  switchUATab('users'); // ensure we're on the users tab
+
+  const formArea = document.getElementById('userFormArea');
   document.getElementById('userFormTitle').textContent = 'Novo Usuário';
-  document.getElementById('editUserId').value = '';
-  document.getElementById('uName').value = '';
-  document.getElementById('uEmail').value = '';
-  document.getElementById('uPassword').value = '';
-  document.getElementById('uRole').value = 'user';
-  const initFamSel = document.getElementById('uInitFamilyId');
-  if (initFamSel) { initFamSel.innerHTML = '<option value="">— Nenhuma (admin global) —</option>' + _families.map(f => `<option value="${f.id}">${esc(_familyDisplayName(f.id, f.name||''))}</option>`).join(''); initFamSel.value = ''; }
-  const initRoleSel = document.getElementById('uInitFamilyRole'); if (initRoleSel) initRoleSel.value = 'user';
-  document.getElementById('pView').checked = true;
-  document.getElementById('pCreate').checked = true;
-  document.getElementById('pEdit').checked = true;
-  document.getElementById('pDelete').checked = false;
-  document.getElementById('pExport').checked = true;
-  document.getElementById('pImport').checked = false;
-  document.getElementById('pwdHint').textContent = '(mín. 8 chars)';
-  if (pSchoolNew) pSchoolNew.checked = true;
-  document.getElementById('userFormArea').style.display = '';
+
+  // Clear form fields
+  const _set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  _set('uName', ''); _set('uEmail', ''); _set('uPassword', '');
+  // Target specifically the hidden field inside userFormArea (not legacy)
+  const hiddenId = formArea?.querySelector('input[type="hidden"][id="editUserId"]')
+                || formArea?.querySelector('input[type="hidden"]');
+  if (hiddenId) hiddenId.value = '';
+
+  const roleEl = document.getElementById('uRole'); if (roleEl) roleEl.value = 'user';
+
+  // Show family selector for new users
+  const initFamSel  = document.getElementById('uInitFamilyId');
+  const initRoleSel = document.getElementById('uInitFamilyRole');
+  const initFamLabel = formArea?.querySelector('label[for="uInitFamilyId"]');
+  if (initFamSel) {
+    initFamSel.style.display = '';
+    initFamSel.innerHTML = '<option value="">— Nenhuma (admin global) —</option>' +
+      _families.map(f => `<option value="${f.id}">${esc(_familyDisplayName(f.id, f.name||''))}</option>`).join('');
+    initFamSel.value = '';
+  }
+  if (initRoleSel) { initRoleSel.style.display = ''; initRoleSel.value = 'user'; }
+  if (initFamLabel) initFamLabel.style.display = '';
+
+  const _chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  _chk('pView', true); _chk('pCreate', true); _chk('pEdit', true);
+  _chk('pDelete', false); _chk('pExport', true); _chk('pImport', false);
+
+  const pwdHint = document.getElementById('pwdHint'); if (pwdHint) pwdHint.textContent = '(mín. 8 chars)';
+
+  // Reset avatar
+  const avatarPreview = document.getElementById('uAvatarPreview');
+  if (avatarPreview) { avatarPreview.innerHTML = ''; }
+  const removeBtn = document.getElementById('uAvatarRemoveBtn');
+  if (removeBtn) removeBtn.style.display = 'none';
+  const removeFlag = document.getElementById('uAvatarRemoveFlag');
+  if (removeFlag) removeFlag.value = '';
+
+  formArea.style.display = '';
+
+  // Scroll modal to top so the form is visible
+  const modal = document.getElementById('userAdminModal')?.querySelector('.modal');
+  if (modal) modal.scrollTop = 0;
+
+  setTimeout(() => document.getElementById('uName')?.focus(), 120);
 }
 
 async function editUser(userId) {
@@ -2256,20 +2287,47 @@ async function saveUser() {
     }
     if (error) throw error;
 
-    // Para novos usuários: vincular família inicial se informada
-    if (!userId) {
-      const initFam = document.getElementById('uInitFamilyId')?.value;
+    // Para novos usuários: vincular família + criar conta Auth + enviar e-mail
+    if (!userId && savedId) {
+      const initFam  = document.getElementById('uInitFamilyId')?.value;
       const initRole = document.getElementById('uInitFamilyRole')?.value || 'user';
-      if (initFam && savedId) {
+      const famName  = _families.find(f => f.id === initFam)?.name || null;
+
+      if (initFam) {
         await sb.from('family_members').upsert(
           { user_id: savedId, family_id: initFam, role: initRole },
           { onConflict: 'user_id,family_id' }
         );
         await sb.from('app_users').update({ family_id: initFam }).eq('id', savedId);
       }
+
+      // Create Supabase Auth account so the user can actually log in
+      try {
+        const { error: signUpErr } = await sb.auth.signUp({
+          email:    email,
+          password: pwd,
+          options:  { data: { display_name: name } }
+        });
+        const signUpMsg = (signUpErr?.message || '').toLowerCase();
+        if (signUpErr && !signUpMsg.includes('already') && !signUpMsg.includes('registered') && !signUpMsg.includes('exists')) {
+          console.warn('[saveUser] signUp warning:', signUpErr.message);
+        }
+      } catch(authErr) {
+        console.warn('[saveUser] Auth creation warning:', authErr.message);
+      }
+
+      // Send welcome email
+      try {
+        await _sendNewUserWelcomeEmail(email, name, famName, pwd);
+      } catch(emailErr) {
+        console.warn('[saveUser] Welcome email warning:', emailErr.message);
+      }
     }
 
-    toast(userId ? '✓ Usuário atualizado!' : '✓ Usuário criado!', 'success');
+    const successMsg = userId
+      ? `✓ Usuário ${name} atualizado com sucesso!`
+      : `✓ Usuário ${name} criado! E-mail de boas-vindas enviado.`;
+    toast(successMsg, 'success');
     document.getElementById('userFormArea').style.display = 'none';
     if (userId === currentUser?.id) {
       if (record.avatar_url !== undefined) currentUser.avatar_url = record.avatar_url;
@@ -2370,12 +2428,22 @@ async function doApproveUser() {
     // ── 6. Enviar email de aprovação ─────────────────────────────────────
     await _sendApprovalEmail(userEmail, displayName, familyName);
 
+    // Show success state in modal before closing
+    const approvalBody = document.querySelector('#approvalModal .modal-body');
+    if (approvalBody) {
+      approvalBody.innerHTML = `
+        <div style="text-align:center;padding:28px 20px">
+          <div style="font-size:3rem;margin-bottom:12px">✅</div>
+          <div style="font-size:1rem;font-weight:700;color:var(--green);margin-bottom:6px">${esc(displayName)} aprovado!</div>
+          ${familyName ? `<div style="font-size:.85rem;color:var(--muted)">Família: <strong>${esc(familyName)}</strong></div>` : ''}
+          <div style="font-size:.78rem;color:var(--muted);margin-top:10px">📧 E-mail de boas-vindas enviado.</div>
+        </div>`;
+    }
     toast('✓ ' + displayName + ' aprovado!' + (familyName ? ' Família: ' + familyName : ''), 'success');
-    closeModal('approvalModal');
     await loadUsersList();
     await _checkPendingApprovals();
-    // Atualizar aba pendentes no modal se estiver aberto
     if (document.getElementById('uaPending')?.style.display !== 'none') _renderPendingTab();
+    setTimeout(() => closeModal('approvalModal'), 2000);
 
   } catch(e) {
     console.error('[doApproveUser]', e);
@@ -2559,6 +2627,67 @@ async function _sendApprovalEmail(email, name, familyName) {
   } catch(e) { console.warn('[approval] _sendApprovalEmail:', e.message); }
 }
 
+
+async function _sendNewUserWelcomeEmail(email, name, familyName, tempPassword) {
+  if (!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey) return;
+  const tplId = EMAILJS_CONFIG.scheduledTemplateId || EMAILJS_CONFIG.templateId;
+  if (!tplId) return;
+
+  const nameEsc = (name || 'Usuário').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  const famEsc  = (familyName || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  const appUrl  = window.location.origin + window.location.pathname;
+
+  const famBlock = familyName
+    ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:6px;padding:12px 16px;margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;color:#166534;margin-bottom:2px">&#128106; Família vinculada</div>
+        <div style="font-size:13px;color:#15803d">${famEsc}</div>
+       </div>`
+    : '';
+
+  const body =
+    '<div style="font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;padding:24px">' +
+    '<div style="max-width:540px;margin:0 auto;background:#fff;border:1px solid #e6e8f0;border-radius:12px;overflow:hidden">' +
+
+    '<div style="background:linear-gradient(135deg,#1e5c42,#2a6049);padding:22px 28px">' +
+    '<div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:4px">Family FinTrack</div>' +
+    '<div style="font-size:22px;font-weight:700;color:#fff">&#127881; Bem-vindo(a)!</div>' +
+    '</div>' +
+
+    '<div style="padding:24px 28px">' +
+    `<p style="font-size:15px;font-weight:600;color:#111827;margin:0 0 12px">Olá, ${nameEsc}!</p>` +
+    '<p style="font-size:14px;color:#374151;margin:0 0 20px;line-height:1.6">' +
+    'Sua conta no <strong>Family FinTrack</strong> foi criada pelo administrador. Você já pode acessar o sistema.' +
+    '</p>' +
+
+    famBlock +
+
+    '<div style="background:#fef9e8;border:1px solid #fcd34d;border-radius:8px;padding:14px 16px;margin-bottom:20px">' +
+    '<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">&#128273; Seus dados de acesso</div>' +
+    `<div style="font-size:13px;color:#374151;margin-bottom:4px"><strong>E-mail:</strong> ${email}</div>` +
+    `<div style="font-size:13px;color:#374151;margin-bottom:12px"><strong>Senha temporária:</strong> <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:12px">${tempPassword}</code></div>` +
+    '<div style="font-size:12px;color:#92400e">&#9888; Altere sua senha após o primeiro login em Configurações → Conta &amp; Segurança.</div>' +
+    '</div>' +
+
+    `<div style="text-align:center;margin-bottom:24px"><a href="${appUrl}" style="display:inline-block;background:#2a6049;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">Acessar o Family FinTrack →</a></div>` +
+
+    '<p style="font-size:12px;color:#9ca3af;margin:0">Se você não esperava este e-mail, entre em contato com o administrador.</p>' +
+    '</div>' +
+
+    '<div style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e2e8f0">' +
+    '<div style="font-size:11px;color:#9ca3af">Family FinTrack &middot; Bem-vindo(a) à família!</div>' +
+    '</div>' +
+    '</div></div>';
+
+  try {
+    emailjs.init(EMAILJS_CONFIG.publicKey);
+    await emailjs.send(EMAILJS_CONFIG.serviceId, tplId, {
+      to_email:       email,
+      Subject:        'Family FinTrack — Sua conta foi criada!',
+      month_year:     new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+      report_content: body,
+    });
+  } catch(e) { console.warn('[saveUser] emailjs send:', e.message); }
+}
 async function rejectUser(userId, userName) {
   if (!confirm(`Rejeitar e excluir solicitação de ${userName}?`)) return;
   const { error } = await sb.from('app_users').delete().eq('id', userId);
