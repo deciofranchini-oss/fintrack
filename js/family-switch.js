@@ -1,31 +1,9 @@
-
 import { STORE, resetFamilyState } from "./store.js";
 import { loadFamilyData } from "./loaders.js";
-
-function clearUI(){
-
-  const sections = [
-    "#accounts-list",
-    "#transactions-list",
-    "#forecastAccountsContainer",
-    "#budgets-list",
-    "#reports-container",
-    "#grocery-list",
-    "#prices-list"
-  ];
-
-  sections.forEach(sel=>{
-    const el = document.querySelector(sel);
-    if(el) el.innerHTML = "";
-  });
-
-}
 
 export async function switchFamily(familyId){
 
   showFamilyLoading();
-
-  clearUI();
 
   resetFamilyState();
 
