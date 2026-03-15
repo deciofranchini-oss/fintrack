@@ -1606,9 +1606,37 @@ async function loadFamiliesList() {
                   onclick="inviteToFamily('${f.id}','${esc(f.name).replace(/'/g,"\\'")}')"
                   style="font-size:.78rem;white-space:nowrap">📨 Convidar</button>
         </div>
+
+        ${(isGlobalAdmin || members.some(m => m.user_id === currentUser?.id && m.member_role === 'owner')) ? `
+        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:.82rem;font-weight:700;color:var(--text)">👨&#x200D;👩&#x200D;👧 Membros da Família</span>
+              <span id="fmcBadge-${f.id}" style="font-size:.7rem;color:var(--muted)">carregando…</span>
+            </div>
+            <button class="btn btn-primary btn-sm"
+              onclick="openFamilyMemberFormForFamily('${f.id}')"
+              style="font-size:.75rem;padding:4px 10px">+ Membro</button>
+          </div>
+          <div id="fmcList-${f.id}" style="display:flex;flex-direction:column;gap:6px">
+            <div style="color:var(--muted);font-size:.78rem;text-align:center;padding:10px 0">Carregando…</div>
+          </div>
+        </div>` : ''}
       </div>
     </div>`;
   }).join('');
+
+  // Load family composition (members) for each visible family where user is owner/admin
+  setTimeout(async () => {
+    for (const f of visibleFamilies) {
+      const members_for_f = membersByFamily[f.id] || [];
+      const isOwnerOfThis  = isGlobalAdmin ||
+        members_for_f.some(m => m.user_id === currentUser?.id && m.member_role === 'owner');
+      if (isOwnerOfThis && typeof _loadAndRenderFmcForFamily === 'function') {
+        _loadAndRenderFmcForFamily(f.id).catch(() => {});
+      }
+    }
+  }, 0);
 
   // Sync button states from cache (in case cache updated after render)
   setTimeout(() => {

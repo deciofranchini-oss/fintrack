@@ -537,3 +537,186 @@ async function createFirstFamily() {
     if (btn) { btn.disabled = false; btn.textContent = '🏠 Criar minha família'; }
   }
 }
+
+// ── Per-family panel (used inside family cards in userAdminModal) ────────────
+
+/**
+ * Load family composition for a specific family_id and render into
+ * the #fmcList-{familyId} and #fmcBadge-{familyId} elements inside the family card.
+ */
+async function _loadAndRenderFmcForFamily(familyId) {
+  const listEl  = document.getElementById(`fmcList-${familyId}`);
+  const badgeEl = document.getElementById(`fmcBadge-${familyId}`);
+  if (!listEl) return;
+
+  try {
+    const { data, error } = await sb
+      .from('family_composition')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('type', { ascending: false })
+      .order('name');
+
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        listEl.innerHTML = `<div style="font-size:.75rem;color:var(--amber,#b45309);padding:8px 10px;
+            background:var(--amber-lt);border:1px solid var(--amber);border-radius:6px">
+          ⚠️ Execute <code>migration_family_composition.sql</code> no Supabase para habilitar.
+          <button class="btn btn-ghost btn-sm" style="font-size:.7rem;margin-top:4px;display:block"
+            onclick="showFamilyCompositionMigration()">📋 Ver SQL</button>
+        </div>`;
+        if (badgeEl) badgeEl.textContent = '— sem tabela';
+        return;
+      }
+      throw error;
+    }
+
+    const members = data || [];
+    const adults   = members.filter(m => m.type === 'adult').length;
+    const children = members.filter(m => m.type === 'child').length;
+
+    if (badgeEl) {
+      badgeEl.textContent = members.length
+        ? `${members.length} membro${members.length !== 1 ? 's' : ''} · ${adults} adulto${adults !== 1 ? 's' : ''} · ${children} criança${children !== 1 ? 's' : ''}`
+        : '— nenhum membro';
+    }
+
+    if (!members.length) {
+      listEl.innerHTML = `<div style="font-size:.78rem;color:var(--muted);text-align:center;
+          padding:10px 0;font-style:italic">
+        Nenhum membro cadastrado. Clique em "+ Membro" para adicionar.
+      </div>`;
+      return;
+    }
+
+    listEl.innerHTML = members.map(m => {
+      const rel  = FMC_RELATIONS.find(r => r.value === m.relation);
+      const emoji = m.avatar_emoji || FMC_DEFAULT_EMOJI[m.type] || '👤';
+      const typeColor = m.type === 'adult' ? '#1d4ed8' : '#15803d';
+      const typeBg    = m.type === 'adult' ? '#eff6ff' : '#f0fdf4';
+      const typeLabel = m.type === 'adult' ? 'Adulto' : 'Criança';
+      const age = m.birth_year ? ` · ${new Date().getFullYear() - m.birth_year} anos` : '';
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;
+             background:var(--surface2);border:1px solid var(--border);border-radius:8px">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--accent-lt);
+               display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0">
+            ${emoji}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${esc(m.name)}
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:2px">
+              <span style="font-size:.65rem;font-weight:700;padding:1px 5px;border-radius:3px;
+                background:${typeBg};color:${typeColor}">${typeLabel}</span>
+              ${rel ? `<span style="font-size:.7rem;color:var(--muted)">${esc(rel.label)}${age}</span>` : ''}
+            </div>
+          </div>
+          <button class="btn-icon" title="Editar"
+            onclick="openFamilyMemberFormForFamily('${familyId}','${m.id}')">✏️</button>
+          <button class="btn-icon" title="Excluir" style="color:var(--red)"
+            onclick="deleteFamilyMemberFromFamily('${familyId}','${m.id}','${esc(m.name).replace(/'/g,"\\'")}')">🗑</button>
+        </div>`;
+    }).join('');
+
+    // Also update the global _fmc cache if this is the current user's active family
+    if (familyId === currentUser?.family_id) {
+      _fmc.members = members;
+      _fmc.loaded  = true;
+      refreshAllFamilyMemberSelects();
+    }
+  } catch (e) {
+    if (listEl) listEl.innerHTML = `<div style="color:var(--red);font-size:.76rem;padding:6px">
+      Erro ao carregar: ${esc(e?.message || e)}</div>`;
+  }
+}
+
+/**
+ * Open the member form tied to a specific family card.
+ * familyId is passed explicitly so this works for any family (not just the active one).
+ */
+function openFamilyMemberFormForFamily(familyId, memberId = null) {
+  // Build a temporary override: swap famId() context for this call
+  const _origFamId = currentUser?.family_id;
+  if (currentUser) currentUser._tempFamilyId = familyId;
+
+  // Open the standard form — it calls famId() which we patch below
+  openFamilyMemberForm(memberId);
+
+  // Patch: after modal is open, store familyId on a hidden field
+  setTimeout(() => {
+    let hiddenFid = document.getElementById('fmcFamilyId');
+    if (!hiddenFid) {
+      hiddenFid = document.createElement('input');
+      hiddenFid.type = 'hidden';
+      hiddenFid.id   = 'fmcFamilyId';
+      document.getElementById('fmcMemberModal')?.querySelector('.modal-body')?.appendChild(hiddenFid);
+    }
+    hiddenFid.value = familyId;
+    // Override the save callback to refresh the right card
+    const saveBtn = document.getElementById('fmcMemberModal')?.querySelector('button[onclick="saveFamilyMember()"]');
+    if (saveBtn) saveBtn.setAttribute('onclick', `saveFamilyMemberForFamily('${familyId}')`);
+  }, 50);
+}
+
+async function saveFamilyMemberForFamily(familyId) {
+  const memberId = document.getElementById('fmcMemberId')?.value || '';
+  const name     = document.getElementById('fmcName')?.value.trim();
+  const type     = document.getElementById('fmcType')?.value;
+  const relation = document.getElementById('fmcRelation')?.value;
+  const birthYearVal = document.getElementById('fmcBirthYear')?.value;
+  const emoji    = document.getElementById('fmcEmoji')?.value.trim() || FMC_DEFAULT_EMOJI[type];
+  const errEl    = document.getElementById('fmcError');
+
+  if (!name) {
+    if (errEl) { errEl.textContent = 'Informe o nome do membro.'; errEl.style.display = ''; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  const record = {
+    family_id:    familyId,
+    name,
+    type,
+    relation,
+    birth_year:   birthYearVal ? parseInt(birthYearVal) : null,
+    avatar_emoji: emoji,
+  };
+
+  try {
+    let error;
+    if (memberId) {
+      ({ error } = await sb.from('family_composition').update(record).eq('id', memberId));
+    } else {
+      ({ error } = await sb.from('family_composition').insert(record));
+    }
+    if (error) throw error;
+
+    toast(memberId ? '✓ Membro atualizado!' : '✓ Membro adicionado!', 'success');
+    closeModal('fmcMemberModal');
+
+    // Refresh the specific family card section
+    await _loadAndRenderFmcForFamily(familyId);
+
+    // If active family, also bust global cache and refresh selects
+    if (familyId === currentUser?.family_id) {
+      await loadFamilyComposition(true);
+      refreshAllFamilyMemberSelects();
+    }
+  } catch (e) {
+    if (errEl) { errEl.textContent = 'Erro: ' + (e?.message || e); errEl.style.display = ''; }
+  }
+}
+
+async function deleteFamilyMemberFromFamily(familyId, memberId, name) {
+  if (!confirm(`Excluir o membro "${name}"?\n\nTransações e orçamentos associados perderão o vínculo, mas não serão excluídos.`)) return;
+  const { error } = await sb.from('family_composition').delete().eq('id', memberId);
+  if (error) { toast('Erro: ' + error.message, 'error'); return; }
+  toast(`✓ ${name} removido`, 'success');
+  await _loadAndRenderFmcForFamily(familyId);
+  if (familyId === currentUser?.family_id) {
+    await loadFamilyComposition(true);
+    refreshAllFamilyMemberSelects();
+  }
+}
