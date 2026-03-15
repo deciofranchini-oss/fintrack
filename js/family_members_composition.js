@@ -26,9 +26,20 @@
    ALTER TABLE public.family_composition ENABLE ROW LEVEL SECURITY;
    -- Idempotent: drop first so script can be re-run safely
 DROP POLICY IF EXISTS "fmc_family_access" ON public.family_composition;
+-- Note: family_members.user_id stores app_users.id (not auth.uid() directly).
+-- We join through app_users.email to resolve the correct user.
 CREATE POLICY "fmc_family_access"
      ON public.family_composition FOR ALL
-     USING (family_id IN (SELECT family_id FROM public.family_members WHERE user_id = auth.uid()));
+     USING (
+       family_id IN (
+         SELECT fm.family_id
+         FROM public.family_members fm
+         JOIN public.app_users au ON au.id = fm.user_id
+         WHERE au.email = (
+           SELECT email FROM auth.users WHERE id = auth.uid()
+         )
+       )
+     );
 
    ALTER TABLE public.transactions
      ADD COLUMN IF NOT EXISTS family_member_id UUID REFERENCES public.family_composition(id);
@@ -551,12 +562,16 @@ ALTER TABLE public.family_composition ENABLE ROW LEVEL SECURITY;
 
 -- Idempotent: drop first so script can be re-run safely
 DROP POLICY IF EXISTS "fmc_family_access" ON public.family_composition;
+-- family_members.user_id = app_users.id (not auth.uid() directly)
+-- Join through app_users.email to resolve the authenticated user
 CREATE POLICY "fmc_family_access"
   ON public.family_composition FOR ALL
   USING (
     family_id IN (
-      SELECT family_id FROM public.family_members
-      WHERE user_id = auth.uid()
+      SELECT fm.family_id
+      FROM public.family_members fm
+      JOIN public.app_users au ON au.id = fm.user_id
+      WHERE au.email = (SELECT email FROM auth.users WHERE id = auth.uid())
     )
   );
 
