@@ -4582,6 +4582,24 @@
           <div id="mfmMsg" style="display:none;font-size:.78rem;margin-top:8px;padding:6px 10px;border-radius:6px"></div>
         </div>
 
+        <!-- ── Funcionalidades da Família ─────────────────────────────── -->
+        <div style="padding:0 20px 20px">
+          <button style="display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;
+            border-top:1px solid var(--border);padding:14px 0 10px;cursor:pointer;font-size:.82rem;
+            font-weight:600;color:var(--text);text-align:left"
+            onclick="const b=document.getElementById('mfmFeatBody');const a=document.getElementById('mfmFeatArr');b.style.display=b.style.display==='none'?'':'none';a.style.transform=b.style.display===''?'':'rotate(-90deg)'">
+            <span style="font-size:1rem">🧩</span>
+            Funcionalidades
+            <span id="mfmFeatArr" style="margin-left:auto;transition:transform .2s;font-size:.75rem">▾</span>
+          </button>
+          <div id="mfmFeatBody" style="display:none">
+            <p style="font-size:.78rem;color:var(--muted);margin-bottom:12px;line-height:1.5">
+              Ative ou desative módulos opcionais para esta família.
+            </p>
+            <div id="mfmFeatCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px"></div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
