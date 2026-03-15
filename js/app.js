@@ -452,9 +452,18 @@ function setAppLogo(url){
   const clean = (typeof url === 'string') ? url.trim() : '';
   APP_LOGO_URL = clean || DEFAULT_LOGO_URL;
 
-  ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','loginLogoImg','authLogoImg'].forEach(id=>{
+  // For dark-background locations (sidebar, wizard) use logo2 variant if available.
+  // Convention: logo.png → logo2.png (same base URL, "2" before extension).
+  const DARK_LOGO_URL = APP_LOGO_URL.replace(/\.png$/i, '2.png');
+
+  ['settingsLogoImg','topbarLogoImg','loginLogoImg','authLogoImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.src = APP_LOGO_URL;
+  });
+  // Dark-background locations use logo2 variant
+  ['sidebarLogoImg','wzLogoImg'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.src = DARK_LOGO_URL;
   });
 }
 

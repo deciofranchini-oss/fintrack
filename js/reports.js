@@ -576,12 +576,9 @@ function _pdfHeader(doc, from, to, viewLabel, familyName) {
   }
 
   // Logo mark
-  doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11); doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.text('JF', 13, 16);
-  doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
-  doc.setTextColor(170, 215, 190);
-  doc.text('Family FinTrack', 11, 22);
+  doc.text('Family FinTrack', 11, 18);
 
   // Main title
   doc.setFontSize(15); doc.setFont('helvetica', 'bold');
@@ -1025,7 +1022,7 @@ function _pdfFooter(doc, from, to) {
     doc.setLineWidth(0.25);
     doc.line(0, H - 11, W, H - 11);
     doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_MUTED);
-    doc.text('JF Family FinTrack  ·  Documento Confidencial', 14, H - 4);
+    doc.text('Family FinTrack  ·  Documento Confidencial', 14, H - 4);
     doc.text(new Date().toLocaleDateString('pt-BR'), W / 2, H - 4, { align: 'center' });
     doc.text(`Página ${i} / ${pages}`, W - 14, H - 4, { align: 'right' });
   }
@@ -1298,7 +1295,7 @@ function printReport() {
   area.innerHTML = `
     <div style="font-family:Arial,sans-serif;max-width:960px;margin:0 auto;font-size:12px">
       <div style="background:#163a2a;color:#fff;padding:20px 24px;border-left:5px solid #2a7a4a">
-        <div style="font-size:20px;font-weight:800">JF Family FinTrack — Relatório ${viewLabel}</div>
+        <div style="font-size:20px;font-weight:800">Family FinTrack — Relatório ${viewLabel}</div>
         <div style="font-size:11px;opacity:.8;margin-top:6px">
           Período: ${fmtDate(from)} até ${fmtDate(to)}
           &nbsp;·&nbsp; Filtros: ${_getActiveFiltersLabel()}
@@ -1347,7 +1344,7 @@ function exportReportCSV() {
 /* ═══ EMAIL POPUP ═══ */
 function showEmailPopup() {
   const { from, to } = getRptDateRange();
-  document.getElementById('emailSubject').value = `Relatório FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
+  document.getElementById('emailSubject').value = `Relatório Family FinTrack — ${fmtDate(from)} a ${fmtDate(to)}`;
   document.getElementById('emailPopup').style.display = 'flex';
 }
 function closeEmailPopup() {
