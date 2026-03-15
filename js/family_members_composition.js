@@ -44,19 +44,25 @@ let _fmc = {
 };
 
 const FMC_RELATIONS = [
+  // ── Adultos ──────────────────────────────────────────────────────
   { value: 'pai',      label: 'Pai',      type: 'adult' },
   { value: 'mae',      label: 'Mãe',      type: 'adult' },
-  { value: 'filho',    label: 'Filho',     type: 'child' },
-  { value: 'filha',    label: 'Filha',     type: 'child' },
-  { value: 'enteado',  label: 'Enteado',   type: 'child' },
-  { value: 'enteada',  label: 'Enteada',   type: 'child' },
-  { value: 'avo',      label: 'Avô',       type: 'adult' },
-  { value: 'avo_f',    label: 'Avó',       type: 'adult' },
-  { value: 'tio',      label: 'Tio',       type: 'adult' },
-  { value: 'tia',      label: 'Tia',       type: 'adult' },
-  { value: 'conjuge',  label: 'Cônjuge',   type: 'adult' },
-  { value: 'irmao',    label: 'Irmão',     type: 'adult' },
-  { value: 'irma',     label: 'Irmã',      type: 'adult' },
+  { value: 'conjuge',  label: 'Cônjuge',  type: 'adult' },
+  { value: 'irmao',    label: 'Irmão',    type: 'adult' },
+  { value: 'irma',     label: 'Irmã',     type: 'adult' },
+  { value: 'avo',      label: 'Avô',      type: 'adult' },
+  { value: 'avo_f',    label: 'Avó',      type: 'adult' },
+  { value: 'tio',      label: 'Tio',      type: 'adult' },
+  { value: 'tia',      label: 'Tia',      type: 'adult' },
+  // ── Crianças ─────────────────────────────────────────────────────
+  { value: 'filho',    label: 'Filho',    type: 'child' },
+  { value: 'filha',    label: 'Filha',    type: 'child' },
+  { value: 'enteado',  label: 'Enteado',  type: 'child' },
+  { value: 'enteada',  label: 'Enteada',  type: 'child' },
+  { value: 'neto',     label: 'Neto',     type: 'child' },
+  { value: 'neta',     label: 'Neta',     type: 'child' },
+  { value: 'sobrinho', label: 'Sobrinho', type: 'child' },
+  { value: 'sobrinha', label: 'Sobrinha', type: 'child' },
   { value: 'sobrinho', label: 'Sobrinho',  type: 'child' },
   { value: 'sobrinha', label: 'Sobrinha',  type: 'child' },
   { value: 'neto',     label: 'Neto',      type: 'child' },
@@ -244,9 +250,11 @@ async function openFamilyMemberForm(memberId = null) {
   const title = m ? 'Editar Membro' : 'Novo Membro';
 
   // Build relation options grouped by type
-  const relOpts = FMC_RELATIONS.map(r =>
-    `<option value="${r.value}" data-type="${r.type}" ${mrel_cur === r.value ? 'selected' : ''}>${esc(r.label)}</option>`
-  ).join('');
+  // Show only relations matching the current member type; when editing, always include current value
+  const relOpts = FMC_RELATIONS
+    .filter(r => r.type === mtype_cur || r.value === mrel_cur)
+    .map(r => `<option value="${r.value}" ${mrel_cur === r.value ? 'selected' : ''}>${esc(r.label)}</option>`)
+    .join('');
 
   const mtype_cur = m?.member_type || m?.type || 'adult';
   const mrel_cur  = m?.family_relationship || m?.relation || 'outro';
@@ -322,15 +330,22 @@ async function openFamilyMemberForm(memberId = null) {
 }
 
 function _fmcOnTypeChange() {
-  // Auto-suggest relation when type changes
-  const type = document.getElementById('fmcType')?.value;
+  const type   = document.getElementById('fmcType')?.value;
   const relSel = document.getElementById('fmcRelation');
-  if (!relSel) return;
-  // Only auto-change if currently on a mismatched type
-  const cur = FMC_RELATIONS.find(r => r.value === relSel.value);
-  if (cur && cur.type !== type) {
-    const firstMatch = FMC_RELATIONS.find(r => r.type === type);
-    if (firstMatch) relSel.value = firstMatch.value;
+  if (!relSel || !type) return;
+
+  const curValue = relSel.value;
+  const curRel   = FMC_RELATIONS.find(r => r.value === curValue);
+
+  // Rebuild options filtered to the selected type
+  relSel.innerHTML = FMC_RELATIONS
+    .filter(r => r.type === type)
+    .map(r => `<option value="${r.value}">${r.label}</option>`)
+    .join('');
+
+  // Restore previous selection if it matches the new type, otherwise pick first
+  if (curRel && curRel.type === type) {
+    relSel.value = curValue;
   }
 }
 
@@ -712,28 +727,25 @@ async function _loadAndRenderFmcForFamily(familyId) {
  * Open the member form tied to a specific family card.
  * familyId is passed explicitly so this works for any family (not just the active one).
  */
-function openFamilyMemberFormForFamily(familyId, memberId = null) {
-  // Build a temporary override: swap famId() context for this call
-  const _origFamId = currentUser?.family_id;
-  if (currentUser) currentUser._tempFamilyId = familyId;
+async function openFamilyMemberFormForFamily(familyId, memberId = null) {
+  // Await the async form (it fetches user list before building HTML)
+  await openFamilyMemberForm(memberId);
 
-  // Open the standard form — it calls famId() which we patch below
-  openFamilyMemberForm(memberId);
+  // Modal is now fully rendered — patch synchronously (no setTimeout needed)
+  // Store familyId in a hidden field for saveFamilyMemberForFamily
+  let hiddenFid = document.getElementById('fmcFamilyId');
+  if (!hiddenFid) {
+    hiddenFid = document.createElement('input');
+    hiddenFid.type = 'hidden';
+    hiddenFid.id   = 'fmcFamilyId';
+    document.getElementById('fmcMemberModal')?.querySelector('.modal-body')?.appendChild(hiddenFid);
+  }
+  hiddenFid.value = familyId;
 
-  // Patch: after modal is open, store familyId on a hidden field
-  setTimeout(() => {
-    let hiddenFid = document.getElementById('fmcFamilyId');
-    if (!hiddenFid) {
-      hiddenFid = document.createElement('input');
-      hiddenFid.type = 'hidden';
-      hiddenFid.id   = 'fmcFamilyId';
-      document.getElementById('fmcMemberModal')?.querySelector('.modal-body')?.appendChild(hiddenFid);
-    }
-    hiddenFid.value = familyId;
-    // Override the save callback to refresh the right card
-    const saveBtn = document.getElementById('fmcMemberModal')?.querySelector('button[onclick="saveFamilyMember()"]');
-    if (saveBtn) saveBtn.setAttribute('onclick', `saveFamilyMemberForFamily('${familyId}')`);
-  }, 50);
+  // Override save button to use family-specific save (refreshes the right card)
+  const saveBtn = document.getElementById('fmcMemberModal')
+    ?.querySelector('button[onclick="saveFamilyMember()"]');
+  if (saveBtn) saveBtn.setAttribute('onclick', `saveFamilyMemberForFamily('${familyId}')`);
 }
 
 async function saveFamilyMemberForFamily(familyId) {
