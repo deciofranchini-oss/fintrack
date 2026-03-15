@@ -1032,7 +1032,7 @@ function initFamModulesRow() {
   })();
 }
 
-async async function _cfgToggleModule(key, famId, label, applyFn) {
+async function _cfgToggleModule(key, famId, label, applyFn) {
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
   const wasOn = !!window._familyFeaturesCache[key];
   const nowOn = !wasOn;
