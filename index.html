@@ -843,6 +843,12 @@
             <option value="">Todas</option>
           </select>
         </div>
+        <div>
+          <label>Membro</label>
+          <select id="rptMember" onchange="loadCurrentReport(true)">
+            <option value="">Todos</option>
+          </select>
+        </div>
       </div>
 
       <!-- ── Barra de exportação ── -->
@@ -1506,6 +1512,20 @@
             </div>
             <div class="fam-mod-pills" id="famModulesPills" style="width:100%;padding-left:38px"></div>
           </div>
+          <!-- ── Membros da Família ── -->
+          <div class="cfg-row" style="align-items:flex-start;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;width:100%">
+              <span class="cfg-row-icon" style="background:#fdf2fb">👨‍👩‍👧</span>
+              <div class="cfg-row-info">
+                <span class="cfg-row-label">Membros da Família</span>
+                <span class="cfg-row-sub">Cadastre adultos e crianças para associar a despesas e orçamentos</span>
+              </div>
+            </div>
+            <div id="familyCompositionPanel" style="width:100%;padding-left:38px">
+              <div style="color:var(--muted);font-size:.8rem">Carregando…</div>
+            </div>
+          </div>
+
           <div id="menuVisibilitySection" style="display:none">
             <div class="cfg-row" style="align-items:flex-start;flex-direction:column;gap:8px">
               <div style="display:flex;align-items:center;gap:10px;width:100%">
@@ -2939,6 +2959,13 @@
             <div id="txFxPreview" style="font-size:.82rem;color:#1d4ed8;padding-top:18px;white-space:nowrap"></div>
           </div>
         </div>
+        <!-- Membro da família (optional) -->
+        <div class="form-group" id="txFamilyMemberGroup">
+          <label>Membro da família <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
+          <select id="txFamilyMember" style="width:100%">
+            <option value="">👨‍👩‍👧 Família (geral)</option>
+          </select>
+        </div>
         <div class="form-group" id="txPayeeGroup" style="position:relative">
           <label>Beneficiário / Fonte</label>
           <input type="hidden" id="txPayeeId">
@@ -3613,6 +3640,14 @@
             <button type="button" class="amt-sign-btn" style="visibility:hidden">+</button>
             <input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off">
           </div>
+        </div>
+
+        <!-- Membro da família (optional) -->
+        <div class="form-group full">
+          <label>Membro da família <span style="font-size:.72rem;color:var(--muted)">(opcional — deixe vazio para orçamento geral)</span></label>
+          <select id="budgetFamilyMember" style="width:100%">
+            <option value="">👨‍👩‍👧 Família (geral)</option>
+          </select>
         </div>
 
         <!-- Auto-reset (monthly only) -->
@@ -4803,6 +4838,7 @@
   </div>
 </div>
 
+  <script src="js/family_members_composition.js"></script>
   <script src="js/orphan.js"></script>
   <script src="js/wizard.js"></script>
 
