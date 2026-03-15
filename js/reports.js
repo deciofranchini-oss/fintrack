@@ -379,66 +379,40 @@ function _getActiveFiltersLabel() {
 function _chartToImage(canvasId) {
   try {
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
-    const chartInst = state.chartInstances?.[canvasId];
-
-    // Walk up DOM to find any display:none ancestor and temporarily show it
-    const hiddenParents = [];
-    let el = canvas.parentElement;
-    while (el) {
-      if (el.style && el.style.display === 'none') {
-        hiddenParents.push(el);
-        el.style.display = '';
-      }
-      el = el.parentElement;
-    }
-
-    // Now resize the Chart.js instance if canvas still reports zero
-    if (chartInst && (canvas.width === 0 || canvas.height === 0)) {
-      chartInst.resize(600, 300);
-    }
-
-    const result = (canvas.width > 0 && canvas.height > 0)
-      ? canvas.toDataURL('image/png', 0.95)
-      : null;
-
-    // Restore hidden parents
-    hiddenParents.forEach(p => { p.style.display = 'none'; });
-
-    return result;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+    return canvas.toDataURL('image/png', 0.95);
   } catch (e) { return null; }
 }
 
-/* ── Ensure all report charts are rendered before PDF ── */
+/* ── Ensure all report charts are rendered before PDF ──
+ *
+ * Strategy: make reportRegularView visible, force a full re-render of all
+ * charts (destroys and recreates Chart.js instances at the correct pixel
+ * ratio), wait two animation frames for the browser to paint, then let
+ * _buildReportPDF capture the canvases. Visibility is restored afterward.
+ */
 async function _ensureChartsRendered() {
   if (rptState.view === 'regular') {
-    // Force re-render if charts haven't been created yet
-    if (!state.chartInstances?.['reportCatChart']) {
-      await loadReports();
-    }
-    // Force Chart.js resize on all report canvases that may have zero dimensions
-    // (happens when parent div was display:none when charts were first drawn)
-    const reportIds = ['reportCatChart','reportIncomeChart','reportAccountChart','reportTrendChart'];
-    for (const id of reportIds) {
-      const inst = state.chartInstances?.[id];
-      const canvas = document.getElementById(id);
-      if (inst && canvas && (canvas.width === 0 || canvas.height === 0 || canvas.clientWidth === 0)) {
-        // Make parent visible temporarily for resize
-        const parent = canvas.closest('[style*="display:none"]');
-        if (parent) {
-          const prev = parent.style.display;
-          parent.style.display = '';
-          inst.resize();
-          inst.update('none');
-          // restore after a tick
-          await new Promise(r => setTimeout(r, 0));
-          parent.style.display = prev;
-        } else {
-          inst.resize();
-          inst.update('none');
-        }
-      }
-    }
+    // Make the report view container fully visible so Chart.js renders
+    // at the correct devicePixelRatio and with full colors.
+    const view = document.getElementById('reportRegularView');
+    const page = document.getElementById('page-reports');
+    const viewWasHidden = view && view.style.display === 'none';
+    const pageWasHidden = page && !page.classList.contains('active');
+
+    if (viewWasHidden && view) view.style.display = '';
+    if (pageWasHidden && page) { page.style.visibility = 'hidden'; page.classList.add('active'); }
+
+    // Always re-render: destroys old (potentially faded) chart instances
+    // and creates fresh ones with correct colors and pixel ratio.
+    await loadReports();
+
+    // Wait two frames — first for Chart.js to draw, second for browser to composite
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    // Restore visibility (will be undone again in _buildReportPDF if needed)
+    if (viewWasHidden && view) view.style.display = 'none';
+    if (pageWasHidden && page) { page.classList.remove('active'); page.style.visibility = ''; }
     return;
   }
   if (rptState.view === 'transactions') {
@@ -955,7 +929,17 @@ async function _buildReportPDF() {
   const { from, to } = getRptDateRange();
   const txs = rptState.txData;
 
-  // Make sure charts are rendered (re-render if canvas was zero-sized)
+  // Ensure reportRegularView is visible during the entire PDF build so that
+  // canvas.toDataURL() captures full-opacity colors (Chart.js renders faded
+  // colors when the parent was display:none at draw time).
+  const _rptView = document.getElementById('reportRegularView');
+  const _rptPage = document.getElementById('page-reports');
+  const _viewWasHidden = _rptView && _rptView.style.display === 'none';
+  const _pageWasHidden = _rptPage && !_rptPage.classList.contains('active');
+  if (_viewWasHidden) _rptView.style.display = '';
+  if (_pageWasHidden) { _rptPage.style.visibility = 'hidden'; _rptPage.classList.add('active'); }
+
+  // Re-render charts with correct visibility so colors are vivid
   await _ensureChartsRendered();
 
   const viewLabels = {
@@ -1077,6 +1061,13 @@ async function _buildReportPDF() {
   }
 
   _pdfFooter(doc, from, to);
+  // Restore view visibility that was set before chart rendering
+  if (typeof _viewWasHidden !== 'undefined' && _viewWasHidden && _rptView) _rptView.style.display = 'none';
+  if (typeof _pageWasHidden !== 'undefined' && _pageWasHidden && _rptPage) {
+    _rptPage.classList.remove('active');
+    _rptPage.style.visibility = '';
+  }
+
   return { doc, from, to };
 }
 
