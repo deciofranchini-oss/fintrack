@@ -820,17 +820,35 @@
     <!-- REPORTS -->
     <div class="page" id="page-reports">
 
-      <!-- ── Abas de tipo de relatório ── -->
-      <div class="section-header mb-4">
-        <span class="section-title">Relatórios Analíticos</span>
-        <div class="view-toggle">
-          <button class="view-btn active" id="rptBtnRegular"  onclick="setReportView('regular')">📊 Análise</button>
-          <button class="view-btn"        id="rptBtnTx"       onclick="setReportView('transactions')">📋 Transações</button>
-          <button class="view-btn"        id="rptBtnForecast" onclick="setReportView('forecast')">📅 Previsão</button>
+      <!-- ── Reports page header ── -->
+      <div class="rpt-page-header mb-4">
+        <div class="rpt-header-left">
+          <span class="section-title" style="font-size:1.15rem">Relatórios</span>
+        </div>
+        <div class="rpt-view-tabs">
+          <button class="rpt-view-tab active" id="rptBtnRegular"  onclick="setReportView('regular')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            Análise
+          </button>
+          <button class="rpt-view-tab" id="rptBtnTx" onclick="setReportView('transactions')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            Transações
+          </button>
+          <button class="rpt-view-tab" id="rptBtnForecast" onclick="setReportView('forecast')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Previsão
+          </button>
         </div>
       </div>
 
       <!-- ── Barra de filtros ── -->
+      <div class="rpt-filter-wrap mb-4">
+        <button class="rpt-filter-toggle" onclick="const b=document.getElementById('reportFilterBar');const open=b.style.display==='none';b.style.display=open?'':'none';this.querySelector('.rpt-ftoggle-arr').style.transform=open?'rotate(180deg)':''">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Filtros
+          <svg class="rpt-ftoggle-arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:auto;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
       <div class="report-filter-bar" id="reportFilterBar">
         <div>
           <label>Período</label>
@@ -901,17 +919,27 @@
       </div>
 
       <!-- ── Barra de exportação ── -->
-      <div class="report-toolbar" id="reportToolbar">
-        <span style="font-size:.8rem;font-weight:600;color:var(--muted);white-space:nowrap">Exportar:</span>
-        <div class="export-btn-group">
-          <button class="export-btn export-btn-pdf"   onclick="exportReportPDF()">📄 Baixar PDF</button>
-          <button class="export-btn export-btn-print" onclick="printReport()">🖨️ Imprimir</button>
-          <button class="export-btn export-btn-csv"   onclick="exportReportCSV()">📊 Baixar CSV</button>
-          <button class="export-btn export-btn-email" onclick="showEmailPopup()">📧 Enviar por E-mail</button>
+      <div class="rpt-toolbar" id="reportToolbar">
+        <div class="rpt-export-group">
+          <button class="rpt-export-btn" onclick="exportReportPDF()" title="Baixar PDF">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            PDF
+          </button>
+          <button class="rpt-export-btn" onclick="exportReportCSV()" title="Baixar CSV">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            CSV
+          </button>
+          <button class="rpt-export-btn" onclick="printReport()" title="Imprimir">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir
+          </button>
+          <button class="rpt-export-btn" onclick="showEmailPopup()" title="Enviar por E-mail">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            E-mail
+          </button>
         </div>
-        <div class="report-toolbar-sep"></div>
-        <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.75rem">⚙️ EmailJS</button>
-        <span id="reportDataInfo" style="font-size:.75rem;color:var(--muted);margin-left:auto"></span>
+        <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.72rem;opacity:.7">⚙️</button>
+        <span id="reportDataInfo" style="font-size:.72rem;color:var(--muted);margin-left:auto"></span>
       </div>
 
       <!-- ── View: Análise ── -->
