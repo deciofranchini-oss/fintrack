@@ -6400,3 +6400,104 @@ tr.tx-row-new td:first-child {
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   INVESTMENTS MODULE
+═══════════════════════════════════════════════════════════════════ */
+.inv-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.inv-kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 8px);
+  padding: 14px 16px;
+}
+.inv-kpi-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.inv-kpi-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-serif, monospace);
+}
+.inv-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.inv-portfolio-card {
+  margin-bottom: 20px;
+}
+.inv-positions-table {
+  font-size: .82rem;
+  overflow-x: auto;
+}
+.inv-pos-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 80px;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-radius: var(--r-sm, 6px);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.inv-pos-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 80px;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  transition: background .1s;
+}
+.inv-pos-row:hover { background: var(--surface2); }
+.inv-pos-row:last-child { border-bottom: none; }
+.inv-pos-ticker {
+  font-weight: 700;
+  font-size: .9rem;
+  color: var(--text);
+  display: block;
+}
+.inv-pos-desc {
+  font-size: .72rem;
+  color: var(--muted);
+  display: block;
+  margin-top: 2px;
+}
+.inv-type-group { margin-bottom: 8px; }
+.inv-type-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  padding: 6px 12px 2px;
+}
+.inv-price-stale { color: var(--amber, #b45309); }
+
+@media (max-width: 640px) {
+  .inv-pos-header { display: none; }
+  .inv-pos-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px;
+  }
+  .inv-pos-name { grid-column: 1 / -1; }
+}
