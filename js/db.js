@@ -210,7 +210,7 @@ const _dashboard = {
    * Load KPI numbers (income / expense / total / pendingCount)
    * with ONE month-transaction query + accounts from cache.
    */
-  async loadKPIs() {
+  async loadKPIs(memberIds = null) {
     return _wrap('Carregando dashboard…', async () => {
       // Guard: sem family_id e sem role global → retorna zeros, não faz query
       const fid = typeof currentUser !== 'undefined' ? currentUser?.family_id : null;
@@ -228,11 +228,15 @@ const _dashboard = {
       const m   = String(now.getMonth() + 1).padStart(2, '0');
       const last = new Date(y, now.getMonth() + 1, 0).getDate();
 
+      // Build month query with optional member filter
+      let monthQ = famQ(sb.from('transactions')
+        .select('amount,brl_amount,currency,is_transfer')
+      ).gte('date', `${y}-${m}-01`).lte('date', `${y}-${m}-${String(last).padStart(2,'0')}`)
+        .eq('status', 'confirmed');
+      if (memberIds && memberIds.length > 0) monthQ = monthQ.in('family_member_id', memberIds);
+
       const [monthRes, pendRes] = await Promise.all([
-        famQ(sb.from('transactions')
-          .select('amount,brl_amount,currency,is_transfer')
-        ).gte('date', `${y}-${m}-01`).lte('date', `${y}-${m}-${String(last).padStart(2,'0')}`)
-          .eq('status', 'confirmed'),
+        monthQ,
         famQ(sb.from('transactions').select('id', { count: 'exact', head: true }))
           .eq('status', 'pending'),
       ]);
@@ -254,7 +258,7 @@ const _dashboard = {
    * ONE query for 6 months of cashflow data (replaces 6 serial queries).
    * Client-side aggregation in a single O(n) pass.
    */
-  async loadCashflow(accountId = '') {
+  async loadCashflow(accountId = '', memberIds = null) {
     return _wrap('Carregando fluxo de caixa…', async () => {
       const months = [];
       for (let i = 5; i >= 0; i--) {
@@ -270,6 +274,7 @@ const _dashboard = {
        .lte('date', `${last.y}-${last.m}-${String(lastDay).padStart(2,'0')}`)
        .eq('status', 'confirmed');
       if (accountId) q = q.eq('account_id', accountId);
+      if (memberIds && memberIds.length > 0) q = q.in('family_member_id', memberIds);
 
       const { data } = await q;
       const agg = {}; // "YYYY-MM" → { inc, exp }

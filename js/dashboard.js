@@ -26,14 +26,23 @@ function dashFmt(value, currency='BRL'){
   }
 }
 
-async function loadDashboardRecent(){
+async function loadDashboardRecent(memberIds = null){
   const status = document.getElementById('dashRecentStatus')?.value || '';
   let q = famQ(
     sb.from('transactions')
       .select('*, status, accounts!transactions_account_id_fkey(name), categories(name,color)')
-  ).order('date', { ascending: false }).limit(10);
+  ).order('date', { ascending: false }).limit(20); // fetch more so filter doesn't leave empty list
 
   if (status) q = q.eq('status', status);
+  // Apply member filter
+  const qFiltered = _applyDashMemberFilter(q, memberIds);
+  if (qFiltered === null) {
+    // Filter active but no members match — show empty
+    const body = document.getElementById('recentTxBody');
+    if (body) body.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Nenhuma transação para este filtro</td></tr>';
+    return;
+  }
+  q = qFiltered;
 
   const { data: recent, error } = await q;
   if (error) { console.warn('[dashboard recent]', error.message); }
@@ -61,6 +70,54 @@ async function loadDashboardRecent(){
 }
 
 
+// ── Dashboard member filter helper ───────────────────────────────────────────
+// Returns array of member IDs for the current dashboard filters,
+// or null if no filter is active (= show all).
+function _updateDashFilterBadge(memberIds) {
+  let badge = document.getElementById('dashFilterBadge');
+  if (!memberIds) {
+    if (badge) { badge.style.display = 'none'; } return;
+  }
+  if (!badge) return;
+  const memberId  = document.getElementById('dashMemberFilter')?.value || '';
+  const relGroup  = document.getElementById('dashRelGroup')?.value    || '';
+  const sel       = document.getElementById('dashMemberFilter');
+  const relSel    = document.getElementById('dashRelGroup');
+  let label = '';
+  if (memberId && sel) {
+    label = sel.options[sel.selectedIndex]?.text || memberId;
+  } else if (relGroup && relSel) {
+    label = relSel.options[relSel.selectedIndex]?.text || relGroup;
+  }
+  if (label) {
+    badge.style.display = 'inline-flex';
+    const span = badge.querySelector('span');
+    if (span) span.textContent = '👤 ' + label;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+
+function _getDashMemberIds() {
+  const memberId = document.getElementById('dashMemberFilter')?.value || '';
+  const relGroup = document.getElementById('dashRelGroup')?.value    || '';
+  if (memberId) return [memberId];
+  if (relGroup && typeof getMemberIdsByRelGroup === 'function') {
+    return getMemberIdsByRelGroup(relGroup); // may be [] if group empty
+  }
+  return null; // no filter active
+}
+
+// Apply member filter to a Supabase query object (transactions table).
+// Returns the (possibly modified) query.
+function _applyDashMemberFilter(q, memberIds) {
+  if (!memberIds) return q;          // no filter
+  if (memberIds.length === 0) return null; // filter active but no members — no results
+  return q.in('family_member_id', memberIds);
+}
+
+
 async function loadDashboard(){
   // Guard: sem cliente Supabase ou sem family_id não há dados para mostrar
   if (!sb) { console.warn('[dashboard] sb não inicializado'); return; }
@@ -73,8 +130,13 @@ async function loadDashboard(){
   }
   // Inicia FX em paralelo com os KPIs — nunca bloqueia o dashboard
   const fxPromise = initFxRates().catch(()=>{});
+  const _dashMemberIds = _getDashMemberIds();
+
+  // Show/hide active filter badge on dashboard KPIs
+  _updateDashFilterBadge(_dashMemberIds);
+
   const [{ income, expense, total, pendingCount: _pendCount }] = await Promise.all([
-    DB.dashboard.loadKPIs(),
+    DB.dashboard.loadKPIs(_dashMemberIds),
     fxPromise,
   ]);
   const statTotalEl = document.getElementById('statTotal');
@@ -126,7 +188,7 @@ async function loadDashboard(){
   }
 
   // Recent transactions table (supports status filter)
-  await loadDashboardRecent();
+  await loadDashboardRecent(_dashMemberIds);
   await loadDashboardAutoRunSummary();
 
   // Render account balances grouped by account group
@@ -234,9 +296,9 @@ async function loadDashboard(){
     }
   }
 
-  await Promise.all([renderCashflowChart(),renderCategoryChart()]);
+  await Promise.all([renderCashflowChart(_dashMemberIds),renderCategoryChart()]);
 }
-async function renderCashflowChart(){
+async function renderCashflowChart(memberIds = null){
   // Populate account filter (refresh every time dashboard loads)
   const sel = document.getElementById('cashflowAccountFilter');
   if(sel) {
@@ -247,8 +309,8 @@ async function renderCashflowChart(){
   }
   const accId = sel ? sel.value : '';
   const labels=[];
-  // ONE query for all 6 months (replaces 6 serial queries)
-  const cashRows = await DB.dashboard.loadCashflow(accId);
+  // ONE query for all 6 months, with optional member filter
+  const cashRows = await DB.dashboard.loadCashflow(accId, memberIds);
   const incomes  = cashRows.map(r => r.income);
   const expenses = cashRows.map(r => r.expense);
   const balances = cashRows.map(r => r.balance);
