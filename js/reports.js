@@ -124,6 +124,12 @@ async function fetchRptTransactions() {
   // Refresh tag dropdown with tags found in this period/filters
   // (do it after filter so we show tags relevant to current context)
   setTimeout(_refreshRptTagFilter, 0);
+  // Refresh member select with current family members
+  setTimeout(() => {
+    if (typeof populateFamilyMemberSelect === 'function') {
+      populateFamilyMemberSelect('rptMember', { placeholder: 'Todos' });
+    }
+  }, 0);
 
   return result;
 }

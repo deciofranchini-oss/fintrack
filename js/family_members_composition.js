@@ -7,7 +7,7 @@
      name       TEXT NOT NULL
      type       TEXT  'adult' | 'child'
      relation   TEXT  pai|mae|filho|filha|enteado|enteada|avo|avo_f|tio|tia|outro
-     birth_year INTEGER (opcional)
+     birth_date DATE (opcional)
      avatar_emoji TEXT (opcional)
      created_at TIMESTAMPTZ
 
@@ -18,15 +18,15 @@
      family_id   UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
      name        TEXT NOT NULL,
      type        TEXT NOT NULL DEFAULT 'adult' CHECK (type IN ('adult','child')),
-     relation    TEXT NOT NULL DEFAULT 'outro',
-     birth_year  INTEGER,
+     family_relationship TEXT NOT NULL DEFAULT 'outro',
+     birth_date  DATE,
      avatar_emoji TEXT DEFAULT '👤',
      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
    );
    ALTER TABLE public.family_composition ENABLE ROW LEVEL SECURITY;
-   CREATE POLICY "family_composition_family"
+   CREATE POLICY "fmc_family_access"
      ON public.family_composition FOR ALL
-     USING (family_id IN (SELECT family_id FROM family_members WHERE user_id = auth.uid()));
+     USING (family_id IN (SELECT family_id FROM public.family_members WHERE user_id = auth.uid()));
 
    ALTER TABLE public.transactions
      ADD COLUMN IF NOT EXISTS family_member_id UUID REFERENCES public.family_composition(id);
@@ -64,6 +64,21 @@ const FMC_RELATIONS = [
 
 const FMC_DEFAULT_EMOJI = { adult: '👤', child: '👶' };
 
+/**
+ * Calculate age from a birth_date (ISO string 'YYYY-MM-DD').
+ * Returns null if birth_date is null/undefined.
+ */
+function _fmcCalcAge(birthDate) {
+  if (!birthDate) return null;
+  const dob = new Date(birthDate);
+  if (isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age < 0 ? 0 : age;
+}
+
 // ── Load / cache ────────────────────────────────────────────────────────────
 async function loadFamilyComposition(force = false) {
   if (!sb || !currentUser?.family_id) return;
@@ -71,7 +86,7 @@ async function loadFamilyComposition(force = false) {
   try {
     const { data, error } = await famQ(
       sb.from('family_composition').select('*')
-    ).order('type', { ascending: false }).order('name'); // adults first
+    ).order('member_type', { ascending: false }).order('name'); // adults first
     if (error) {
       // Table may not exist yet — silently ignore
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
@@ -106,8 +121,13 @@ function populateFamilyMemberSelect(selectId, opts = {}) {
   const placeholder = opts.placeholder || 'Família (geral)';
   el.innerHTML = `<option value="">${esc(placeholder)}</option>` +
     _fmc.members.map(m => {
-      const rel = FMC_RELATIONS.find(r => r.value === m.relation);
-      const label = `${m.avatar_emoji || FMC_DEFAULT_EMOJI[m.type]} ${esc(m.name)}${rel ? ' · ' + rel.label : ''}`;
+      const mtype = m.member_type || m.type;
+      const mrel  = m.family_relationship || m.relation;
+      const rel   = FMC_RELATIONS.find(r => r.value === mrel);
+      const age   = _fmcCalcAge(m.birth_date);
+      const ageSuffix = (mtype === 'child' && age !== null) ? ` (${age})` : '';
+      const emoji = m.avatar_emoji || FMC_DEFAULT_EMOJI[mtype] || '👤';
+      const label = `${emoji} ${esc(m.name)}${ageSuffix}${rel ? ' · ' + rel.label : ''}`;
       return `<option value="${m.id}">${label}</option>`;
     }).join('');
   if (cur && _fmc.members.find(m => m.id === cur)) el.value = cur;
@@ -118,12 +138,15 @@ function refreshAllFamilyMemberSelects() {
   ['txFamilyMember', 'budgetFamilyMember', 'rptMember', 'dashMemberFilter'].forEach(id => {
     populateFamilyMemberSelect(id);
   });
+  // Show/hide dashMemberFilter based on whether there are members
+  const dash = document.getElementById('dashMemberFilter');
+  if (dash) dash.style.display = dash.options.length > 1 ? '' : 'none';
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────
 function getFamilyCompositionSummary() {
-  const adults   = _fmc.members.filter(m => m.type === 'adult').length;
-  const children = _fmc.members.filter(m => m.type === 'child').length;
+  const adults   = _fmc.members.filter(m => (m.member_type || m.type) === 'adult').length;
+  const children = _fmc.members.filter(m => (m.member_type || m.type) === 'child').length;
   return { total: _fmc.members.length, adults, children };
 }
 
@@ -170,11 +193,18 @@ function _renderFamilyCompositionPanel() {
   if (_fmc.members.length) {
     html += `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">`;
     for (const m of _fmc.members) {
-      const rel  = FMC_RELATIONS.find(r => r.value === m.relation);
-      const emoji = m.avatar_emoji || FMC_DEFAULT_EMOJI[m.type];
-      const typeBadge = m.type === 'adult'
+      const mtype = m.member_type || m.type;
+      const mrel  = m.family_relationship || m.relation;
+      const rel   = FMC_RELATIONS.find(r => r.value === mrel);
+      const emoji = m.avatar_emoji || FMC_DEFAULT_EMOJI[mtype] || '👤';
+      const age   = _fmcCalcAge(m.birth_date);
+      const ageTxt = age !== null ? ` (${age})` : '';
+      const typeBadge = mtype === 'adult'
         ? `<span style="font-size:.65rem;background:#eff6ff;color:#1d4ed8;padding:1px 6px;border-radius:4px;font-weight:700">Adulto</span>`
         : `<span style="font-size:.65rem;background:#f0fdf4;color:#15803d;padding:1px 6px;border-radius:4px;font-weight:700">Criança</span>`;
+      const userLink = m.app_user_id
+        ? `<span style="font-size:.65rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-weight:700">👤 Vinculado</span>`
+        : '';
       html += `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
              background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm)">
@@ -183,11 +213,11 @@ function _renderFamilyCompositionPanel() {
             ${emoji}
           </div>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:.88rem">${esc(m.name)}</div>
-            <div style="font-size:.74rem;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:2px">
+            <div style="font-weight:600;font-size:.88rem">${esc(m.name)}${ageTxt}</div>
+            <div style="font-size:.74rem;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap">
               ${typeBadge}
               ${rel ? `<span>${esc(rel.label)}</span>` : ''}
-              ${m.birth_year ? `<span>· ${new Date().getFullYear() - m.birth_year} anos</span>` : ''}
+              ${userLink}
             </div>
           </div>
           <button class="btn-icon" title="Editar" onclick="openFamilyMemberForm('${m.id}')">✏️</button>
@@ -207,18 +237,30 @@ function _renderFamilyCompositionPanel() {
 }
 
 // ── Member form modal ────────────────────────────────────────────────────────
-function openFamilyMemberForm(memberId = null) {
+async function openFamilyMemberForm(memberId = null) {
   const m = memberId ? getFamilyMemberById(memberId) : null;
   const title = m ? 'Editar Membro' : 'Novo Membro';
 
   // Build relation options grouped by type
   const relOpts = FMC_RELATIONS.map(r =>
-    `<option value="${r.value}" data-type="${r.type}" ${m?.relation === r.value ? 'selected' : ''}>${esc(r.label)}</option>`
+    `<option value="${r.value}" data-type="${r.type}" ${mrel_cur === r.value ? 'selected' : ''}>${esc(r.label)}</option>`
   ).join('');
 
-  const yearNow = new Date().getFullYear();
-  const yearOpts = Array.from({length: 100}, (_, i) => yearNow - i)
-    .map(y => `<option value="${y}" ${m?.birth_year === y ? 'selected' : ''}>${y}</option>`).join('');
+  const mtype_cur = m?.member_type || m?.type || 'adult';
+  const mrel_cur  = m?.family_relationship || m?.relation || 'outro';
+
+  // Build user select for app_user_id association (users from same family)
+  const _famUsers = typeof _fmc !== 'undefined' ? [] : [];
+  let userOpts = '<option value="">— Não vinculado —</option>';
+  try {
+    const { data: famUsers } = await sb
+      .from('app_users').select('id,name,email')
+      .eq('approved', true).order('name');
+    userOpts = '<option value="">— Não vinculado —</option>' +
+      (famUsers || []).map(u =>
+        `<option value="${u.id}" ${m?.app_user_id === u.id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`
+      ).join('');
+  } catch(_) {}
 
   const modalHtml = `
     <div class="modal-overlay open" id="fmcMemberModal" style="z-index:10010">
@@ -237,26 +279,28 @@ function openFamilyMemberForm(memberId = null) {
             <div class="form-group">
               <label>Tipo *</label>
               <select id="fmcType" onchange="_fmcOnTypeChange()">
-                <option value="adult" ${(!m || m.type === 'adult') ? 'selected' : ''}>🧑 Adulto</option>
-                <option value="child" ${m?.type === 'child' ? 'selected' : ''}>👶 Criança</option>
+                <option value="adult" ${mtype_cur === 'adult' ? 'selected' : ''}>🧑 Adulto</option>
+                <option value="child" ${mtype_cur === 'child' ? 'selected' : ''}>👶 Criança</option>
               </select>
             </div>
             <div class="form-group">
               <label>Relação *</label>
               <select id="fmcRelation">${relOpts}</select>
             </div>
-            <div class="form-group">
-              <label>Ano de Nascimento <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
-              <select id="fmcBirthYear">
-                <option value="">— Não informado —</option>
-                ${yearOpts}
-              </select>
+            <div class="form-group full" id="fmcBirthDateGroup">
+              <label>Data de Nascimento <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
+              <input type="date" id="fmcBirthDate" value="${m?.birth_date ? m.birth_date.slice(0,10) : ''}"
+                style="width:100%" max="${new Date().toISOString().slice(0,10)}">
             </div>
             <div class="form-group">
               <label>Emoji / Avatar <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
               <input type="text" id="fmcEmoji" value="${esc(m?.avatar_emoji || '')}"
                 placeholder="👤" maxlength="4"
                 style="font-size:1.4rem;text-align:center;width:60px">
+            </div>
+            <div class="form-group full">
+              <label>Usuário do sistema <span style="font-size:.72rem;color:var(--muted)">(opcional — associa o membro a uma conta de usuário)</span></label>
+              <select id="fmcAppUserId" style="width:100%">${userOpts}</select>
             </div>
           </div>
           <div id="fmcError" style="display:none;color:var(--red);font-size:.78rem;margin-top:8px"></div>
@@ -289,13 +333,14 @@ function _fmcOnTypeChange() {
 }
 
 async function saveFamilyMember() {
-  const memberId = document.getElementById('fmcMemberId')?.value || '';
-  const name     = document.getElementById('fmcName')?.value.trim();
-  const type     = document.getElementById('fmcType')?.value;
-  const relation = document.getElementById('fmcRelation')?.value;
-  const birthYearVal = document.getElementById('fmcBirthYear')?.value;
-  const emoji    = document.getElementById('fmcEmoji')?.value.trim() || FMC_DEFAULT_EMOJI[type];
-  const errEl    = document.getElementById('fmcError');
+  const memberId    = document.getElementById('fmcMemberId')?.value || '';
+  const name        = document.getElementById('fmcName')?.value.trim();
+  const member_type = document.getElementById('fmcType')?.value;
+  const family_relationship = document.getElementById('fmcRelation')?.value;
+  const birth_date  = document.getElementById('fmcBirthDate')?.value || null;
+  const emoji       = document.getElementById('fmcEmoji')?.value.trim() || FMC_DEFAULT_EMOJI[member_type] || '👤';
+  const app_user_id = document.getElementById('fmcAppUserId')?.value || null;
+  const errEl       = document.getElementById('fmcError');
 
   if (!name) {
     if (errEl) { errEl.textContent = 'Informe o nome do membro.'; errEl.style.display = ''; }
@@ -304,12 +349,13 @@ async function saveFamilyMember() {
   if (errEl) errEl.style.display = 'none';
 
   const record = {
-    family_id:    famId(),
+    family_id:            famId(),
     name,
-    type,
-    relation,
-    birth_year:   birthYearVal ? parseInt(birthYearVal) : null,
-    avatar_emoji: emoji,
+    member_type,
+    family_relationship,
+    birth_date:           birth_date || null,
+    avatar_emoji:         emoji,
+    app_user_id:          app_user_id || null,
   };
 
   try {
@@ -347,19 +393,30 @@ function showFamilyCompositionMigration() {
 -- Execute no Supabase SQL Editor
 
 CREATE TABLE IF NOT EXISTS public.family_composition (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id    UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
-  name         TEXT NOT NULL,
-  type         TEXT NOT NULL DEFAULT 'adult'
-               CHECK (type IN ('adult', 'child')),
-  relation     TEXT NOT NULL DEFAULT 'outro',
-  birth_year   INTEGER,
-  avatar_emoji TEXT DEFAULT '👤',
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id           UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
+  name                TEXT NOT NULL,
+  member_type         TEXT NOT NULL DEFAULT 'adult'
+                      CHECK (member_type IN ('adult', 'child')),
+  family_relationship TEXT NOT NULL DEFAULT 'outro',
+  birth_date          DATE,
+  avatar_emoji        TEXT DEFAULT '👤',
+  app_user_id         UUID REFERENCES public.app_users(id) ON DELETE SET NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_family_composition_family
   ON public.family_composition(family_id);
+CREATE INDEX IF NOT EXISTS idx_family_composition_user
+  ON public.family_composition(app_user_id)
+  WHERE app_user_id IS NOT NULL;
+
+-- If migrating from older version: rename columns
+-- ALTER TABLE public.family_composition RENAME COLUMN type TO member_type;
+-- ALTER TABLE public.family_composition RENAME COLUMN relation TO family_relationship;
+-- ALTER TABLE public.family_composition RENAME COLUMN birth_year TO birth_date;
+-- ALTER TABLE public.family_composition ADD COLUMN IF NOT EXISTS
+--   app_user_id UUID REFERENCES public.app_users(id) ON DELETE SET NULL;
 
 ALTER TABLE public.family_composition ENABLE ROW LEVEL SECURITY;
 
@@ -590,12 +647,18 @@ async function _loadAndRenderFmcForFamily(familyId) {
     }
 
     listEl.innerHTML = members.map(m => {
-      const rel  = FMC_RELATIONS.find(r => r.value === m.relation);
-      const emoji = m.avatar_emoji || FMC_DEFAULT_EMOJI[m.type] || '👤';
-      const typeColor = m.type === 'adult' ? '#1d4ed8' : '#15803d';
-      const typeBg    = m.type === 'adult' ? '#eff6ff' : '#f0fdf4';
-      const typeLabel = m.type === 'adult' ? 'Adulto' : 'Criança';
-      const age = m.birth_year ? ` · ${new Date().getFullYear() - m.birth_year} anos` : '';
+      const mtype     = m.member_type || m.type;
+      const mrel      = m.family_relationship || m.relation;
+      const rel       = FMC_RELATIONS.find(r => r.value === mrel);
+      const emoji     = m.avatar_emoji || FMC_DEFAULT_EMOJI[mtype] || '👤';
+      const typeColor = mtype === 'adult' ? '#1d4ed8' : '#15803d';
+      const typeBg    = mtype === 'adult' ? '#eff6ff' : '#f0fdf4';
+      const typeLabel = mtype === 'adult' ? 'Adulto' : 'Criança';
+      const age       = _fmcCalcAge(m.birth_date);
+      const ageDisplay = age !== null ? ` (${age})` : '';
+      const userBadge = m.app_user_id
+        ? `<span style="font-size:.62rem;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;font-weight:700">👤 Vinculado</span>`
+        : '';
       return `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;
              background:var(--surface2);border:1px solid var(--border);border-radius:8px">
@@ -605,12 +668,13 @@ async function _loadAndRenderFmcForFamily(familyId) {
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-              ${esc(m.name)}
+              ${esc(m.name)}${ageDisplay}
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:2px">
               <span style="font-size:.65rem;font-weight:700;padding:1px 5px;border-radius:3px;
                 background:${typeBg};color:${typeColor}">${typeLabel}</span>
-              ${rel ? `<span style="font-size:.7rem;color:var(--muted)">${esc(rel.label)}${age}</span>` : ''}
+              ${rel ? `<span style="font-size:.7rem;color:var(--muted)">${esc(rel.label)}</span>` : ''}
+              ${userBadge}
             </div>
           </div>
           <button class="btn-icon" title="Editar"
@@ -661,13 +725,14 @@ function openFamilyMemberFormForFamily(familyId, memberId = null) {
 }
 
 async function saveFamilyMemberForFamily(familyId) {
-  const memberId = document.getElementById('fmcMemberId')?.value || '';
-  const name     = document.getElementById('fmcName')?.value.trim();
-  const type     = document.getElementById('fmcType')?.value;
-  const relation = document.getElementById('fmcRelation')?.value;
-  const birthYearVal = document.getElementById('fmcBirthYear')?.value;
-  const emoji    = document.getElementById('fmcEmoji')?.value.trim() || FMC_DEFAULT_EMOJI[type];
-  const errEl    = document.getElementById('fmcError');
+  const memberId            = document.getElementById('fmcMemberId')?.value || '';
+  const name                = document.getElementById('fmcName')?.value.trim();
+  const member_type         = document.getElementById('fmcType')?.value;
+  const family_relationship = document.getElementById('fmcRelation')?.value;
+  const birth_date          = document.getElementById('fmcBirthDate')?.value || null;
+  const emoji               = document.getElementById('fmcEmoji')?.value.trim() || FMC_DEFAULT_EMOJI[member_type] || '👤';
+  const app_user_id         = document.getElementById('fmcAppUserId')?.value || null;
+  const errEl               = document.getElementById('fmcError');
 
   if (!name) {
     if (errEl) { errEl.textContent = 'Informe o nome do membro.'; errEl.style.display = ''; }
@@ -676,12 +741,13 @@ async function saveFamilyMemberForFamily(familyId) {
   if (errEl) errEl.style.display = 'none';
 
   const record = {
-    family_id:    familyId,
+    family_id:            familyId,
     name,
-    type,
-    relation,
-    birth_year:   birthYearVal ? parseInt(birthYearVal) : null,
-    avatar_emoji: emoji,
+    member_type,
+    family_relationship,
+    birth_date:           birth_date || null,
+    avatar_emoji:         emoji,
+    app_user_id:          app_user_id || null,
   };
 
   try {

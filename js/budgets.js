@@ -252,6 +252,14 @@ function _budgetCardHTML(b, spent, raw) {
   const cat   = b.categories || {};
   const color = over ? 'var(--red)' : near ? 'var(--amber)' : (cat.color || 'var(--accent)');
   const rem   = b.amount - spent;
+  // Member association: look up name and age from loaded composition cache
+  const fmcMember  = b.family_member_id && typeof getFamilyMemberById === 'function'
+    ? getFamilyMemberById(b.family_member_id) : null;
+  const memberAge   = fmcMember && typeof _fmcCalcAge === 'function'
+    ? _fmcCalcAge(fmcMember.birth_date) : null;
+  const memberLabel = fmcMember
+    ? `${fmcMember.avatar_emoji || '👤'} ${esc(fmcMember.name)}${memberAge !== null ? ` (${memberAge})` : ''}`
+    : null;
 
   const parentCat = cat.parent_id
     ? state.categories.find(c => c.id === cat.parent_id) : null;
@@ -288,6 +296,7 @@ function _budgetCardHTML(b, spent, raw) {
         <div style="min-width:0">
           ${parentCat ? `<div style="font-size:.67rem;color:var(--muted);line-height:1.1">${parentCat.icon || ''} ${esc(parentCat.name)} ›</div>` : ''}
           <div style="font-weight:700;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cat.name || '—')}</div>
+          ${memberLabel ? `<div style="font-size:.68rem;color:var(--muted);margin-top:1px">${memberLabel}</div>` : ''}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">

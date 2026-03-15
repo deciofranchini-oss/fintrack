@@ -568,7 +568,7 @@ function clearFamilyScopedUI() {
 function navigate(page){
   // Guard: settings/audit são admin-only
   if((page==='settings'||page==='audit') && currentUser?.role !== 'admin'){
-    toast('Acesso restrito: apenas admin/owner pode acessar Configurações.','warning');
+    toast('Acesso restrito: apenas Administradores globais podem acessar as Configurações.','warning');
     return;
   }
 

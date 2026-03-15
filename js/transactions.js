@@ -1266,7 +1266,7 @@ async function openTxDetail(id) {
 
   // Always fetch fresh from DB to get attachment_name and all joined fields
   const { data, error } = await sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon), family_composition(id,name,avatar_emoji,type)')
+    .select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon), family_composition(id,name,avatar_emoji,member_type,birth_date)')
     .eq('id', id).single();
   if (error || !data) { toast('Transação não encontrada', 'error'); return; }
   const t = data;
@@ -1343,7 +1343,9 @@ async function openTxDetail(id) {
   if (t.tags?.length) metaRows.push(['Tags', t.tags.map(tag => `<span class="badge badge-muted">${esc(tag)}</span>`).join(' ')]);
   if (t.family_composition) {
     const m = t.family_composition;
-    metaRows.push(['Membro', `${m.avatar_emoji || '👤'} ${esc(m.name)}`]);
+    const age = typeof _fmcCalcAge === 'function' ? _fmcCalcAge(m.birth_date) : null;
+    const ageTxt = age !== null ? ` (${age})` : '';
+    metaRows.push(['Membro', `${m.avatar_emoji || '👤'} ${esc(m.name)}${ageTxt}`]);
   }
   if (t.currency && t.currency !== 'BRL') metaRows.push(['Moeda', t.currency]);
 

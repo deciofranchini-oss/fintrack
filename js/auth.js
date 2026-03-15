@@ -1213,6 +1213,15 @@ async function openUserAdmin() {
   if (tabPending) tabPending.style.display = isAdmin ? '' : 'none';
   if (tabUsers)   tabUsers.style.display   = isAdmin ? '' : 'none';
 
+  // Wizard row: visible for owners (and admins) — family configuration tool
+  const wizardRow = document.getElementById('uaWizardRow');
+  if (wizardRow) wizardRow.style.display = (isAdmin || isFamilyOwner) ? '' : 'none';
+
+  // Update wizard status sub-text
+  if ((isAdmin || isFamilyOwner) && typeof _updateWizardSettingsStatus === 'function') {
+    _updateWizardSettingsStatus().catch(() => {});
+  }
+
   if (isAdmin) {
     let pending = null;
     try { const { data: _p } = await sb.rpc('get_pending_users'); pending = _p; } catch {}

@@ -466,10 +466,7 @@ function loadSettings() {
   // IA settings
   if (typeof initAiSettings === 'function') initAiSettings();
 
-  // Wizard status in settings panel (admin only)
-  if (isAdmin && typeof _updateWizardSettingsStatus === 'function') {
-    _updateWizardSettingsStatus().catch(() => {});
-  }
+
 
 
   // Seções admin-only

@@ -223,6 +223,15 @@ async function loadDashboard(){
     if (ungrouped && ungrouped.length) html += buildGroup('__none__', 'Sem grupo', ungrouped);
     el.innerHTML = html || accs.map(rowHtml).join('');
   })();
+  // Populate member filter for category chart
+  const dashMemSel = document.getElementById('dashMemberFilter');
+  if (dashMemSel && typeof populateFamilyMemberSelect === 'function') {
+    const prevMember = dashMemSel.value;
+    populateFamilyMemberSelect('dashMemberFilter', { placeholder: 'Família (todos)' });
+    dashMemSel.style.display = dashMemSel.options.length > 1 ? '' : 'none';
+    if (prevMember) dashMemSel.value = prevMember;
+  }
+
   await Promise.all([renderCashflowChart(),renderCategoryChart()]);
 }
 async function renderCashflowChart(){
@@ -304,10 +313,13 @@ function _catColor(color, idx, usedSet) {
 
 async function renderCategoryChart(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data}=await famQ(
+  const memberId = document.getElementById('dashMemberFilter')?.value || '';
+  let q = famQ(
     sb.from('transactions')
       .select('id,date,description,amount,brl_amount,currency,account_id,categories(name,color),payees(name),accounts!transactions_account_id_fkey(name)')
   ).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
+  if (memberId) q = q.eq('family_member_id', memberId);
+  const{data}=await q;
 
   const catMap={};
   (data||[]).forEach(t=>{
