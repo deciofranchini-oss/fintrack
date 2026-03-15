@@ -213,6 +213,13 @@ async function tryAutoConnect(){
     if(restored && currentUser){
       hideLoginScreen?.();
       updateUserUI?.();
+      // If user has no family_id, show family creation screen before app boots
+      if (!currentUser.family_id && currentUser.role !== 'admin' && currentUser.role !== 'owner') {
+        if (typeof enforceFirstLoginFamilyCreation === 'function') {
+          await enforceFirstLoginFamilyCreation();
+          return; // createFirstFamily() calls bootApp() when done
+        }
+      }
       await bootApp();
     } else {
       // Session restored but context failed (e.g. family_id null) → show login
@@ -287,6 +294,10 @@ async function bootApp(){
   // Dados secundários em background — não bloqueiam o dashboard
   loadScheduled().catch(() => {});
   initFxRates().catch(e => console.warn('[FX] boot init failed:', e.message));
+  // Load family composition (members) in background
+  if (typeof loadFamilyComposition === 'function') {
+    loadFamilyComposition().catch(() => {});
+  }
   if (typeof runScheduledAutoRegister === 'function') {
     runScheduledAutoRegister().catch(() => {});
   }

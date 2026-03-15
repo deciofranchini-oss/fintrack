@@ -64,9 +64,13 @@ function populateReportFilters() {
     payEl.value = cur;
   }
 
-  // Tag filter — built from transactions already in state (may be empty on first load;
-  // refreshed after each fetchRptTransactions call via _refreshRptTagFilter)
+  // Tag filter
   _refreshRptTagFilter();
+
+  // Member filter
+  if (typeof populateFamilyMemberSelect === 'function') {
+    populateFamilyMemberSelect('rptMember', { placeholder: 'Todos' });
+  }
 }
 
 /** Rebuild the tag filter dropdown from the current rptState.txData (or state.transactions). */
@@ -97,7 +101,8 @@ async function fetchRptTransactions() {
   const typeV  = document.getElementById('rptType')?.value      || '';
   const catId  = document.getElementById('rptCategory')?.value  || '';
   const payId  = document.getElementById('rptPayee')?.value     || '';
-  const tagV   = document.getElementById('rptTag')?.value       || '';
+  const tagV    = document.getElementById('rptTag')?.value       || '';
+  const memberV = document.getElementById('rptMember')?.value    || '';
 
   let q = famQ(sb.from('transactions')
     .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)'))
@@ -109,7 +114,8 @@ async function fetchRptTransactions() {
   if(typeV==='expense') q = q.lt('amount',0);
   if(typeV==='income')  q = q.gt('amount',0);
   // Tag filter: PostgREST array-contains operator
-  if(tagV)  q = q.contains('tags', [tagV]);
+  if(tagV)    q = q.contains('tags', [tagV]);
+  if(memberV) q = q.eq('family_member_id', memberV);
 
   const {data, error} = await q;
   if(error) { toast(error.message,'error'); return []; }
@@ -402,6 +408,11 @@ function _getActiveFiltersLabel() {
   if (typ?.value) parts.push(typ.value === 'expense' ? 'Só Despesas' : 'Só Receitas');
   const tag = document.getElementById('rptTag');
   if (tag?.value) parts.push('Tag: ' + tag.value);
+  const mem = document.getElementById('rptMember');
+  if (mem?.value) {
+    const memName = mem.options[mem.selectedIndex]?.text?.replace(/^[^\s]+\s/, '') || mem.value;
+    parts.push('Membro: ' + memName);
+  }
   return parts.length ? parts.join(' · ') : 'Todos os dados';
 }
 

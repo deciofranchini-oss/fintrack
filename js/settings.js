@@ -471,6 +471,11 @@ function loadSettings() {
     _updateWizardSettingsStatus().catch(() => {});
   }
 
+  // Family composition panel (owner + admin)
+  if (typeof initFamilyCompositionPanel === 'function') {
+    initFamilyCompositionPanel().catch(() => {});
+  }
+
   // Seções admin-only
   const adminSections = ['settingsVisibilitySection', 'userMgmtSection', 'normalizeNamesSection', 'orphanScanSection'];
   adminSections.forEach(id => {

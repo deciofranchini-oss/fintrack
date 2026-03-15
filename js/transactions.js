@@ -589,6 +589,14 @@ async function editTransaction(id){
   setTimeout(()=>checkAccountIofConfig(data.account_id), 50);
   const type=data.is_transfer?(data.is_card_payment?'card_payment':'transfer'):data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer'||type==='card_payment')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
   document.getElementById('txModalTitle').textContent='Editar Transação';
+  // Populate family member select
+  if (typeof populateFamilyMemberSelect === 'function') {
+    populateFamilyMemberSelect('txFamilyMember');
+    if (data?.family_member_id) {
+      const fmSel = document.getElementById('txFamilyMember');
+      if (fmSel) setTimeout(() => { fmSel.value = data.family_member_id || ''; }, 50);
+    }
+  }
   // Restore currency panel state after DOM settles
   setTimeout(() => {
     const type = document.getElementById('txTypeField').value;
@@ -1091,7 +1099,8 @@ async function saveTransaction(){
     attachment_url:  existingUrl,
     attachment_name: existingName,
     updated_at:new Date().toISOString(),
-    family_id:famId()
+    family_id:famId(),
+    family_member_id: (()=>{ const v=document.getElementById('txFamilyMember')?.value; return v||null; })()
   };
   if(!data.date||!data.account_id){toast('Preencha data e conta','error');return;}
   let err,txResult;
@@ -1257,7 +1266,7 @@ async function openTxDetail(id) {
 
   // Always fetch fresh from DB to get attachment_name and all joined fields
   const { data, error } = await sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon)')
+    .select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon), family_composition(id,name,avatar_emoji,type)')
     .eq('id', id).single();
   if (error || !data) { toast('Transação não encontrada', 'error'); return; }
   const t = data;
@@ -1332,6 +1341,10 @@ async function openTxDetail(id) {
   const metaRows = [];
   if (t.memo)         metaRows.push(['Memo', esc(t.memo)]);
   if (t.tags?.length) metaRows.push(['Tags', t.tags.map(tag => `<span class="badge badge-muted">${esc(tag)}</span>`).join(' ')]);
+  if (t.family_composition) {
+    const m = t.family_composition;
+    metaRows.push(['Membro', `${m.avatar_emoji || '👤'} ${esc(m.name)}`]);
+  }
   if (t.currency && t.currency !== 'BRL') metaRows.push(['Moeda', t.currency]);
 
   const metaHtml = metaRows.map(([label, val]) => `

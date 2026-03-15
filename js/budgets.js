@@ -471,6 +471,13 @@ function openBudgetModal(id = '') {
   const notesEl = document.getElementById('budgetNotes');
   if (notesEl) notesEl.value = existing?.notes || '';
 
+  // Populate family member select
+  if (typeof populateFamilyMemberSelect === 'function') {
+    populateFamilyMemberSelect('budgetFamilyMember');
+    const fmSel = document.getElementById('budgetFamilyMember');
+    if (fmSel) fmSel.value = existing?.family_member_id || '';
+  }
+
   openModal('budgetModal');
 }
 
@@ -540,6 +547,9 @@ async function saveBudget() {
     data.notes       = notes;
     // updated_at omitido — coluna não existe no schema atual
   }
+  // family_member_id — works if column exists (silently ignored if not)
+  const fmMemberId = document.getElementById('budgetFamilyMember')?.value || null;
+  if (fmMemberId) data.family_member_id = fmMemberId;
 
   let err;
   if (id) {
