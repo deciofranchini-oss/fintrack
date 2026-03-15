@@ -580,11 +580,23 @@ async function doChangeMyPwd() {
 
 // ── On login success ──
 async function onLoginSuccess() {
-  hideLoginScreen();
   updateUserUI();
   if (!sb) {
     toast('Configure o Supabase primeiro','error'); return;
   }
+
+  // ── Logo exit animation then show Cursor loader ───────────────────────
+  const loginLogo = document.getElementById('loginLogoImg');
+  if (loginLogo) loginLogo.classList.add('exiting');
+
+  // Brief pause for exit animation, then show Cursor over the login screen
+  await new Promise(r => setTimeout(r, 380));
+
+  // Show logo cursor while app boots
+  if (typeof Cursor !== 'undefined') Cursor.show('A carregar…');
+
+  hideLoginScreen();
+
   // If the user has no family_id and is not a global admin/owner,
   // launch the wizard so they can create their own family as Owner.
   if (!currentUser?.family_id &&
@@ -596,6 +608,7 @@ async function onLoginSuccess() {
     }
   }
   await bootApp();
+  if (typeof Cursor !== 'undefined') Cursor.hide();
 }
 
 // ── Magic-link post-auth gate ─────────────────────────────────────────────
