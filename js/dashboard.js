@@ -122,10 +122,11 @@ async function loadDashboard(){
   // Guard: sem cliente Supabase ou sem family_id não há dados para mostrar
   if (!sb) { console.warn('[dashboard] sb não inicializado'); return; }
   if (!currentUser?.family_id && currentUser?.role !== 'admin' && currentUser?.role !== 'owner') {
-    console.warn('[dashboard] currentUser sem family_id — aguardando contexto');
-    // Mostra estado vazio amigável ao invés de erros silenciosos
-    const el = document.getElementById('accountBalancesList');
-    if (el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.83rem">Nenhuma família vinculada.<br>Peça ao administrador para associar sua conta.</div>';
+    console.warn('[dashboard] currentUser sem family_id — lançando wizard de criação');
+    // User has no family: let them create one instead of showing a dead-end message
+    if (typeof enforceFirstLoginFamilyCreation === 'function') {
+      enforceFirstLoginFamilyCreation();
+    }
     return;
   }
   // Inicia FX em paralelo com os KPIs — nunca bloqueia o dashboard

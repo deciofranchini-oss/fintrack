@@ -403,11 +403,7 @@ async function doLogin() {
 
     await _loadCurrentUserContext();
 
-    if (!currentUser?.family_id) {
-      toast('Usuário sem família vinculada. Peça ao admin para associar.', 'warning');
-    }
-
-    onLoginSuccess();
+    await onLoginSuccess();
   } catch(e) {
     showLoginErr('Erro: ' + (e?.message || e));
   } finally {
@@ -549,7 +545,7 @@ async function doChangePwd() {
         .eq('email', uRes.user.email);
     }
     await _loadCurrentUserContext();
-    onLoginSuccess();
+    await onLoginSuccess();
   } catch(e) { errEl.textContent = 'Erro: ' + (e?.message || e); errEl.style.display=''; }
 }
 
@@ -583,13 +579,23 @@ async function doChangeMyPwd() {
 }
 
 // ── On login success ──
-function onLoginSuccess() {
+async function onLoginSuccess() {
   hideLoginScreen();
   updateUserUI();
   if (!sb) {
     toast('Configure o Supabase primeiro','error'); return;
   }
-  bootApp();
+  // If the user has no family_id and is not a global admin/owner,
+  // launch the wizard so they can create their own family as Owner.
+  if (!currentUser?.family_id &&
+      currentUser?.role !== 'admin' &&
+      currentUser?.role !== 'owner') {
+    if (typeof enforceFirstLoginFamilyCreation === 'function') {
+      await enforceFirstLoginFamilyCreation();
+      return; // wizard's _wzFinish() calls bootApp() when done
+    }
+  }
+  await bootApp();
 }
 
 // ── Magic-link post-auth gate ─────────────────────────────────────────────
@@ -639,7 +645,7 @@ function _registerMagicLinkGate() {
 
       // All good — proceed into the app
       await _loadCurrentUserContext();
-      onLoginSuccess();
+      await onLoginSuccess();
     } catch(e) {
       console.error('Magic link gate error:', e);
     }
