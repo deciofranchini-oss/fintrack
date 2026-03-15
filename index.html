@@ -1745,6 +1745,33 @@
         </div>
       </div>
 
+      <!-- ══ VARREDURA DE REGISTROS ÓRFÃOS ══ -->
+      <div class="cfg-section" id="orphanScanSection" style="display:none">
+        <button class="cfg-sec-hdr" onclick="toggleCfgSection('cfgSec_orphan')">
+          <span class="cfg-sec-icon" style="background:#fef2f2">🔍</span>
+          <span class="cfg-sec-title">Varredura de Registros Órfãos</span>
+          <span class="cfg-sec-arr" id="cfgArr_orphan">▾</span>
+        </button>
+        <div class="cfg-sec-body" id="cfgSec_orphan">
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:14px;line-height:1.55">
+            Identifica registros sem vínculo válido no banco de dados: usuários sem família,
+            categorias de família inexistente, transações sem conta, e outros.
+            A exclusão é irreversível — revise a prévia antes de confirmar.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            <button class="btn btn-primary btn-sm" id="orphanScanBtn" onclick="runOrphanScan()">
+              🔍 Executar Varredura
+            </button>
+            <button class="btn btn-ghost btn-sm" id="orphanDeleteBtn"
+              onclick="confirmOrphanDelete()"
+              style="display:none;color:var(--red);border-color:var(--red)">
+              🗑 Excluir Selecionados
+            </button>
+          </div>
+          <div id="orphanScanResults"></div>
+        </div>
+      </div>
+
       <!-- ══ SOBRE ══ -->
       <div class="cfg-section">
         <button class="cfg-sec-hdr" onclick="toggleCfgSection('cfgSec_sobre')">
@@ -4776,6 +4803,7 @@
   </div>
 </div>
 
+  <script src="js/orphan.js"></script>
   <script src="js/wizard.js"></script>
 
 <!-- ═══ SETUP WIZARD ═══════════════════════════════════════════════════════ -->
