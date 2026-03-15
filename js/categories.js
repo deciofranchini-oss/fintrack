@@ -52,52 +52,54 @@ function renderCategories() {
     container.innerHTML = parents.map(p => {
       const subs      = allChildren.filter(c => c.parent_id === p.id).sort((a, b) => a.name.localeCompare(b.name));
       const pTxCount  = _catTxCounts[p.id] || 0;
-      const pOwnCount = pTxCount - subs.reduce((s, c) => s + (_catTxCounts[c.id] || 0), 0);
+      const pColor    = p.color || 'var(--accent)';
 
       return `
-      <div class="cat-editor-wrap" id="catWrap-${p.id}">
-        <div class="cat-item-row" draggable="true"
+      <div class="cat-group" id="catWrap-${p.id}" style="--cat-clr:${pColor}">
+        <!-- Parent header -->
+        <div class="cat-group-hdr" draggable="true"
           ondragstart="catDragStart(event,'${p.id}')"
           ondragover="catDragOver(event,'${p.id}')"
           ondrop="catDrop(event,'${p.id}')"
           ondragend="catDragEnd()">
-          <span class="cat-drag-handle" title="Arrastar para reordenar">⠿</span>
-          <div class="cat-item-icon" style="background:${p.color || 'var(--bg2)'}20;border:2px solid ${p.color || 'var(--border)'}">
+          <span class="cat-drag-handle" title="Arrastar">⠿</span>
+          <div class="cat-group-icon">
             <span>${p.icon || '📦'}</span>
           </div>
-          <span class="cat-item-name" id="catName-${p.id}" ondblclick="startCatInlineEdit('${p.id}')">${esc(p.name)}</span>
-          ${subs.length ? `<span class="cat-sub-count">${subs.length} sub</span>` : ''}
-          ${pTxCount > 0 ? `<span class="cat-tx-count" style="cursor:pointer" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${p.id}','${esc(p.name)}')">📊 ${pTxCount}</span>` : ''}
+          <span class="cat-group-name" id="catName-${p.id}" ondblclick="startCatInlineEdit('${p.id}')">${esc(p.name)}</span>
+          <div class="cat-group-meta">
+            ${subs.length ? `<span class="cat-sub-pill">${subs.length} sub</span>` : ''}
+            ${pTxCount > 0 ? `<span class="cat-tx-pill" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${p.id}','${esc(p.name)}')">📊 ${pTxCount}</span>` : ''}
+          </div>
           <div class="cat-inline-actions">
-            <button class="btn-icon" onclick="openCategoryModal('','${p.id}','${dbType}')" title="Nova subcategoria" style="font-size:.7rem;padding:3px 7px">+ Sub</button>
+            <button class="btn-icon" onclick="openCategoryModal('','${p.id}','${dbType}')" title="Nova subcategoria">＋ Sub</button>
             <button class="btn-icon" onclick="openCategoryModal('${p.id}')" title="Editar">✏️</button>
             <button class="btn-icon" onclick="deleteCategory('${p.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
           </div>
         </div>
-        ${subs.map(c => {
-          const cCount = _catTxCounts[c.id] || 0;
+        <!-- Subcategories -->
+        ${subs.length ? `<div class="cat-subs">` + subs.map(c => {
+          const cCount  = _catTxCounts[c.id] || 0;
+          const cColor  = c.color || pColor;
           return `
-          <div class="cat-item-row" style="padding-left:36px;background:var(--surface2)" draggable="true"
+          <div class="cat-sub-row" draggable="true"
             ondragstart="catDragStart(event,'${c.id}')"
             ondragover="catDragOver(event,'${c.id}')"
             ondrop="catDrop(event,'${c.id}')"
             ondragend="catDragEnd()">
             <span class="cat-drag-handle" title="Arrastar">⠿</span>
-            <div class="cat-item-indent">
-              <svg width="12" height="16" viewBox="0 0 12 16" fill="none"><path d="M1 0 L1 8 L12 8" stroke="var(--border2)" stroke-width="1.5"/></svg>
+            <div class="cat-sub-connector"></div>
+            <div class="cat-sub-icon" style="background:color-mix(in srgb,${cColor} 14%,transparent)">
+              <span style="color:${cColor}">${c.icon || '▸'}</span>
             </div>
-            <div class="cat-item-icon" style="background:${c.color || 'var(--bg2)'}20;border:2px solid ${c.color || 'var(--border)'}">
-              <span style="font-size:.65rem">${c.icon || '▸'}</span>
-            </div>
-            <span class="cat-item-name child-name" ondblclick="startCatInlineEdit('${c.id}')">${esc(c.name)}</span>
-            <span class="cat-parent-chip" onclick="changeCatParent('${c.id}')" title="Mudar categoria pai">📂 ${esc(p.name)}</span>
-            ${cCount > 0 ? `<span class="cat-tx-count" style="cursor:pointer" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${c.id}','${esc(c.name)}')">📊 ${cCount}</span>` : ''}
+            <span class="cat-sub-name" id="catName-${c.id}" ondblclick="startCatInlineEdit('${c.id}')">${esc(c.name)}</span>
+            ${cCount > 0 ? `<span class="cat-tx-pill" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${c.id}','${esc(c.name)}')">📊 ${cCount}</span>` : ''}
             <div class="cat-inline-actions">
               <button class="btn-icon" onclick="openCategoryModal('${c.id}')" title="Editar">✏️</button>
               <button class="btn-icon" onclick="deleteCategory('${c.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
             </div>
           </div>`;
-        }).join('')}
+        }).join('') + `</div>` : ''}
       </div>`;
     }).join('');
 
