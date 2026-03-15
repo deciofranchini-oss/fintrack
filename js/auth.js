@@ -280,6 +280,11 @@ async function sha256(str) {
 
 // ── Show / hide login screen ──
 function showLoginScreen() {
+  // Ensure sb is initialized whenever login screen is shown —
+  // guards against iOS/Safari timing issues where createClient failed silently
+  if (!sb && typeof ensureSupabaseClient === 'function') {
+    sb = ensureSupabaseClient();
+  }
   // Hide main app
   const mainApp = document.getElementById('mainApp');
   const sidebar = document.getElementById('sidebar');
@@ -358,6 +363,8 @@ async function doLogin() {
 
   btn.disabled = true; btn.textContent = 'Verificando...';
   try {
+    if (!sb && typeof ensureSupabaseClient === 'function') sb = ensureSupabaseClient();
+    if (!sb) { showLoginErr('Sem conexão com o servidor. Verifique a configuração.'); btn.disabled = false; btn.textContent = 'Entrar'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
       const msg = (error.message || '').toLowerCase().includes('confirm')
@@ -452,6 +459,13 @@ async function doMagicLink() {
   btn.textContent = '⏳ Enviando...';
 
   try {
+    if (!sb && typeof ensureSupabaseClient === 'function') sb = ensureSupabaseClient();
+    if (!sb) {
+      errEl.textContent = 'Sem conexão com o servidor. Verifique a configuração.';
+      errEl.style.display = '';
+      btn.disabled = false; btn.textContent = '✉️ Enviar Link de Acesso';
+      return;
+    }
     // Verify the e-mail exists AND is approved in app_users before sending
     // the OTP — avoids leaking info about unknown e-mails via timing, and
     // prevents unapproved users from ever receiving an access link.
@@ -1098,6 +1112,13 @@ async function doForgotPwd() {
   if (!email) { errEl.textContent = 'Informe seu e-mail.'; errEl.style.display = ''; return; }
   btn.disabled = true; btn.textContent = '⏳ Enviando...';
   try {
+    // Ensure Supabase client is initialized — may be null if credentials failed to load
+    if (!sb && typeof ensureSupabaseClient === 'function') {
+      sb = ensureSupabaseClient();
+    }
+    if (!sb) {
+      throw new Error('Conexão com o servidor não iniciada. Verifique a configuração do Supabase nas configurações do app.');
+    }
     const redirectTo = typeof getAppBaseUrl === 'function' ? getAppBaseUrl() : (window.location.origin + window.location.pathname);
     const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) throw error;
