@@ -89,6 +89,22 @@ async function openWizardManual() {
   _updateWizardSettingsStatus();
 }
 
+/**
+ * openWizardForNewUser()
+ * Called when the logged-in user has no family_id yet.
+ * Bypasses all guards, clears the family name, and marks the wizard as
+ * running in "create" mode so _wzRunSetup() creates a new family instead
+ * of just renaming the existing one.
+ */
+async function openWizardForNewUser() {
+  _wzReset();
+  _wz.familyName     = '';         // start blank — user types their family name
+  _wz.creatingFamily = true;       // flag: wizard must CREATE the family in _wzRunSetup
+  window._wzNeedsBoot = true;      // flag: _wzFinish must call bootApp() not navigate()
+  await saveAppSetting('wizard_dismissed', false).catch(() => {});
+  _wzOpen();
+}
+
 /** Update the wizard status sub-text in Settings to reflect current state. */
 async function _updateWizardSettingsStatus() {
   const el = document.getElementById('wizardSettingsSub');
@@ -113,11 +129,12 @@ async function _updateWizardSettingsStatus() {
 }
 
 function _wzReset() {
-  _wz.step = 1;
-  _wz.familyName = (currentUser?.families?.[0]?.name || '').replace(/família|family/gi,'').trim();
-  _wz.adults   = [];
-  _wz.children = [];
-  _wz.expenses = [];
+  _wz.step           = 1;
+  _wz.familyName     = (currentUser?.families?.[0]?.name || '').replace(/família|family/gi,'').trim();
+  _wz.adults         = [];
+  _wz.children       = [];
+  _wz.expenses       = [];
+  _wz.creatingFamily = false;
 }
 
 // ── Open / Close ──────────────────────────────────────────────────────────
@@ -214,8 +231,15 @@ function _wzRenderStep() {
 
 // ── Step 1: Família ───────────────────────────────────────────────────────
 function _wzStep1(body, title, subtitle) {
-  if (title)    title.textContent    = 'Bem-vindo ao Family FinTrack! 👋';
-  if (subtitle) subtitle.textContent = 'Vamos configurar sua família em poucos passos.';
+  if (title) title.textContent = 'Bem-vindo ao Family FinTrack! 👋';
+  if (_wz.creatingFamily) {
+    if (subtitle) subtitle.textContent = 'Vamos criar sua família e configurar tudo em poucos passos.';
+  } else {
+    if (subtitle) subtitle.textContent = 'Vamos configurar sua família em poucos passos.';
+  }
+  const ownerNote = _wz.creatingFamily
+    ? '<div class="wz-hint" style="margin-top:10px;padding:8px 10px;background:var(--accent-lt);border-radius:6px;color:var(--accent);font-weight:600">🔑 Você será o proprietário (Owner) desta família.</div>'
+    : '';
   body.innerHTML = `
     <div class="wz-field">
       <label class="wz-label">Como se chama sua família?</label>
@@ -224,6 +248,7 @@ function _wzStep1(body, title, subtitle) {
              value="${esc(_wz.familyName)}" maxlength="60"
              oninput="_wz.familyName=this.value">
       <div class="wz-hint">Este nome aparecerá no dashboard e relatórios.</div>
+      ${ownerNote}
     </div>`;
   document.getElementById('wzFamilyName')?.focus();
 }
@@ -638,12 +663,39 @@ function _wzSetStatus(id, msg, done) {
 
 async function _wzRunSetup() {
   try {
-    // 1. Update family name
-    const famId_ = currentUser?.family_id || currentUser?.families?.[0]?.id;
-    if (famId_ && _wz.familyName) {
-      try {
-        await sb.from('families').update({ name: _wz.familyName }).eq('id', famId_);
-      } catch (_) {}
+    // 1. Create family (new user) or update existing family name
+    let famId_ = currentUser?.family_id || currentUser?.families?.[0]?.id;
+
+    if (_wz.creatingFamily && !famId_) {
+      // New user has no family — create one and make them owner
+      _wzSetStatus('wzSt_family', 'Criando família…', false);
+      const { data: rpcData, error: rpcErr } = await sb.rpc('create_family_with_owner', {
+        p_name:        _wz.familyName,
+        p_description: null,
+      });
+      if (rpcErr) {
+        // Fallback: direct insert
+        const { data: fam, error: famErr } = await sb.from('families')
+          .insert({ name: _wz.familyName }).select('id').single();
+        if (famErr) throw famErr;
+        famId_ = fam.id;
+        await sb.from('family_members').insert({
+          user_id: currentUser.id, family_id: famId_, role: 'owner',
+        });
+        await sb.from('app_users').update({
+          family_id: famId_, preferred_family_id: famId_,
+        }).eq('id', currentUser.id);
+        currentUser.family_id = famId_;
+        currentUser.families  = [{ id: famId_, name: _wz.familyName, role: 'owner' }];
+      } else {
+        // RPC succeeded — reload context to get family_id
+        await _loadCurrentUserContext();
+        famId_ = currentUser?.family_id;
+      }
+      _wz.creatingFamily = false;
+    } else if (famId_ && _wz.familyName) {
+      // Existing family — just rename it
+      try { await sb.from('families').update({ name: _wz.familyName }).eq('id', famId_); } catch (_) {}
     }
     _wzSetStatus('wzSt_family', `Família "${_wz.familyName}" configurada`, true);
 
@@ -724,8 +776,16 @@ async function _wzRunSetup() {
 
 function _wzFinish() {
   _wzClose();
-  loadDashboard?.().catch(()=>{});
-  navigate('dashboard');
+  // If this was a new-user creation flow, boot the app fully
+  // (they never had a family_id before, so bootApp was never called)
+  const needsBoot = !!(window._wzNeedsBoot);
+  window._wzNeedsBoot = false;
+  if (needsBoot && typeof bootApp === 'function') {
+    bootApp().catch(() => {});
+  } else {
+    loadDashboard?.().catch(() => {});
+    navigate('dashboard');
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

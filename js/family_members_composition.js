@@ -731,48 +731,12 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tx_family_member
  * Prevents access to the app until a family exists.
  */
 async function enforceFirstLoginFamilyCreation() {
-  const existing = document.getElementById('firstFamilyOverlay');
-  if (existing) return;
-
-  const overlay = document.createElement('div');
-  overlay.id = 'firstFamilyOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:var(--surface,#fff);z-index:20000;display:flex;align-items:center;justify-content:center;padding:20px';
-
-  overlay.innerHTML = `
-    <div style="max-width:420px;width:100%;text-align:center">
-      <div style="font-size:3rem;margin-bottom:12px">🏠</div>
-      <h2 style="font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:8px">Bem-vindo ao Family FinTrack!</h2>
-      <p style="font-size:.88rem;color:var(--muted);margin-bottom:24px;line-height:1.6">
-        Para começar, crie sua família. Ela será o contexto de todas as suas operações financeiras.
-      </p>
-
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:left">
-        <div class="form-group" style="margin-bottom:14px">
-          <label style="font-weight:600">Nome da Família *</label>
-          <input type="text" id="firstFamilyName" placeholder="Ex: Família Silva"
-            style="width:100%;margin-top:6px" autofocus
-            onkeydown="if(event.key==='Enter') createFirstFamily()">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label style="font-weight:600">Descrição <span style="font-size:.72rem;font-weight:400;color:var(--muted)">(opcional)</span></label>
-          <input type="text" id="firstFamilyDesc" placeholder="Ex: Nossa família"
-            style="width:100%;margin-top:6px">
-        </div>
-        <div id="firstFamilyError" style="display:none;color:var(--red);font-size:.78rem;margin-top:8px"></div>
-      </div>
-
-      <button class="btn btn-primary" id="firstFamilyBtn"
-        onclick="createFirstFamily()"
-        style="margin-top:18px;width:100%;padding:14px;font-size:1rem;font-weight:600">
-        🏠 Criar minha família
-      </button>
-      <p style="font-size:.72rem;color:var(--muted);margin-top:12px">
-        Você será automaticamente o proprietário (Owner) desta família.
-      </p>
-    </div>`;
-
-  document.body.appendChild(overlay);
-  setTimeout(() => document.getElementById('firstFamilyName')?.focus(), 150);
+  // Launch the setup wizard directly — family creation is step 1 of the wizard.
+  // The wizard detects currentUser.family_id === null and creates the family
+  // as part of _wzRunSetup() instead of just renaming an existing one.
+  if (typeof openWizardForNewUser === 'function') {
+    await openWizardForNewUser();
+  }
 }
 
 async function createFirstFamily() {
