@@ -1705,12 +1705,19 @@ async function saveFamily() {
   }
   if (error) { toast('Erro: ' + error.message,'error'); return; }
 
-  toast(id ? '✓ Família atualizada!' : '✓ Família criada! Você é o owner.','success');
+  toast(id ? '✓ Família atualizada!' : '✓ Família criada! Iniciando configuração…','success');
   document.getElementById('familyFormArea').style.display = 'none';
   await _loadCurrentUserContext().catch(()=>{});
   await loadFamiliesList();
   updateUserUI();
   _renderFamilySwitcher();
+
+  // For new families: offer to run the setup wizard
+  if (!id) {
+    // RPC may return new family id — try to extract it from families list
+    const newFam = (_families || []).find(f => f.name === name);
+    _offerFamilyWizard(name, newFam?.id || null);
+  }
 }
 
 async function deleteFamily(id, name) {
@@ -1741,6 +1748,46 @@ Esta ação não pode ser desfeita.`)) return;
   updateUserUI();
   _renderFamilySwitcher();
 }
+
+// ── Wizard offer after new family creation ────────────────────────────────
+function _offerFamilyWizard(familyName, familyId) {
+  const el = document.getElementById('familiesList');
+  if (!el) return;
+  // Remove previous banner if any
+  document.getElementById('wizardOfferBanner')?.remove();
+  const banner = document.createElement('div');
+  banner.id = 'wizardOfferBanner';
+  banner.style.cssText = 'background:var(--green-lt,#dcfce7);border:1px solid var(--green,#16a34a);border-radius:8px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
+  banner.innerHTML = `
+    <div style="font-size:.85rem;color:#15803d">
+      🎉 <strong>Família "${esc(familyName)}" criada!</strong><br>
+      <span style="font-size:.78rem;color:#166534">Deseja configurá-la agora com o assistente de configuração?</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" onclick="_launchWizardForFamily('${familyId||''}','${esc(familyName)}')" style="background:#16a34a">🚀 Configurar agora</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wizardOfferBanner')?.remove()">Depois</button>
+    </div>`;
+  el.insertBefore(banner, el.firstChild);
+}
+
+async function _launchWizardForFamily(familyId, familyName) {
+  document.getElementById('wizardOfferBanner')?.remove();
+  closeModal('userAdminModal');
+  if (familyId && typeof switchFamily === 'function') {
+    try { await switchFamily(familyId); } catch(_) {}
+  }
+  if (typeof saveAppSetting === 'function') {
+    await saveAppSetting('wizard_dismissed', false).catch(()=>{});
+  }
+  if (typeof _wzReset === 'function' && typeof _wzOpen === 'function') {
+    _wzReset();
+    _wz.familyName = familyName || '';
+    _wzOpen();
+  } else if (typeof initWizard === 'function') {
+    await initWizard();
+  }
+}
+
 
 async function wipeFamilyData(id, name) {
   // Apaga TODOS os dados da família (transações, contas, etc.) mas mantém a família e membros
