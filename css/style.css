@@ -6560,3 +6560,162 @@ tr.tx-row-new td:first-child {
   .tx-v2-pay      { font-size: .75rem !important; }
   .tx-v2-meta     { font-size: .75rem; }
 }
+
+/* ── Favourite account cards — fintech style ───────────────────────────────
+   Grid of cards with gradient, large balance, account colour accent.
+──────────────────────────────────────────────────────────────────────────── */
+
+.dash-favs-section {
+  padding: 4px 0 12px;
+}
+
+.dash-favs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.dash-fav-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  padding: 16px 18px 18px;
+  cursor: pointer;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--card-clr, #2a6049) 90%, #000) 0%,
+      color-mix(in srgb, var(--card-clr, #2a6049) 72%, #000) 100%
+    );
+  color: #fff;
+  transition: transform .18s ease, box-shadow .18s ease;
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--card-clr, #2a6049) 35%, transparent),
+    0 1px 3px rgba(0,0,0,.18);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.dash-fav-card:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow:
+    0 8px 28px color-mix(in srgb, var(--card-clr, #2a6049) 45%, transparent),
+    0 2px 6px rgba(0,0,0,.22);
+}
+
+.dash-fav-card:active {
+  transform: translateY(0) scale(.98);
+}
+
+/* Decorative shine overlay */
+.dash-fav-card__shine {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,.13) 0%,
+    rgba(255,255,255,0)   55%
+  );
+  border-radius: inherit;
+}
+
+/* Decorative large circle in bottom-right */
+.dash-fav-card::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.07);
+  pointer-events: none;
+}
+
+.dash-fav-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+/* Icon pill */
+.dash-fav-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.18);
+  flex-shrink: 0;
+}
+
+.dash-fav-card__icon .acc-icon {
+  color: #fff !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Account type badge */
+.dash-fav-card__type {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  opacity: .75;
+  background: rgba(255,255,255,.15);
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-fav-card__name {
+  font-size: .8rem;
+  font-weight: 600;
+  opacity: .85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  letter-spacing: .01em;
+}
+
+.dash-fav-card__balance {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-family: var(--font-serif, monospace);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.dash-fav-card__balance.neg {
+  color: #fca5a5;
+}
+
+.dash-fav-brl {
+  font-size: .7rem;
+  opacity: .65;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mobile: 2-col on small screens, 1-col on very small */
+@media (max-width: 480px) {
+  .dash-favs-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .dash-fav-card {
+    padding: 13px 14px 15px;
+  }
+  .dash-fav-card__balance { font-size: 1.1rem; }
+  .dash-fav-card__icon { width: 30px; height: 30px; border-radius: 8px; }
+}
