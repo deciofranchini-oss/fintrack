@@ -7549,3 +7549,49 @@ tr.tx-row-new td:first-child {
   .rpt-kpi-value { font-size: 1rem; }
   .rpt-export-btn { padding: 5px 9px; font-size: .72rem; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LOGIN PAGE — Logo animations
+══════════════════════════════════════════════════════════════════════ */
+
+/* Entrance: drop in + fade */
+@keyframes loginLogoIn {
+  0%   { opacity: 0; transform: scale(.6) translateY(-20px); filter: blur(8px); }
+  60%  { opacity: 1; transform: scale(1.06) translateY(0);   filter: blur(0); }
+  80%  { transform: scale(.97); }
+  100% { transform: scale(1); }
+}
+
+/* Subtle breathing pulse while idle on login screen */
+@keyframes loginLogoPulse {
+  0%,100% { filter: drop-shadow(0 0 0px rgba(42,180,100,0)); transform: scale(1); }
+  50%     { filter: drop-shadow(0 0 18px rgba(42,180,100,.5)); transform: scale(1.03); }
+}
+
+/* Exit: zoom out + blur when login succeeds */
+@keyframes loginLogoExit {
+  0%   { opacity: 1; transform: scale(1);    filter: blur(0); }
+  100% { opacity: 0; transform: scale(1.6);  filter: blur(12px); }
+}
+
+.login-logo-anim {
+  animation:
+    loginLogoIn    .8s cubic-bezier(.34,1.56,.64,1) both,
+    loginLogoPulse  3s ease-in-out 1.2s infinite;
+  transform-origin: center center;
+  will-change: transform, opacity, filter;
+}
+
+.login-logo-anim.exiting {
+  animation: loginLogoExit .5s ease-in forwards !important;
+}
+
+/* Login card entrance */
+@keyframes loginCardIn {
+  0%   { opacity: 0; transform: translateY(24px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+#loginScreen > div {
+  animation: loginCardIn .55s cubic-bezier(.22,1,.36,1) .15s both;
+}
