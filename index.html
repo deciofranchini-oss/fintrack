@@ -2974,10 +2974,12 @@
         </div>
         <!-- Membro da família (optional) -->
         <div class="form-group" id="txFamilyMemberGroup">
-          <label>Membro da família <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
-          <select id="txFamilyMember" style="width:100%">
-            <option value="">👨‍👩‍👧 Família (geral)</option>
-          </select>
+          <label>Membro(s) da família <span style="font-size:.72rem;color:var(--muted)">(opcional)</span></label>
+          <div id="txFamilyMemberPicker" class="fmc-picker-container">
+            <div class="fmc-picker-empty">Carregando…</div>
+          </div>
+          <!-- hidden select kept for backward compat with save logic -->
+          <select id="txFamilyMember" style="display:none"></select>
         </div>
         <div class="form-group" id="txPayeeGroup" style="position:relative">
           <label>Beneficiário / Fonte</label>
