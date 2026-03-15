@@ -243,16 +243,18 @@ function refreshAllFamilyMemberSelects() {
   const dashRel = document.getElementById('dashRelGroup');
   if (dashRel) dashRel.style.display = hasMem ? '' : 'none';
 
-  // Render txMemberPicker in the transactions filter bar
-  if (typeof renderFmcMultiPicker === 'function') {
-    // Keep current selection when refreshing
-    const curSel = typeof getFmcMultiPickerSelected === 'function'
-      ? getFmcMultiPickerSelected('txMemberPicker') : [];
-    renderFmcMultiPicker('txMemberPicker', {
-      selected: curSel,
-      placeholder: '👨‍👩‍👧 Membros',
-      onChange: 'filterTransactions',   // auto-filter on chip click
-    });
+  // Populate txMemberPicker (now a compact <select>) with family members
+  const txMemberSel = document.getElementById('txMemberPicker');
+  if (txMemberSel && txMemberSel.tagName === 'SELECT') {
+    const curVal = txMemberSel.value;
+    txMemberSel.innerHTML = '<option value="">👤 Todos</option>' +
+      (_fmc.members || []).map(m =>
+        `<option value="${m.user_id}">${m.display_name || m.name || m.user_id}</option>`
+      ).join('');
+    // Restore previous selection if still valid
+    if (curVal && txMemberSel.querySelector(`option[value="${curVal}"]`)) {
+      txMemberSel.value = curVal;
+    }
   }
   // Show/hide the txMemberPicker wrap
   const txWrap = document.getElementById('txMemberFilterWrap');

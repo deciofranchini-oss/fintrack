@@ -258,9 +258,10 @@ function filterTransactions(immediate = false){
   state.txFilter.type=document.getElementById('txType').value;
   state.txFilter.status=(document.getElementById('txStatusFilter')?.value)||'';
   // Member filter: read selected IDs from multi-picker
-  state.txFilter.memberIds = typeof getFmcMultiPickerSelected === 'function'
-    ? getFmcMultiPickerSelected('txMemberPicker')
-    : [];
+  // Read selected member from compact select (empty string = all members)
+  const _txMemberSel = document.getElementById('txMemberPicker');
+  const _txMemberVal = _txMemberSel?.value || '';
+  state.txFilter.memberIds = _txMemberVal ? [_txMemberVal] : [];
   state.txPage=0;
   if(state.txView==='flat') document.getElementById('txSummaryBar').style.display='none';
   ['txMonth','txAccount','txType','txStatusFilter'].forEach(id => {
