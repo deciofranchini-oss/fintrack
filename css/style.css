@@ -6270,3 +6270,31 @@ tr.tx-row-new td:first-child {
   .wz-dot { width: 6px; height: 6px; }
   .wz-dots { gap: 5px; }
 }
+
+/* ── Transaction Detail Modal — mobile-friendly footer ─────────────────── */
+.tx-detail-footer {
+  padding: 10px 16px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+.tx-detail-footer-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.tx-detail-close-btn {
+  font-size: .82rem;
+  padding: 7px 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tx-detail-action-btn {
+  padding: 7px 10px;
+  font-size: 1rem;
+  flex-shrink: 0;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
