@@ -376,7 +376,14 @@ function txRow(t, showAccount=true, runningBalance=null) {
   const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const dateStr = `${d.getDate()} ${MON[d.getMonth()]}`;
 
-  const categoryLine = t.categories?.name ? `<div class="tx-v2-category">${esc(t.categories.name)}</div>` : '';
+  const _catIcon  = t.categories?.icon  || '';
+  const _catColor = t.categories?.color || '';
+  const _catIconHtml = _catIcon
+    ? `<span class="tx-v2-cat-icon" style="${_catColor ? `color:${_catColor}` : ''}">${_catIcon}</span>`
+    : '';
+  const categoryLine = t.categories?.name
+    ? `<div class="tx-v2-category">${_catIconHtml}${esc(t.categories.name)}</div>`
+    : '';
 
   // Amount
   const cur = (t.currency || t.accounts?.currency || 'BRL').toUpperCase();
