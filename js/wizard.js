@@ -641,7 +641,9 @@ async function _wzRunSetup() {
     // 1. Update family name
     const famId_ = currentUser?.family_id || currentUser?.families?.[0]?.id;
     if (famId_ && _wz.familyName) {
-      await sb.from('families').update({ name: _wz.familyName }).eq('id', famId_).catch(()=>{});
+      try {
+        await sb.from('families').update({ name: _wz.familyName }).eq('id', famId_);
+      } catch (_) {}
     }
     _wzSetStatus('wzSt_family', `Família "${_wz.familyName}" configurada`, true);
 

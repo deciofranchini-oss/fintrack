@@ -3496,7 +3496,7 @@ async function mfmAddExisting() {
     { onConflict: 'user_id,family_id' }
   );
   if (error) { toast('Erro: ' + error.message, 'error'); return; }
-  await sb.from('app_users').update({ family_id: famId }).eq('id', userId).catch(()=>{});
+  try { await sb.from('app_users').update({ family_id: famId }).eq('id', userId); } catch (_) {}
   toast('✓ Usuário adicionado', 'success');
   await _mfmRender();
 }
@@ -3542,7 +3542,7 @@ async function mfmInvite() {
       }).select().single();
       if (insErr) throw new Error(insErr.message);
 
-      await sb.from('family_members').insert({ user_id: newUser.id, family_id: famId, role }).catch(()=>{});
+      try { await sb.from('family_members').insert({ user_id: newUser.id, family_id: famId, role }); } catch (_) {}
       await _sendInviteEmail(email, fam.name, currentUser.name || currentUser.email);
       _mfmMsg(`✓ Convite enviado para ${email}. O acesso será liberado após aprovação.`, 'success');
     }
