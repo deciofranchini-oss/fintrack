@@ -6115,7 +6115,7 @@ tr.tx-row-new td:first-child {
 .wz-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px 12px;
-  background: var(--accent);
+  background: #0d2318;   /* same deep brand-green as sidebar */
   flex-shrink: 0;
 }
 .wz-close-btn {
