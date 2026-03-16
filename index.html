@@ -27,6 +27,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+  try {
+    var ua = navigator.userAgent || '';
+    var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    var maxTouch = navigator.maxTouchPoints || 0;
+    var isWindows = /Windows/i.test(ua) || /Win/i.test(platform);
+    var isAndroid = /Android/i.test(ua);
+    var isIOS = /iPhone|iPad|iPod/i.test(ua) || (platform === 'MacIntel' && maxTouch > 1);
+    var root = document.documentElement;
+    root.classList.add(isWindows ? 'platform-windows' : isAndroid ? 'platform-android' : isIOS ? 'platform-ios' : 'platform-other');
+    root.setAttribute('data-platform', isWindows ? 'windows' : isAndroid ? 'android' : isIOS ? 'ios' : 'other');
+  } catch(e) {}
+})();
+</script>
 <link rel="stylesheet" href="css/style.css">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -227,7 +242,7 @@
 }
 </style>
 </head>
-<body>
+<body class="app-shell">
 
 <!-- SETUP -->
 <!-- PIN LOCK SCREEN -->
@@ -235,7 +250,7 @@
 <div class="auth-screen" id="authScreen" style="display:none">
   <div class="auth-card">
     <div class="auth-logo">
-      <img id="authLogoImg" src="https://deciofranchini-oss.github.io/fintrack/logo.png" alt="FinTrack" style="max-width:200px;width:100%;height:auto;object-fit:contain" onerror="this.style.display='none'">
+      <img id="authLogoImg" src="logo_transparent.png" alt="FinTrack" width="1200" height="520" decoding="async" fetchpriority="high" style="max-width:200px;width:100%;height:auto;object-fit:contain" onerror="this.style.display='none'">
     </div>
     <div class="auth-title">Family FinTrack</div>
     <div class="auth-sub" id="authSubtitle">Família inteligente, Finanças sob controle</div>
