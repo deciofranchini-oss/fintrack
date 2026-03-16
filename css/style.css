@@ -7725,3 +7725,125 @@ body.ft-platform-windows #loginScreen input:focus,
   outline-offset: 0 !important;
   box-shadow: none !important;
 }
+
+
+/* WINDOWS STABILITY PATCH */
+html.platform-windows,
+html.ft-platform-windows,
+body.platform-windows,
+body.ft-platform-windows {
+  scroll-behavior: auto !important;
+}
+
+html.platform-windows #loginScreen,
+html.ft-platform-windows #loginScreen,
+body.platform-windows #loginScreen,
+body.ft-platform-windows #loginScreen,
+#loginScreen.platform-windows,
+#loginScreen.ft-platform-windows {
+  background: #16301f !important;
+  background-image: none !important;
+}
+
+html.platform-windows #loginScreen .login-card,
+html.ft-platform-windows #loginScreen .login-card,
+body.platform-windows #loginScreen .login-card,
+body.ft-platform-windows #loginScreen .login-card,
+#loginScreen.platform-windows .login-card,
+#loginScreen.ft-platform-windows .login-card {
+  border: 1px solid rgba(22,48,31,.12) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 8px 20px rgba(0,0,0,.16) !important;
+  contain: layout paint style;
+}
+
+html.platform-windows #loginScreen .login-input,
+html.ft-platform-windows #loginScreen .login-input,
+body.platform-windows #loginScreen .login-input,
+body.ft-platform-windows #loginScreen .login-input,
+#loginScreen.platform-windows .login-input,
+#loginScreen.ft-platform-windows .login-input {
+  background: #fff !important;
+  border: 1px solid #d7ddd9 !important;
+  box-shadow: none !important;
+  caret-color: #16301f !important;
+}
+
+html.platform-windows #loginScreen .login-input:focus,
+html.ft-platform-windows #loginScreen .login-input:focus,
+body.platform-windows #loginScreen .login-input:focus,
+body.ft-platform-windows #loginScreen .login-input:focus,
+#loginScreen.platform-windows .login-input:focus,
+#loginScreen.ft-platform-windows .login-input:focus {
+  border-color: #2a6049 !important;
+  outline: 2px solid rgba(42,96,73,.16) !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}
+
+html.platform-windows #loginScreen .login-btn,
+html.ft-platform-windows #loginScreen .login-btn,
+body.platform-windows #loginScreen .login-btn,
+body.ft-platform-windows #loginScreen .login-btn,
+#loginScreen.platform-windows .login-btn,
+#loginScreen.ft-platform-windows .login-btn {
+  background: #2a6049 !important;
+  background-image: none !important;
+}
+
+html.platform-windows .modal-overlay,
+html.ft-platform-windows .modal-overlay,
+body.platform-windows .modal-overlay,
+body.ft-platform-windows .modal-overlay,
+html.platform-windows .sidebar-overlay,
+html.ft-platform-windows .sidebar-overlay,
+body.platform-windows .sidebar-overlay,
+body.ft-platform-windows .sidebar-overlay,
+html.platform-windows #wizardOverlay,
+html.ft-platform-windows #wizardOverlay,
+body.platform-windows #wizardOverlay,
+body.ft-platform-windows #wizardOverlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.platform-windows .config-btn,
+html.ft-platform-windows .config-btn,
+body.platform-windows .config-btn,
+body.ft-platform-windows .config-btn,
+html.platform-windows .btn,
+html.ft-platform-windows .btn,
+body.platform-windows .btn,
+body.ft-platform-windows .btn,
+html.platform-windows .btn-icon,
+html.ft-platform-windows .btn-icon,
+body.platform-windows .btn-icon,
+body.ft-platform-windows .btn-icon,
+html.platform-windows .tab,
+html.ft-platform-windows .tab,
+body.platform-windows .tab,
+body.ft-platform-windows .tab,
+html.platform-windows .view-btn,
+html.ft-platform-windows .view-btn,
+body.platform-windows .view-btn,
+body.ft-platform-windows .view-btn,
+html.platform-windows .icon-tab,
+html.ft-platform-windows .icon-tab,
+body.platform-windows .icon-tab,
+body.ft-platform-windows .icon-tab,
+html.platform-windows .icon-option,
+html.ft-platform-windows .icon-option,
+body.platform-windows .icon-option,
+body.ft-platform-windows .icon-option,
+html.platform-windows .nav-item,
+html.ft-platform-windows .nav-item,
+body.platform-windows .nav-item,
+body.ft-platform-windows .nav-item,
+html.platform-windows .modal-close,
+html.ft-platform-windows .modal-close,
+body.platform-windows .modal-close,
+body.ft-platform-windows .modal-close {
+  transition-property: background-color, border-color, color, opacity !important;
+  transition-duration: .15s !important;
+  transition-timing-function: ease !important;
+}
