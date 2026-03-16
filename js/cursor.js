@@ -10,6 +10,22 @@
  */
 const Cursor = (() => {
 
+  function _isWindowsPlatform() {
+    try {
+      const rootPlatform = String(document.documentElement?.getAttribute('data-platform') || '').toLowerCase();
+      if (rootPlatform === 'windows') return true;
+      const nav = navigator || {};
+      const ua = String(nav.userAgent || '').toLowerCase();
+      const platform = String(nav.platform || '').toLowerCase();
+      const uaDataPlatform = String(nav.userAgentData?.platform || '').toLowerCase();
+      return /windows/.test(ua) || /win/.test(platform) || /windows/.test(uaDataPlatform);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  const _disabled = _isWindowsPlatform();
+
   let _el      = null;
   let _canvas  = null;
   let _label   = null;
@@ -256,6 +272,7 @@ const Cursor = (() => {
   }
 
   function show(label = '', mode = 'load') {
+    if (_disabled) return;
     if (_timer) { clearTimeout(_timer); _timer = null; }
     _init();
     _mode = mode;
@@ -267,28 +284,33 @@ const Cursor = (() => {
   }
 
   function hide() {
+    if (_disabled) return;
     if (!_el) return;
     _el.style.display = 'none';
     if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
   }
 
   function flash(label = 'Salvo!') {
+    if (_disabled) return;
     show(label, 'ok');
     _timer = setTimeout(hide, 900);
   }
 
   async function wrap(label, fn, mode = 'load') {
+    if (_disabled) return await fn();
     show(label, mode);
     try   { return await fn(); }
     finally { hide(); }
   }
 
-  if (document.readyState === 'loading')
-    document.addEventListener('DOMContentLoaded', _preload);
-  else
-    _preload();
+  if (!_disabled) {
+    if (document.readyState === 'loading')
+      document.addEventListener('DOMContentLoaded', _preload);
+    else
+      _preload();
+  }
 
-  return { show, hide, flash, wrap };
+  return { show, hide, flash, wrap, disabled: _disabled };
 
 })();
 
