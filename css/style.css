@@ -46,8 +46,8 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
   gap: 8px;
 }
 .sb-logo-img {
-  height: 25px;
-  max-height: 25px;
+  height: 36px;
+  max-height: 36px;
   width: auto;
   max-width: 170px;        /* never wider than sidebar minus close btn + padding */
   object-fit: contain;
@@ -156,7 +156,7 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
   padding: 9px 10px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: .95rem;
+  font-size: .855rem;
   font-weight: 400;
   color: rgba(255,255,255,.58);
   transition: background .14s, color .14s;
