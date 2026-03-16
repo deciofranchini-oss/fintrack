@@ -7612,3 +7612,34 @@ tr.tx-row-new td:first-child {
 #loginScreen > div {
   animation: loginCardIn .55s cubic-bezier(.22,1,.36,1) .15s both;
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   LOGIN PAGE — Platform-specific mode
+══════════════════════════════════════════════════════════════════════ */
+.ft-platform-windows #loginScreen,
+#loginScreen.ft-platform-windows {
+  background:#1e5c42 !important;
+}
+
+.ft-platform-windows #loginScreen *,
+#loginScreen.ft-platform-windows * {
+  animation:none !important;
+  transition:none !important;
+  filter:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  text-shadow:none !important;
+}
+
+.ft-platform-windows #loginScreen > div,
+#loginScreen.ft-platform-windows > div {
+  box-shadow:0 10px 28px rgba(0,0,0,.22) !important;
+}
+
+.ft-platform-windows #loginScreen .login-logo-anim,
+#loginScreen.ft-platform-windows .login-logo-anim {
+  will-change:auto;
+  transform:none !important;
+  opacity:1 !important;
+}
