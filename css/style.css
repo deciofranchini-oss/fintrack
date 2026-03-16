@@ -7613,22 +7613,10 @@ tr.tx-row-new td:first-child {
   animation: loginCardIn .55s cubic-bezier(.22,1,.36,1) .15s both;
 }
 
-html.platform-windows #loginScreen > div,
-html.ft-platform-windows #loginScreen > div,
-#loginScreen[data-login-mode="simple"] > div {
-  animation: none !important;
-  transform: none !important;
-}
-
 
 /* ════════ WINDOWS LOGIN SAFE MODE ════════ */
 html.platform-windows .auth-screen,
-html.platform-windows #authScreen,
-html.platform-windows #loginScreen,
-html.ft-platform-windows .auth-screen,
-html.ft-platform-windows #authScreen,
-html.ft-platform-windows #loginScreen,
-#loginScreen[data-login-mode="simple"] {
+html.platform-windows #authScreen {
   background: #16301f !important;
   min-height: 100vh;
   min-height: 100dvh;
@@ -7636,11 +7624,7 @@ html.ft-platform-windows #loginScreen,
   overflow: auto;
   isolation: isolate;
 }
-html.platform-windows .auth-card,
-html.platform-windows #loginScreen > div,
-html.ft-platform-windows .auth-card,
-html.ft-platform-windows #loginScreen > div,
-#loginScreen[data-login-mode="simple"] > div {
+html.platform-windows .auth-card {
   background: #ffffff !important;
   border: 1px solid rgba(22,48,31,.12);
   border-radius: 18px;
@@ -7655,17 +7639,7 @@ html.platform-windows .auth-sub,
 html.platform-windows .auth-field,
 html.platform-windows .auth-btn,
 html.platform-windows .auth-change-pw,
-html.platform-windows .auth-error,
-html.platform-windows #loginScreen *,
-html.ft-platform-windows .auth-logo,
-html.ft-platform-windows .auth-title,
-html.ft-platform-windows .auth-sub,
-html.ft-platform-windows .auth-field,
-html.ft-platform-windows .auth-btn,
-html.ft-platform-windows .auth-change-pw,
-html.ft-platform-windows .auth-error,
-html.ft-platform-windows #loginScreen *,
-#loginScreen[data-login-mode="simple"] * {
+html.platform-windows .auth-error {
   transform: none !important;
   filter: none !important;
   backdrop-filter: none !important;
@@ -7676,12 +7650,7 @@ html.ft-platform-windows #loginScreen *,
   backface-visibility: hidden;
 }
 html.platform-windows .auth-logo img,
-html.platform-windows #authLogoImg,
-html.platform-windows #loginLogoImg,
-html.ft-platform-windows .auth-logo img,
-html.ft-platform-windows #authLogoImg,
-html.ft-platform-windows #loginLogoImg,
-#loginScreen[data-login-mode="simple"] #loginLogoImg {
+html.platform-windows #authLogoImg {
   content-visibility: auto;
   contain: paint;
   filter: none !important;
@@ -7693,60 +7662,24 @@ html.platform-windows .auth-field label,
 html.platform-windows .auth-field input,
 html.platform-windows .auth-btn,
 html.platform-windows .auth-change-pw,
-html.platform-windows .auth-error,
-html.platform-windows #loginScreen,
-html.platform-windows #loginScreen input,
-html.platform-windows #loginScreen button,
-html.ft-platform-windows .auth-title,
-html.ft-platform-windows .auth-sub,
-html.ft-platform-windows .auth-field label,
-html.ft-platform-windows .auth-field input,
-html.ft-platform-windows .auth-btn,
-html.ft-platform-windows .auth-change-pw,
-html.ft-platform-windows .auth-error,
-html.ft-platform-windows #loginScreen,
-html.ft-platform-windows #loginScreen input,
-html.ft-platform-windows #loginScreen button,
-#loginScreen[data-login-mode="simple"],
-#loginScreen[data-login-mode="simple"] input,
-#loginScreen[data-login-mode="simple"] button {
+html.platform-windows .auth-error {
   font-family: "Segoe UI", Arial, Helvetica, sans-serif !important;
 }
-html.platform-windows .auth-field input,
-html.platform-windows #loginScreen input,
-html.ft-platform-windows .auth-field input,
-html.ft-platform-windows #loginScreen input,
-#loginScreen[data-login-mode="simple"] input {
+html.platform-windows .auth-field input {
   background: #ffffff !important;
   border: 1px solid #d7ddd9 !important;
   box-shadow: none !important;
 }
-html.platform-windows .auth-field input:focus,
-html.platform-windows #loginScreen input:focus,
-html.ft-platform-windows .auth-field input:focus,
-html.ft-platform-windows #loginScreen input:focus,
-#loginScreen[data-login-mode="simple"] input:focus {
+html.platform-windows .auth-field input:focus {
   border-color: #2a6049 !important;
   box-shadow: 0 0 0 2px rgba(42,96,73,.10) !important;
 }
 html.platform-windows .auth-btn:hover,
-html.platform-windows .auth-btn:active,
-html.ft-platform-windows .auth-btn:hover,
-html.ft-platform-windows .auth-btn:active,
-#loginScreen[data-login-mode="simple"] button:hover,
-#loginScreen[data-login-mode="simple"] button:active {
+html.platform-windows .auth-btn:active {
   background: #2a6049 !important;
 }
 html.platform-windows .auth-card,
-html.platform-windows .auth-card *,
-html.platform-windows #loginScreen > div,
-html.platform-windows #loginScreen > div *,
-html.ft-platform-windows .auth-card,
-html.ft-platform-windows .auth-card *,
-html.ft-platform-windows #loginScreen > div,
-html.ft-platform-windows #loginScreen > div *,
-#loginScreen[data-login-mode="simple"] > div,
-#loginScreen[data-login-mode="simple"] > div * {
+html.platform-windows .auth-card * {
   text-shadow: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -7755,4 +7688,71 @@ html.ft-platform-windows #loginScreen > div *,
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+
+/* Windows login anti-flicker hardening */
+html.platform-windows #loginScreen,
+html.ft-platform-windows #loginScreen,
+body.ft-platform-windows #loginScreen,
+#loginScreen.ft-platform-windows,
+#loginScreen.windows-login-lite {
+  background: #184632 !important;
+  background-image: none !important;
+  contain: layout paint style !important;
+  isolation: isolate !important;
+  perspective: none !important;
+}
+
+html.platform-windows #loginScreen > div,
+html.ft-platform-windows #loginScreen > div,
+body.ft-platform-windows #loginScreen > div,
+#loginScreen.ft-platform-windows > div,
+#loginScreen.windows-login-lite > div {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.18) !important;
+  border: 1px solid rgba(30,92,66,.12) !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+}
+
+html.platform-windows #loginScreen *,
+html.ft-platform-windows #loginScreen *,
+body.ft-platform-windows #loginScreen *,
+#loginScreen.ft-platform-windows *,
+#loginScreen.windows-login-lite * {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  text-shadow: none !important;
+}
+
+html.platform-windows #loginScreen img,
+html.ft-platform-windows #loginScreen img,
+body.ft-platform-windows #loginScreen img,
+#loginScreen.ft-platform-windows img,
+#loginScreen.windows-login-lite img {
+  opacity: 1 !important;
+  image-rendering: auto !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+}
+
+html.platform-windows #loginScreen input,
+html.platform-windows #loginScreen button,
+html.ft-platform-windows #loginScreen input,
+html.ft-platform-windows #loginScreen button,
+body.ft-platform-windows #loginScreen input,
+body.ft-platform-windows #loginScreen button,
+#loginScreen.ft-platform-windows input,
+#loginScreen.ft-platform-windows button,
+#loginScreen.windows-login-lite input,
+#loginScreen.windows-login-lite button {
+  transition: none !important;
+  transform: none !important;
 }
