@@ -217,6 +217,7 @@ function renderForecastTables(allItems, accounts) {
       const isPast   = t.date < today;
       const isToday  = t.date === today;
       const isNeg    = runningBalance < 0;
+      const balanceClass = runningBalance > 0 ? 'amount-pos' : runningBalance < 0 ? 'amount-neg' : 'amount-zero';
       const rowClass = isPast ? 'forecast-row-past' : isToday ? 'forecast-row-today' : '';
       const balClass = isNeg ? 'forecast-row-negative' : '';
       const dateMeta = t.isScheduled
@@ -242,8 +243,8 @@ function renderForecastTables(allItems, accounts) {
             ? `<div class="forecast-amount-brl">${fmt(t.brl_amount,'BRL')}</div>`
             : (a.currency === 'BRL' ? '' : `<div class="forecast-amount-brl">&nbsp;</div>`)
           }
-          <div class="forecast-projected-balance ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</div>
-          <div class="forecast-balance-mobile ${isNeg?'amount-neg':''}">${fmt(runningBalance,a.currency)}</div>
+          <div class="forecast-projected-balance ${balanceClass}">${fmt(runningBalance,a.currency)}</div>
+          <div class="forecast-balance-mobile ${balanceClass}">${fmt(runningBalance,a.currency)}</div>
         </td>
       </tr>`;
     }).join('');
