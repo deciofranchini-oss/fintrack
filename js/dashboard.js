@@ -210,7 +210,7 @@ async function loadDashboard(){
 
   // Recent transactions table (supports status filter)
   await loadDashboardRecent(_dashMemberIds);
-  if(typeof _renderDashFavCategories==='function') _renderDashFavCategories();
+  if(typeof _renderDashFavCategories==='function') _renderDashFavCategories(income, expense);
   await loadDashboardAutoRunSummary();
 
   // Render account balances grouped by account group
@@ -595,25 +595,171 @@ async function loadDashboardAutoRunSummary(){
   }
 }
 
-function _renderDashFavCategories(){
-  const el=document.getElementById('dashFavCategories');
-  if(!el) return;
-  const ids=typeof _loadCatFavorites==='function'?_loadCatFavorites():[];
-  if(!ids.length){el.style.display='none';return;}
-  const cats=(state.categories||[]).filter(c=>ids.includes(c.id));
-  if(!cats.length){el.style.display='none';return;}
-  el.style.display='';
-  const now=new Date(),y=now.getFullYear(),mo=String(now.getMonth()+1).padStart(2,'0');
-  const from=`${y}-${mo}-01`,to=`${y}-${mo}-${String(new Date(y,now.getMonth()+1,0).getDate()).padStart(2,'0')}`;
-  const rows=cats.map(c=>{
-    const txs=(state.transactions||[]).filter(t=>t.category_id===c.id&&t.date>=from&&t.date<=to&&!t.is_transfer);
-    const total=txs.reduce((s,t)=>s+(typeof txToBRL==='function'?txToBRL(t):parseFloat(t.brl_amount??t.amount)??0),0);
-    return `<div onclick="navigate('reports')" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px;transition:background .12s" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-      <span style="font-size:1.1rem">${c.icon||'📦'}</span>
-      <span style="flex:1;font-size:.85rem;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
-      <span style="font-size:.82rem;font-weight:700;white-space:nowrap;color:${total<0?'var(--red)':total>0?'var(--green)':'var(--muted)'}">${total>=0?'+':''}${fmt(total,'BRL')}</span>
-      <span style="font-size:.7rem;color:var(--muted);white-space:nowrap">${txs.length} lanç.</span>
+function _renderDashFavCategories(totalIncome, totalExpense) {
+  const el = document.getElementById('dashFavCategories');
+  if (!el) return;
+
+  const ids = typeof _loadCatFavorites === 'function' ? _loadCatFavorites() : [];
+  if (!ids.length) { el.style.display = 'none'; return; }
+
+  const allCats = state.categories || [];
+  const favCats = allCats.filter(c => ids.includes(c.id));
+  if (!favCats.length) { el.style.display = 'none'; return; }
+
+  el.style.display = '';
+  const now = new Date(), y = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0');
+  const from = `${y}-${mo}-01`;
+  const to   = `${y}-${mo}-${String(new Date(y, now.getMonth()+1, 0).getDate()).padStart(2,'0')}`;
+
+  // Mapa de transações do mês por category_id (apenas não-transferências)
+  const txsBycat = {};
+  (state.transactions || []).forEach(t => {
+    if (!t.category_id || t.is_transfer || t.date < from || t.date > to) return;
+    if (!txsBycat[t.category_id]) txsBycat[t.category_id] = [];
+    txsBycat[t.category_id].push(t);
+  });
+
+  // Soma em BRL de uma lista de transações
+  const sumBrl = txs => txs.reduce((s, t) => s + (typeof txToBRL === 'function' ? txToBRL(t) : parseFloat(t.brl_amount ?? t.amount) ?? 0), 0);
+
+  // Para uma categoria, soma APENAS suas próprias transações (sem subcat)
+  // Para evitar dupla contagem: se a categoria pai estiver favoritada junto com subcat,
+  // mostramos pai + subcats separadas, mas o total do pai NÃO inclui subcats
+  const ownTotal = id => sumBrl(txsBycat[id] || []);
+
+  // Subcats de uma categoria (apenas as favoritadas)
+  const favSubsOf = parentId => allCats.filter(c => c.parent_id === parentId && ids.includes(c.id));
+
+  // Separar favoritos em grupos: despesas (negative type) e receitas (positive type)
+  // type: 'despesa' | 'receita' | 'transferencia'
+  // Para categorias sem tipo, inferir pelo sinal das transações
+  const inferType = c => {
+    if (c.type === 'receita')    return 'income';
+    if (c.type === 'despesa')    return 'expense';
+    if (c.type === 'transferencia') return null;
+    // sem type definido → inferir pelo sinal médio das transações
+    const txs = txsBycat[c.id] || [];
+    if (!txs.length) return c.type === 'receita' ? 'income' : 'expense';
+    const s = sumBrl(txs);
+    return s >= 0 ? 'income' : 'expense';
+  };
+
+  // Agrupar: pais favoritos + pais NÃO favoritos que têm subcats favoritas
+  // Evitar duplicação: se um pai e sua subcat são ambos favoritos, exibir hierarquia
+  const renderedChildren = new Set();
+
+  const buildEntry = (c, isChild) => {
+    const ownTxs  = txsBycat[c.id] || [];
+    const ownVal  = sumBrl(ownTxs);
+    const cType   = inferType(c);
+    const base    = cType === 'expense' ? totalExpense : totalIncome;
+    const pct     = base > 0 ? Math.abs(ownVal) / base * 100 : 0;
+    const color   = c.color || 'var(--accent)';
+    const isNeg   = cType === 'expense';
+    const valColor= ownVal === 0 ? 'var(--muted)' : isNeg ? 'var(--red)' : 'var(--green)';
+    const pctStr  = pct >= 0.1 ? pct.toFixed(1) + '%' : '';
+
+    // Barra de progresso (max 100%)
+    const barW  = Math.min(pct, 100).toFixed(1);
+    const barColor = isNeg ? 'var(--red,#dc2626)' : 'var(--green,#16a34a)';
+
+    const indent = isChild ? 'padding-left:28px;' : '';
+    const iconSize = isChild ? '0.95rem' : '1.05rem';
+    const nameSize = isChild ? '.8rem' : '.85rem';
+    const connector = isChild
+      ? `<span style="position:absolute;left:14px;top:0;bottom:0;width:1px;background:var(--border)"></span>
+         <span style="position:absolute;left:14px;top:50%;width:10px;height:1px;background:var(--border)"></span>`
+      : '';
+
+    return `<div style="position:relative;${indent}padding:7px 6px 7px ${isChild?'32px':'6px'};border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;border-radius:4px"
+      onclick="_openDashMonthTx('${isNeg?'expense':'income'}',null)"
+      onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+      ${connector}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${pctStr?'5px':'0'}">
+        <span style="font-size:${iconSize};line-height:1;flex-shrink:0">${c.icon||'📦'}</span>
+        <span style="flex:1;font-size:${nameSize};font-weight:${isChild?'400':'600'};min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">${esc(c.name)}</span>
+        <span style="font-size:.82rem;font-weight:700;white-space:nowrap;color:${valColor}">${ownVal===0?'—':(ownVal>0?'+':'')+fmt(ownVal,'BRL')}</span>
+        ${pctStr ? `<span style="font-size:.7rem;color:var(--muted);min-width:32px;text-align:right">${pctStr}</span>` : ''}
+      </div>
+      ${pctStr ? `<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-left:${isChild?'0':'22px'}">
+        <div style="height:100%;width:${barW}%;background:${barColor};border-radius:2px;transition:width .4s ease"></div>
+      </div>` : ''}
     </div>`;
-  }).join('');
-  el.innerHTML=`<div class="card mb-4"><div class="card-header"><span class="card-title">⭐ Categorias Favoritas</span><button onclick="navigate('categories')" class="btn btn-ghost btn-sm" style="font-size:.73rem">Gerenciar</button></div><div style="padding:0 4px 8px">${rows}</div></div>`;
+  };
+
+  // Construir seção por tipo
+  const buildSection = (label, typeKey) => {
+    // Pais favoritos deste tipo
+    const parentFavs = favCats.filter(c => !c.parent_id && inferType(c) === typeKey);
+
+    // Pais NÃO favoritos que têm subcats favoritas deste tipo
+    const nonFavParentsWithFavSubs = [];
+    allCats.forEach(p => {
+      if (p.parent_id) return; // é sub
+      if (ids.includes(p.id)) return; // já está nos parentFavs
+      const favSubs = allCats.filter(c => c.parent_id === p.id && ids.includes(c.id) && inferType(c) === typeKey);
+      if (favSubs.length) nonFavParentsWithFavSubs.push({ parent: p, subs: favSubs });
+    });
+
+    // Subcats favoritas que são órfãs (pai não aparece de nenhuma forma)
+    const coveredByParent = new Set();
+    parentFavs.forEach(p => allCats.filter(c => c.parent_id === p.id && ids.includes(c.id)).forEach(c => coveredByParent.add(c.id)));
+    nonFavParentsWithFavSubs.forEach(({ subs }) => subs.forEach(c => coveredByParent.add(c.id)));
+    const orphanSubs = favCats.filter(c => c.parent_id && inferType(c) === typeKey && !coveredByParent.has(c.id));
+
+    const rows = [];
+
+    // Pais favoritos + suas subcats favoritas
+    parentFavs.forEach(p => {
+      rows.push(buildEntry(p, false));
+      allCats.filter(c => c.parent_id === p.id && ids.includes(c.id) && inferType(c) === typeKey)
+        .forEach(sub => rows.push(buildEntry(sub, true)));
+    });
+
+    // Pais não-favoritos com subcats favoritas (mostrar pai como contexto, em cinza)
+    nonFavParentsWithFavSubs.forEach(({ parent: p, subs }) => {
+      const pTxs = txsBycat[p.id] || [];
+      const pVal = sumBrl(pTxs);
+      rows.push(`<div style="padding:5px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;opacity:.7">
+        <span style="font-size:1rem">${p.icon||'📦'}</span>
+        <span style="flex:1;font-size:.8rem;font-weight:600;color:var(--text2)">${esc(p.name)}</span>
+        ${pVal!==0?`<span style="font-size:.75rem;color:var(--muted)">${fmt(pVal,'BRL')}</span>`:''}
+      </div>`);
+      subs.forEach(sub => rows.push(buildEntry(sub, true)));
+    });
+
+    // Subcats órfãs (pai não aparece)
+    orphanSubs.forEach(c => rows.push(buildEntry(c, false)));
+
+    if (!rows.length) return '';
+
+    const isExp = typeKey === 'expense';
+    const secColor = isExp ? 'var(--red,#dc2626)' : 'var(--green,#16a34a)';
+    return `<div style="margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 6px 4px;border-bottom:2px solid ${secColor}22">
+        <span style="font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:${secColor}">${label}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:.7rem;color:var(--muted)">% do total</span>
+      </div>
+      ${rows.join('')}
+    </div>`;
+  };
+
+  const expSection = buildSection('Despesas', 'expense');
+  const incSection = buildSection('Receitas', 'income');
+
+  if (!expSection && !incSection) { el.style.display = 'none'; return; }
+
+  el.innerHTML = `<div class="card mb-4">
+    <div class="card-header" style="padding-bottom:6px">
+      <span class="card-title">⭐ Categorias Favoritas</span>
+      <button onclick="navigate('categories')" class="btn btn-ghost btn-sm" style="font-size:.73rem">Gerenciar</button>
+    </div>
+    <div style="padding:0 2px 4px">
+      ${expSection}
+      ${expSection && incSection ? '<div style="height:8px"></div>' : ''}
+      ${incSection}
+    </div>
+  </div>`;
 }
+
