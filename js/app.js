@@ -548,6 +548,14 @@ async function bootApp(){
   state.txFilter.month=ym;
   // Navegar para dashboard
   navigate('dashboard');
+  // Sincronizar favoritos de categoria do servidor (após boot — userId disponível)
+  if (typeof _syncCatFavsFromServer === 'function') {
+    setTimeout(() => _syncCatFavsFromServer().then(() => {
+      if (typeof renderCategories === 'function' && state.currentPage === 'categories') renderCategories();
+      if (state.currentPage === 'dashboard' && typeof _renderDashFavCategories === 'function')
+        _renderDashFavCategories(_lastDashIncome, _lastDashExpense);
+    }).catch(()=>{}), 800); // delay para garantir sb inicializado
+  }
   initEmailJSStatus();
   updateUserUI();
   // Aplica visibilidade do módulo de preços conforme feature flag da família
