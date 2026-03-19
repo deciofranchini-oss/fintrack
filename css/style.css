@@ -5680,14 +5680,7 @@ tr.tx-pending { background: rgba(251,191,36,.05); }
 
 /* ── Forecast mobile: show running balance line-by-line under amount ── */
 .forecast-amount-main { display:block; }
-.forecast-balance-mobile {
-  display:none;
-  margin-top:2px;
-  font-size:.68rem;
-  line-height:1.1;
-  white-space:nowrap;
-  color:var(--muted);
-}
+.forecast-balance-mobile { display:none !important; }
 @media (max-width: 640px) {
   .forecast-balance-head,
   .forecast-balance-cell {
@@ -5704,9 +5697,7 @@ tr.tx-pending { background: rgba(251,191,36,.05); }
     width: auto !important;
     min-width: 90px;
   }
-  .forecast-balance-mobile {
-    display:block;
-  }
+  .forecast-balance-mobile { display:none !important; }
 }
 
 /* ── Módulo family toggle buttons ─────────────────────────────────── */
@@ -7847,3 +7838,19 @@ body.ft-platform-windows .modal-close {
   transition-duration: .15s !important;
   transition-timing-function: ease !important;
 }
+
+/* ── Forecast: saldo por linha ────────────────────────────────── */
+.forecast-run-bal { display:block; margin-top:3px; font-size:.71rem; line-height:1.15; white-space:nowrap; color:var(--muted); font-variant-numeric:tabular-nums; }
+.forecast-run-bal.amount-neg { color:var(--red,#dc2626); font-weight:600; }
+.forecast-run-bal.amount-pos { color:var(--green,#16a34a); }
+
+/* ── Dashboard stat-cards clicáveis ───────────────────────────── */
+.stat-card[style*="cursor:pointer"] { transition:transform .12s,box-shadow .12s; }
+.stat-card[style*="cursor:pointer"]:hover { transform:translateY(-2px); box-shadow:0 4px 18px rgba(0,0,0,.10); }
+
+/* ── Highlight: novo item criado ──────────────────────────────── */
+@keyframes itemNewPulse { 0%{background:rgba(42,96,73,.22);} 60%{background:rgba(42,96,73,.10);} 100%{background:transparent;} }
+.item-new-hl { animation:itemNewPulse 2s ease-out forwards; }
+
+/* ── Scheduled: badge pendente no upcoming ────────────────────── */
+.sup-pending-badge { display:inline-flex; align-items:center; gap:3px; font-size:.65rem; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:5px; vertical-align:middle; background:rgba(251,191,36,.18); color:var(--amber,#b45309); border:1px solid rgba(251,191,36,.4); }
