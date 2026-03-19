@@ -621,24 +621,29 @@
         <span></span>
         <button onclick="document.getElementById('dashMemberFilter').value='';document.getElementById('dashRelGroup').value='';loadDashboard()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:.85rem;padding:0;line-height:1" title="Limpar filtro">✕</button>
       </div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:6px">
+        <button class="btn btn-ghost btn-sm" onclick="openDashCustomModal()" title="Personalizar dashboard" style="font-size:.75rem;gap:5px;color:var(--muted);padding:5px 10px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
+          Personalizar
+        </button>
+      </div>
       <div class="grid-4 mb-4">
         <div class="stat-card"><div class="stat-accent"></div><div class="stat-label">Patrimônio Total</div><div class="stat-value text-accent" id="statTotal">—</div><div class="stat-sub">Todas as contas</div></div>
         <div class="stat-card"><div class="stat-accent" style="background:var(--green)"></div><div class="stat-label">Receitas do Mês</div><div class="stat-value text-green" id="statIncome">—</div><div class="stat-sub">Mês atual</div></div>
         <div class="stat-card"><div class="stat-accent" style="background:var(--red)"></div><div class="stat-label">Despesas do Mês</div><div class="stat-value text-red" id="statExpenses">—</div><div class="stat-sub">Mês atual</div></div>
         <div class="stat-card"><div class="stat-accent" style="background:var(--amber)"></div><div class="stat-label">Saldo do Mês</div><div class="stat-value" id="statBalance">—</div><div class="stat-sub">Receitas − Despesas</div></div>
       </div>
-      <div id="dashFavCategories" style="display:none"></div>
       <!-- Saldo por Conta -->
-      <div class="card mb-4">
+      <div class="card mb-4" id="dashCardAccounts">
         <div class="card-header"><span class="card-title">Saldo por Conta</span></div>
         <div id="accountBalancesList"></div>
       </div>
 
-      <div class="grid-2 mb-6">
+      <div class="grid-2 mb-6" id="dashCardCharts">
         <div class="card">
           <div class="card-header">
             <span class="card-title">Fluxo de Caixa (6 meses)</span>
-            <select id="cashflowAccountFilter" onchange="renderCashflowChart(_getDashMemberIds())" 
+            <select id="cashflowAccountFilter" onchange="renderCashflowChart(_getDashMemberIds())"
               style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:160px">
               <option value="">Todas as contas</option>
             </select>
@@ -667,20 +672,46 @@
           </div>
         </div>
       </div>
-      <div class="grid-2">
-        <div class="card">
+
+      <!-- Linha: Categorias Favoritas + Transações (grid 2 no desktop) -->
+      <div class="dash-bottom-row mb-4">
+        <!-- Categorias favoritas -->
+        <div id="dashCardFavCats" class="dash-fav-col">
+          <div id="dashFavCategories"></div>
+        </div>
+        <!-- Últimas transações -->
+        <div id="dashCardRecent" class="dash-tx-col card">
           <div class="card-header" style="gap:8px;flex-wrap:wrap">
-  <span class="card-title">Últimas Transações</span>
-  <span id="dashPendingBadge" class="badge" style="background:var(--amber-lt,#fffbeb);color:var(--amber,#b45309);border:1px solid rgba(180,83,9,.18);display:none;white-space:nowrap">⏳ 0 pendentes</span>
-  <span id="dashAutoRunSummary" class="text-muted" style="font-size:.75rem;display:none;white-space:nowrap;cursor:pointer" onclick="navigate('audit')"></span>
-  <select id="dashRecentStatus" onchange="loadDashboardRecent(_getDashMemberIds())" style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:170px">
-    <option value="">Todos</option>
-    <option value="confirmed">✅ Confirmadas</option>
-    <option value="pending">⏳ Pendentes</option>
-  </select>
-  <button class="btn btn-ghost btn-sm" onclick="navigate('transactions')">Ver todas</button>
-</div>
+            <span class="card-title">Últimas Transações</span>
+            <span id="dashPendingBadge" class="badge" style="background:var(--amber-lt,#fffbeb);color:var(--amber,#b45309);border:1px solid rgba(180,83,9,.18);display:none;white-space:nowrap">⏳ 0 pendentes</span>
+            <span id="dashAutoRunSummary" class="text-muted" style="font-size:.75rem;display:none;white-space:nowrap;cursor:pointer" onclick="navigate('audit')"></span>
+            <select id="dashRecentStatus" onchange="loadDashboardRecent(_getDashMemberIds())" style="font-size:.75rem;padding:3px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text2);max-width:170px">
+              <option value="">Todos</option>
+              <option value="confirmed">✅ Confirmadas</option>
+              <option value="pending">⏳ Pendentes</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="navigate('transactions')">Ver todas</button>
+          </div>
           <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody id="recentTxBody"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando...</td></tr></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Modal de customização do dashboard -->
+      <div class="modal-overlay" id="dashCustomModal">
+        <div class="modal" style="max-width:380px">
+          <div class="modal-handle"></div>
+          <div class="modal-header">
+            <span class="modal-title">⚙️ Personalizar Dashboard</span>
+            <button class="modal-close" onclick="closeModal('dashCustomModal')">✕</button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size:.82rem;color:var(--muted);margin-bottom:16px">Escolha quais cards exibir. As preferências ficam salvas para você.</p>
+            <div id="dashCustomList" style="display:flex;flex-direction:column;gap:10px"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('dashCustomModal')">Fechar</button>
+            <button class="btn btn-primary" onclick="_dashCustomSave()">Salvar</button>
+          </div>
         </div>
       </div>
     </div>
