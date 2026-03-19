@@ -55,11 +55,13 @@ const _accounts = {
                    'active,is_favorite,best_purchase_day,due_day,iof_rate,is_brazilian';
       const [ar, gr] = await Promise.all([
         famQ(sb.from('accounts').select(cols).eq('active', true)).order('name'),
-        famQ(sb.from('account_groups').select('id,name,emoji,color,currency,sort_order')).order('name'),
+        famQ(sb.from('account_groups').select('id,name,emoji,color,currency')).order('name'),
       ]);
       if (ar.error) throw ar.error;
-      state.accounts = ar.data || [];
-      state.groups   = gr.data || [];
+      if (gr.error) console.warn('[DB] account_groups:', gr.error.message);
+      state.accounts      = ar.data || [];
+      state.groups        = gr.data || [];
+      state.accountGroups = state.groups;
       _touch('accounts');
       await _accounts.recalcBalances();
     }));

@@ -489,6 +489,22 @@ function setAppLogo(url){
 
 // NOTE: txFilter is part of the app's internal contract (used across modules).
 // Keep keys stable to avoid breaking filtering and saved preferences.
+function _scrollTopAndHighlight(selector, ms) {
+  try{window.scrollTo({top:0,behavior:'smooth'});}catch(_){}
+  const pg=document.getElementById('page-'+(state.currentPage||''));
+  if(pg) try{pg.scrollTop=0;}catch(_){}
+  if(!selector) return;
+  const seek=(n)=>{
+    const el=typeof selector==='string'?document.querySelector(selector):selector;
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'nearest'});
+      el.classList.remove('item-new-hl'); void el.offsetWidth;
+      el.classList.add('item-new-hl');
+      setTimeout(()=>el.classList.remove('item-new-hl'),ms||2000);
+    } else if(n>0) setTimeout(()=>seek(n-1),120);
+  };
+  setTimeout(()=>seek(6),100);
+}
 let state={accounts:[],groups:[],categories:[],payees:[],transactions:[],budgets:[],txPage:0,txPageSize:50,txTotal:0,txSortField:'date',txSortAsc:false,txFilter:{search:'',month:'',account:'',type:'',status:''},txView:'flat',currentPage:'dashboard',chartInstances:{},privacyMode:false};
 
 async function bootApp(){

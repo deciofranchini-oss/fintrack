@@ -1238,7 +1238,9 @@ async function saveTransaction(){
       return;
     }
   }
-  DB.accounts.bust(); toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
+  DB.accounts.bust();
+  try{await recalcAccountBalances();}catch(_e){}
+  toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
   closeModal('txModal');
   if(!id && savedId) {
     await _goToSavedTransaction(savedId, { ...data, id: savedId, status: data.status, date: data.date });
@@ -1278,6 +1280,8 @@ async function _doDuplicateTx(orig) {
   const {data, error} = await sb.from('transactions').insert(newTx).select().single();
   if (error) { toast('Erro ao duplicar: ' + error.message, 'error'); return; }
   toast('Transação duplicada! (' + (newTx.description) + ')', 'success');
+  DB.accounts.bust();
+  try{await recalcAccountBalances();}catch(_e){}
   if (state.currentPage === 'transactions') loadTransactions();
   if (state.currentPage === 'dashboard') loadDashboard();
 }
@@ -1295,9 +1299,11 @@ async function deleteTransaction(id){
   // 3. Delete the transaction itself
   const{error}=await sb.from('transactions').delete().eq('id',id);
   if(error){toast(error.message,'error');return;}
+  DB.accounts.bust();
+  try{await recalcAccountBalances();}catch(_e){}
   toast('Excluída','success');
   loadTransactions();
-  if(state.currentPage==='dashboard')loadDashboard();
+  if(state.currentPage==='dashboard') loadDashboard();
 }
 
 /* ── Transaction Detail Drawer ── */

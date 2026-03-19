@@ -533,11 +533,23 @@ function renderUpcoming() {
   const upcoming = [];
   state.scheduled.forEach(sc => {
     if(sc.status === 'paused') return;
-    const registered = new Set((sc.occurrences||[]).map(o => o.scheduled_date));
-    const occ = generateOccurrences(sc, 30);
-    occ.forEach(date => {
-      if(date >= today && date <= limitStr && !registered.has(date))
-        upcoming.push({ sc, date });
+    const pendingDates=new Set(
+      (sc.occurrences||[])
+        .filter(o=>(o.execution_status==='pending'||o.execution_status==='skipped')&&o.scheduled_date>=today&&o.scheduled_date<=limitStr)
+        .map(o=>o.scheduled_date)
+    );
+    const executedDates=new Set(
+      (sc.occurrences||[])
+        .filter(o=>o.execution_status==='executed'||o.execution_status==='processing')
+        .map(o=>o.scheduled_date)
+    );
+    const occ=generateOccurrences(sc,30);
+    occ.forEach(date=>{
+      if(date>=today&&date<=limitStr&&!executedDates.has(date))
+        upcoming.push({sc,date,isPending:pendingDates.has(date)});
+    });
+    pendingDates.forEach(date=>{
+      if(!occ.includes(date)) upcoming.push({sc,date,isPending:true});
     });
   });
   upcoming.sort((a, b) => a.date.localeCompare(b.date));
@@ -589,10 +601,12 @@ function renderUpcoming() {
       const catColor = sc.categories?.color || (isExp ? 'var(--red)' : 'var(--green)');
       const manualBadge = !sc.auto_register
         ? `<span class="sup-manual-badge">Manual</span>` : '';
+      const pendingBadge = u.isPending
+        ? `<span class="sup-pending-badge" title="Aguardando registro">⚠ Pendente</span>` : '';
       return `<div class="sup-item${isToday?' sup-item--today':''}">
         <div class="sup-icon" style="background:color-mix(in srgb,${catColor} 14%,transparent);color:${catColor}">${typeIcon}</div>
         <div class="sup-body">
-          <div class="sup-desc">${esc(sc.description)}${manualBadge}</div>
+          <div class="sup-desc">${esc(sc.description)}${manualBadge}${pendingBadge}</div>
           <div class="sup-acct">${esc(sc.accounts?.name||'—')}${dest?` <span class="sup-arrow">→</span> ${esc(dest.name)}`:''}</div>
         </div>
         <div class="sup-right">
@@ -677,6 +691,7 @@ function openScheduledModal(id='') {
 
   // Type — sets FX panel visibility
   setScType(sc?.type||'expense');
+  setTimeout(()=>_updateScCurrencyPanel(),30);
 
   // Restore FX settings for cross-currency transfers
   setTimeout(() => {
@@ -969,6 +984,7 @@ async function saveScheduled() {
     description: document.getElementById('scDesc').value.trim(),
     type,
     amount: (type==='expense'||isScTransfer) ? -Math.abs(amount) : Math.abs(amount),
+    currency:(()=>{const _a=(state.accounts||[]).find(a=>a.id===document.getElementById('scAccountId').value);return _a?.currency||'BRL';})(),
     account_id: document.getElementById('scAccountId').value || null,
     transfer_to_account_id: isScTransfer ? (document.getElementById('scTransferToAccountId')?.value || null) : null,
     payee_id: isScTransfer ? null : (document.getElementById('scPayeeId').value || null),
@@ -1013,9 +1029,11 @@ async function saveScheduled() {
   if(id) { ({error:err} = await sb.from('scheduled_transactions').update(data).eq('id',id)); }
   else    { ({error:err} = await sb.from('scheduled_transactions').insert(data)); }
   if(err) { toast(err.message,'error'); return; }
+  const _scNew=!id;
   toast(id?'Programação atualizada!':'Transação programada!','success');
   closeModal('scheduledModal');
-  loadScheduled();
+  await loadScheduled();
+  if(_scNew) _scrollTopAndHighlight('.sc-card:first-child,.sc-item:first-child');
 }
 
 async function deleteScheduled(id) {
@@ -1254,6 +1272,7 @@ async function runScheduledAutoRegister() {
 
       await loadScheduled(); // refresh occurrences
       await loadAccounts();  // refresh balances (pending excluded now)
+      try{await recalcAccountBalances();}catch(_e){}
       if(state.currentPage==='transactions') loadTransactions();
       if(state.currentPage==='dashboard') loadDashboard();
       toast(`✓ ${created} ocorrência(s) registrada(s) automaticamente`, 'success');
@@ -1612,4 +1631,55 @@ function _scCalRenderDetail(dateStr, data) {
       <button onclick="scCalSelectDay('${dateStr}')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:0 0 0 8px">✕</button>
     </div>
     ${itemsHtml}`;
+}
+
+function onScAccountChange(){
+  _updateScCurrencyPanel();
+  if(typeof onScTransferAccountChange==='function') onScTransferAccountChange();
+}
+function _updateScCurrencyPanel(){
+  const accId=document.getElementById('scAccountId')?.value;
+  const acc=(state.accounts||[]).find(a=>a.id===accId);
+  const cur=acc?.currency||'BRL';
+  const badge=document.getElementById('scCurrencyBadge');
+  if(badge) badge.textContent=cur;
+  const panel=document.getElementById('scCurrencyPanel');
+  if(!panel) return;
+  const tv=document.getElementById('scTypeField')?.value||'';
+  if(cur==='BRL'||tv==='transfer'||tv==='card_payment'){panel.style.display='none';return;}
+  panel.style.display='';
+  const fl=document.getElementById('scCurrencyRateFromLabel');
+  const tl=document.getElementById('scCurrencyPanelTitle');
+  if(fl) fl.textContent=cur;
+  if(tl) tl.textContent=`Conversão: ${cur} → BRL`;
+  updateScCurrencyPreview();
+}
+function updateScCurrencyPreview(){
+  const accId=document.getElementById('scAccountId')?.value;
+  const acc=(state.accounts||[]).find(a=>a.id===accId);
+  const cur=acc?.currency||'BRL';
+  const rate=parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',','.'))||0;
+  const amt=Math.abs(getAmtField('scAmount')||0);
+  const prev=document.getElementById('scCurrencyPreview');
+  if(!prev) return;
+  prev.textContent=rate&&amt?`≈ ${fmt(amt*rate,'BRL')} (1 ${cur} = ${rate.toFixed(4)} BRL)`:'';
+}
+async function fetchScCurrencyRate(){
+  const accId=document.getElementById('scAccountId')?.value;
+  const acc=(state.accounts||[]).find(a=>a.id===accId);
+  const cur=acc?.currency||'BRL';
+  if(cur==='BRL') return;
+  const btn=document.getElementById('scCurrencyFetchBtn');
+  const ico=document.getElementById('scCurrencyFetchIcon');
+  if(btn) btn.disabled=true; if(ico) ico.textContent='⏳';
+  try{
+    const rate=typeof getFxRate==='function'?getFxRate(cur):0;
+    if(rate&&rate!==1){
+      const inp=document.getElementById('scCurrencyRate');
+      if(inp){inp.value=rate.toFixed(6);updateScCurrencyPreview();}
+      const sg=document.getElementById('scCurrencySuggestion');
+      if(sg){sg.style.display='';sg.textContent=`1 ${cur} = ${rate.toFixed(4)} BRL`;}
+    } else toast('Cotação não disponível. Insira manualmente.','warning');
+  }catch(e){toast('Erro: '+e.message,'error');}
+  finally{if(btn) btn.disabled=false; if(ico) ico.textContent='🔄';}
 }

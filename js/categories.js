@@ -1,4 +1,22 @@
 // ── Categories — per-family, with tx counts and safe deletion ─────────────
+// ── Favoritos de categoria (localStorage + app_settings) ─────────────────
+const _CAT_FAV_KEY=()=>`cat_fav_${typeof famId==='function'?famId()||'x':'x'}`;
+function _loadCatFavorites(){try{const r=localStorage.getItem(_CAT_FAV_KEY());return r?JSON.parse(r):[]}catch{return[];}}
+function _saveCatFavorites(ids){
+  try{localStorage.setItem(_CAT_FAV_KEY(),JSON.stringify(ids));}catch{}
+  if(typeof saveAppSetting==='function') saveAppSetting(_CAT_FAV_KEY(),ids).catch(()=>{});
+}
+function isCatFavorite(id){return _loadCatFavorites().includes(id);}
+async function toggleCatFavorite(id){
+  const favs=_loadCatFavorites(),i=favs.indexOf(id);
+  if(i>=0) favs.splice(i,1); else favs.push(id);
+  _saveCatFavorites(favs); initCategoriesPage();
+  if(state.currentPage==='dashboard'&&typeof _renderDashFavCategories==='function') _renderDashFavCategories();
+}
+async function _syncCatFavsFromServer(){
+  if(typeof loadAppSetting!=='function') return;
+  try{const v=await loadAppSetting(_CAT_FAV_KEY());if(Array.isArray(v)) localStorage.setItem(_CAT_FAV_KEY(),JSON.stringify(v));}catch{}
+}
 
 // Cache de contagem de transações por category_id: { [id]: number }
 let _catTxCounts = {};
@@ -73,6 +91,7 @@ function renderCategories() {
           </div>
           <div class="cat-inline-actions">
             <button class="btn-icon" onclick="openCategoryModal('','${p.id}','${dbType}')" title="Nova subcategoria">＋ Sub</button>
+            <button class="btn-icon" onclick="toggleCatFavorite('${p.id}')" title="${isCatFavorite(p.id)?'Remover favorito':'Favoritar'}" style="color:${isCatFavorite(p.id)?'var(--amber,#f59e0b)':'var(--muted)'};font-size:1.05rem">★</button>
             <button class="btn-icon" onclick="openCategoryModal('${p.id}')" title="Editar">✏️</button>
             <button class="btn-icon" onclick="deleteCategory('${p.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
           </div>
@@ -282,11 +301,12 @@ async function saveCategory() {
   }
   if (err) { toast(err.message, 'error'); return; }
 
-  toast('Categoria salva!', 'success');
+  const _isNew=!id;
+  toast('Categoria salva!','success');
   closeModal('categoryModal');
   DB.categories.bust(); await loadCategories(true);
-  populateSelects();
-  renderCategories();
+  populateSelects(); renderCategories();
+  if(_isNew) _scrollTopAndHighlight('.cat-group:first-child');
 
   if (window._catSaveCallback) {
     const cb = window._catSaveCallback;
@@ -509,6 +529,7 @@ async function openCategoryHistory(catId, catName) {
 // ── Page init ─────────────────────────────────────────────────────────────
 
 async function initCategoriesPage() {
+  _syncCatFavsFromServer().catch(()=>{});
   await _loadCatTxCounts();
   renderCategories();
 }

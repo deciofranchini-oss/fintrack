@@ -118,6 +118,20 @@ function _applyDashMemberFilter(q, memberIds) {
 }
 
 
+function _openDashMonthTx(type, memberIds) {
+  const now=new Date();
+  const month=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  state.txFilter=state.txFilter||{};
+  Object.assign(state.txFilter,{month,type,search:'',account:'',status:'confirmed'});
+  state.txPage=0; state.txSortField='date'; state.txSortAsc=false;
+  const _e=id=>document.getElementById(id);
+  if(_e('txMonth'))        _e('txMonth').value=month;
+  if(_e('txType'))         _e('txType').value=type;
+  if(_e('txStatusFilter')) _e('txStatusFilter').value='confirmed';
+  if(_e('txSearch'))       _e('txSearch').value='';
+  if(_e('txAccount'))      _e('txAccount').value='';
+  navigate('transactions');
+}
 async function loadDashboard(){
   // Guard: sem cliente Supabase ou sem family_id não há dados para mostrar
   if (!sb) { console.warn('[dashboard] sb não inicializado'); return; }
@@ -151,12 +165,18 @@ async function loadDashboard(){
     statTotalEl.className = 'stat-value ' + (total >= 0 ? 'amount-pos' : 'amount-neg');
   }
   if (statIncomeEl){
-    statIncomeEl.textContent = dashFmt(income,'BRL');
-    statIncomeEl.className = 'stat-value amount-pos';
+    statIncomeEl.textContent=dashFmt(income,'BRL');
+    statIncomeEl.className='stat-value amount-pos';
+    const _ic=statIncomeEl.closest('.stat-card');
+    if(_ic){_ic.style.cursor='pointer';_ic.title='Ver receitas do mês';
+      _ic.onclick=()=>_openDashMonthTx('income',_dashMemberIds);}
   }
   if (statExpensesEl){
-    statExpensesEl.textContent = dashFmt(expense,'BRL');
-    statExpensesEl.className = 'stat-value amount-neg';
+    statExpensesEl.textContent=dashFmt(expense,'BRL');
+    statExpensesEl.className='stat-value amount-neg';
+    const _ec=statExpensesEl.closest('.stat-card');
+    if(_ec){_ec.style.cursor='pointer';_ec.title='Ver despesas do mês';
+      _ec.onclick=()=>_openDashMonthTx('expense',_dashMemberIds);}
   }
   if (balEl){
     balEl.textContent = dashFmt(bal,'BRL');
@@ -190,6 +210,7 @@ async function loadDashboard(){
 
   // Recent transactions table (supports status filter)
   await loadDashboardRecent(_dashMemberIds);
+  if(typeof _renderDashFavCategories==='function') _renderDashFavCategories();
   await loadDashboardAutoRunSummary();
 
   // Render account balances grouped by account group
@@ -572,4 +593,27 @@ async function loadDashboardAutoRunSummary(){
     // table may not exist; hide silently
     el.style.display='none';
   }
+}
+
+function _renderDashFavCategories(){
+  const el=document.getElementById('dashFavCategories');
+  if(!el) return;
+  const ids=typeof _loadCatFavorites==='function'?_loadCatFavorites():[];
+  if(!ids.length){el.style.display='none';return;}
+  const cats=(state.categories||[]).filter(c=>ids.includes(c.id));
+  if(!cats.length){el.style.display='none';return;}
+  el.style.display='';
+  const now=new Date(),y=now.getFullYear(),mo=String(now.getMonth()+1).padStart(2,'0');
+  const from=`${y}-${mo}-01`,to=`${y}-${mo}-${String(new Date(y,now.getMonth()+1,0).getDate()).padStart(2,'0')}`;
+  const rows=cats.map(c=>{
+    const txs=(state.transactions||[]).filter(t=>t.category_id===c.id&&t.date>=from&&t.date<=to&&!t.is_transfer);
+    const total=txs.reduce((s,t)=>s+(typeof txToBRL==='function'?txToBRL(t):parseFloat(t.brl_amount??t.amount)??0),0);
+    return `<div onclick="navigate('reports')" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px;transition:background .12s" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+      <span style="font-size:1.1rem">${c.icon||'📦'}</span>
+      <span style="flex:1;font-size:.85rem;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
+      <span style="font-size:.82rem;font-weight:700;white-space:nowrap;color:${total<0?'var(--red)':total>0?'var(--green)':'var(--muted)'}">${total>=0?'+':''}${fmt(total,'BRL')}</span>
+      <span style="font-size:.7rem;color:var(--muted);white-space:nowrap">${txs.length} lanç.</span>
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div class="card mb-4"><div class="card-header"><span class="card-title">⭐ Categorias Favoritas</span><button onclick="navigate('categories')" class="btn btn-ghost btn-sm" style="font-size:.73rem">Gerenciar</button></div><div style="padding:0 4px 8px">${rows}</div></div>`;
 }

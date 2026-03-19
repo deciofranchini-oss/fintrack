@@ -576,9 +576,11 @@ async function saveBudget() {
   }
 
   if (err) { toast(err.message, 'error'); return; }
-  toast(id ? 'Orçamento atualizado!' : 'Orçamento salvo!', 'success');
+  const _isNew=!id;
+  toast(id?'Orçamento atualizado!':'Orçamento salvo!','success');
   closeModal('budgetModal');
-  loadBudgets();
+  await loadBudgets();
+  if(_isNew) _scrollTopAndHighlight('.budget-card,.budget-item');
 }
 
 async function deleteBudget(id) {

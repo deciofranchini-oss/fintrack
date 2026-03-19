@@ -174,7 +174,7 @@ function accountTypeLabel(t){
   return{corrente:'Conta Corrente',poupanca:'Poupança',cartao_credito:'Cartão de Crédito',investimento:'Investimentos',dinheiro:'Dinheiro',outros:'Outros'}[t]||t;
 }
 
-function openAccountModal(id=''){
+async function openAccountModal(id=''){
   const form={id:'',name:'',type:'corrente',currency:'BRL',initial_balance:0,icon:'',color:'#2a6049',is_brazilian:false,iof_rate:3.5,group_id:'',is_favorite:false,best_purchase_day:null,due_day:null};
   if(id){
     const a=state.accounts.find(x=>x.id===id);
@@ -190,7 +190,8 @@ function openAccountModal(id=''){
   document.getElementById('accountModalTitle').textContent=id?'Editar Conta':'Nova Conta';
   const gSel=document.getElementById('accountGroupId');
   if(gSel){
-    gSel.innerHTML='<option value="">— Sem grupo —</option>'+state.groups.map(g=>`<option value="${g.id}">${g.emoji||'🗂️'} ${esc(g.name)}</option>`).join('');
+    if(!state.groups||!state.groups.length){try{await loadGroups();}catch(_e){}}
+    gSel.innerHTML='<option value="">— Sem grupo —</option>'+(state.groups||[]).map(g=>`<option value="${g.id}">${g.emoji||'🗂️'} ${esc(g.name)}</option>`).join('');
     gSel.value=form.group_id||'';
   }
   // Favorite (Feature 7)

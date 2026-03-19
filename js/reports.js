@@ -176,8 +176,9 @@ async function loadReports() {
 
   const exps = txs.filter(t=>t.amount<0);
   const incs = txs.filter(t=>t.amount>0);
-  const totExp = exps.reduce((s,t)=>s+Math.abs(t.amount),0);
-  const totInc = incs.reduce((s,t)=>s+t.amount,0);
+  const _rBrl=t=>typeof txToBRL==='function'?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0);
+  const totExp=exps.reduce((s,t)=>s+_rBrl(t),0);
+  const totInc=incs.reduce((s,t)=>s+_rBrl(t),0);
   const bal    = totInc - totExp;
 
   /* KPIs */
@@ -196,7 +197,7 @@ async function loadReports() {
   exps.forEach(t=>{
     const n=t.categories?.name||'Sem categoria', c=t.categories?.color||'#94a3b8';
     if(!expMap[n]) expMap[n]={total:0,rawColor:c,count:0};
-    expMap[n].total+=Math.abs(t.amount); expMap[n].count++;
+    expMap[n].total+=_rBrl(t); expMap[n].count++;
   });
   const expEntries = Object.entries(expMap).sort((a,b)=>b[1].total-a[1].total);
   // Always destroy stale instance — even if there is no data to render,
@@ -218,7 +219,7 @@ async function loadReports() {
   incs.forEach(t=>{
     const n=t.categories?.name||'Sem categoria', c=t.categories?.color||'#94a3b8';
     if(!incMap[n]) incMap[n]={total:0,rawColor:c,count:0};
-    incMap[n].total+=t.amount; incMap[n].count++;
+    incMap[n].total+=_rBrl(t); incMap[n].count++;
   });
   const incEntries = Object.entries(incMap).sort((a,b)=>b[1].total-a[1].total);
   // Always destroy stale instance first
@@ -239,7 +240,7 @@ async function loadReports() {
   txs.forEach(t=>{
     const n=t.accounts?.name||'—', c=t.accounts?.color||'#94a3b8';
     if(!accMap[n]) accMap[n]={exp:0,inc:0,color:c};
-    if(t.amount<0) accMap[n].exp+=Math.abs(t.amount); else accMap[n].inc+=t.amount;
+    if(t.amount<0) accMap[n].exp+=_rBrl(t); else accMap[n].inc+=_rBrl(t);
   });
   const accE = Object.entries(accMap).sort((a,b)=>(b[1].exp+b[1].inc)-(a[1].exp+a[1].inc));
   if(accE.length)
@@ -264,10 +265,10 @@ async function loadReports() {
       const c = t.categories?.color || '#94a3b8';
       if (t.is_transfer) {
         if (!trnMap[n]) trnMap[n] = { name: n, color: c, total: 0, count: 0 };
-        trnMap[n].total += Math.abs(t.amount); trnMap[n].count++;
+        trnMap[n].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); trnMap[n].count++;
       } else if (t.amount < 0) {
         if (!expMap[n]) expMap[n] = { name: n, color: c, total: 0, count: 0 };
-        expMap[n].total += Math.abs(t.amount); expMap[n].count++;
+        expMap[n].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); expMap[n].count++;
       } else {
         if (!incMap[n]) incMap[n] = { name: n, color: c, total: 0, count: 0 };
         incMap[n].total += t.amount; incMap[n].count++;
@@ -344,7 +345,7 @@ async function renderTrendChart(from, to) {
       const d=new Date(t.date+'T12:00');
       const w='Sem '+Math.ceil(d.getDate()/7);
       if(!wkMap[w]) wkMap[w]={inc:0,exp:0};
-      if(t.amount<0) wkMap[w].exp+=Math.abs(t.amount); else wkMap[w].inc+=t.amount;
+      if(t.amount<0) wkMap[w].exp+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); else wkMap[w].inc+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):parseFloat(t.brl_amount??t.amount)??0);
     });
     const wks=Object.entries(wkMap);
     if(wks.length) renderChart('reportTrendChart','bar',wks.map(w=>w[0]),[
@@ -355,7 +356,7 @@ async function renderTrendChart(from, to) {
   }
   rptState.txData.forEach(t=>{
     const m=months.find(x=>x.key===t.date.slice(0,7)); if(!m) return;
-    if(t.amount<0) m.exp+=Math.abs(t.amount); else m.inc+=t.amount;
+    if(t.amount<0) m.exp+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); else m.inc+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):parseFloat(t.brl_amount??t.amount)??0);
   });
   renderChart('reportTrendChart','bar',months.map(m=>m.label),[
     {label:'Receitas',data:months.map(m=>+m.inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
@@ -368,8 +369,8 @@ async function loadReportTx() {
   const {from,to}=getRptDateRange();
   const txs = await fetchRptTransactions();
   rptState.txData = txs;
-  const totExp=txs.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
-  const totInc=txs.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const totExp=txs.filter(t=>t.amount<0).reduce((s,t)=>s+(typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)),0);
+  const totInc=txs.filter(t=>t.amount>0).reduce((s,t)=>s+(typeof txToBRL==="function"?txToBRL(t):parseFloat(t.brl_amount??t.amount)??0),0);
   document.getElementById('reportTxKpis').innerHTML=`
     <div class="report-kpi"><div class="report-kpi-label">Receitas</div><div class="report-kpi-value text-green">${fmt(totInc)}</div></div>
     <div class="report-kpi"><div class="report-kpi-label">Despesas</div><div class="report-kpi-value text-red">${fmt(totExp)}</div></div>
@@ -395,7 +396,7 @@ function rptSortTx(field) {
 }
 
 function renderReportTxTable(txs) {
-  const total=txs.reduce((s,t)=>s+t.amount,0);
+  const total=txs.reduce((s,t)=>s+(typeof txToBRL==="function"?txToBRL(t):parseFloat(t.brl_amount??t.amount)??0),0);
   const countEl=document.getElementById('reportTxCount');
   if(countEl) countEl.textContent=txs.length+' registros';
   const totEl=document.getElementById('reportTxTotal');
@@ -774,10 +775,10 @@ function _pdfCatTable(doc, y, txs) {
     const n = t.categories?.name || 'Sem categoria';
     if (t.is_transfer) {
       if (!trnMap[n]) trnMap[n] = { name: n, total: 0, count: 0 };
-      trnMap[n].total += Math.abs(t.amount); trnMap[n].count++;
+      trnMap[n].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); trnMap[n].count++;
     } else if (t.amount < 0) {
       if (!expMap[n]) expMap[n] = { name: n, total: 0, count: 0 };
-      expMap[n].total += Math.abs(t.amount); expMap[n].count++;
+      expMap[n].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); expMap[n].count++;
     } else {
       if (!incMap[n]) incMap[n] = { name: n, total: 0, count: 0 };
       incMap[n].total += t.amount; incMap[n].count++;
@@ -870,7 +871,7 @@ function _pdfPayeeTable(doc, y, txs) {
   txs.filter(t => t.amount < 0).forEach(t => {
     const n = t.payees?.name || t.description || 'Sem beneficiário';
     if (!payMap[n]) payMap[n] = { total: 0, count: 0 };
-    payMap[n].total += Math.abs(t.amount); payMap[n].count++;
+    payMap[n].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); payMap[n].count++;
   });
   const rows = Object.entries(payMap).sort((a,b) => b[1].total - a[1].total).slice(0, 15);
   if (!rows.length) return y;
@@ -1117,8 +1118,8 @@ async function _buildReportPDF() {
       txs.forEach(t => {
         const n = t.accounts?.name || '—';
         if (!accMap[n]) accMap[n] = { inc: 0, exp: 0, count: 0 };
-        if (t.amount >= 0) accMap[n].inc += t.amount;
-        else accMap[n].exp += Math.abs(t.amount);
+        if (t.amount >= 0) accMap[n].inc += (typeof txToBRL==='function'?Math.abs(txToBRL(t)):parseFloat(t.brl_amount??t.amount)??0);
+        else accMap[n].exp += (typeof txToBRL==='function'?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0));
         accMap[n].count++;
       });
       const accRows = Object.entries(accMap).sort((a,b)=>(b[1].inc+b[1].exp)-(a[1].inc+a[1].exp));
@@ -1268,7 +1269,7 @@ function printReport() {
     txs.forEach(t => {
       const n = t.categories?.name||'Sem categoria', tp = t.amount<0?'Despesa':'Receita', k = n+'|'+tp;
       if (!allMap[k]) allMap[k] = {name:n,type:tp,color:t.categories?.color||'#888',total:0,count:0};
-      allMap[k].total += Math.abs(t.amount); allMap[k].count++;
+      allMap[k].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); allMap[k].count++;
     });
     const rows = Object.values(allMap).sort((a,b)=>b.total-a.total);
     const grand = rows.reduce((s,e)=>s+e.total,0);
@@ -1418,7 +1419,7 @@ function _buildReportEmailHTML(txs, from, to, viewLabel, filters, pdfUrl) {
   txs.filter(t => t.amount < 0).forEach(t => {
     const k = t.categories?.name || 'Sem categoria';
     if (!catMap[k]) catMap[k] = { total: 0, count: 0, color: t.categories?.color || '#888' };
-    catMap[k].total += Math.abs(t.amount);
+    catMap[k].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0));
     catMap[k].count++;
   });
   const catRows = Object.entries(catMap).sort((a,b) => b[1].total - a[1].total).slice(0, 8);
@@ -1454,7 +1455,7 @@ function _buildReportEmailHTML(txs, from, to, viewLabel, filters, pdfUrl) {
   txs.filter(t => t.amount < 0).forEach(t => {
     const k = t.payees?.name || t.description || 'Sem beneficiário';
     if (!payMap[k]) payMap[k] = { total: 0, count: 0 };
-    payMap[k].total += Math.abs(t.amount);
+    payMap[k].total += (typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0));
     payMap[k].count++;
   });
   const payRows = Object.entries(payMap).sort((a,b) => b[1].total - a[1].total).slice(0, 5);

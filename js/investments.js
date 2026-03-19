@@ -504,6 +504,7 @@ function openInvTransactionModal(accountId = null, positionId = null) {
   </div>`;
 
   document.body.appendChild(modal);
+  _renderInvGainLossChart(pos, history || []);
   if (accountId) document.getElementById('invTxAccount').value = accountId;
   if (pos) {
     document.getElementById('invTxAssetType').value = pos.asset_type || 'outro';
@@ -742,6 +743,14 @@ async function openInvPositionDetail(positionId) {
         <button class="btn btn-primary btn-sm" onclick="updateManualPrice('${pos.id}')">Salvar</button>
       </div>` : ''}
 
+      <!-- Gain/Loss Chart -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:.82rem;font-weight:700">Evolução do Investimento</div>
+        <span id="invChartNoData" style="display:none;font-size:.73rem;color:var(--muted)">Sem histórico de preços</span>
+      </div>
+      <div style="position:relative;height:150px;margin-bottom:16px;background:var(--surface2);border-radius:var(--r-sm);overflow:hidden">
+        <canvas id="invGainLossChart" style="width:100%;height:100%"></canvas>
+      </div>
       <!-- Transaction history -->
       <div style="font-size:.82rem;font-weight:700;margin-bottom:8px">Histórico de Movimentações</div>
       ${txRows ? `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
@@ -797,4 +806,42 @@ async function applyInvestmentsFeature() {
 // Called from accounts.js after recalculating balances
 function invPostBalanceHook() {
   if (_inv.loaded) _invAugmentAccountBalances();
+}
+
+function _renderInvGainLossChart(pos, history) {
+  const cv=document.getElementById('invGainLossChart');
+  const nd=document.getElementById('invChartNoData');
+  if(!cv) return;
+  const hist=[...history].sort((a,b)=>a.date.localeCompare(b.date));
+  if(!hist.length){if(nd)nd.style.display='';cv.style.display='none';return;}
+  if(nd)nd.style.display='none'; cv.style.display='';
+  if(cv._ci){try{cv._ci.destroy();}catch(_){}}
+  const cost=_invCost(pos), qty=+(pos.quantity)||0, cur=pos.currency||'BRL';
+  const fC=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:cur,notation:'compact'}).format(v);
+  const fF=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:cur}).format(v);
+  const labels=hist.map(h=>{const d=new Date(h.date+'T12:00:00');return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});});
+  const mvData=hist.map(h=>+(h.price)*qty);
+  const pnlData=mvData.map(mv=>mv-cost);
+  const lp=pnlData[pnlData.length-1]??0;
+  const G='rgba(22,163,74,.85)',R='rgba(192,57,43,.85)',GL='rgba(22,163,74,.15)',RL='rgba(192,57,43,.12)';
+  cv._ci=new Chart(cv.getContext('2d'),{
+    type:'line',
+    data:{labels,datasets:[
+      {label:'Valor Mercado',data:mvData,borderColor:G,backgroundColor:'transparent',borderWidth:2,pointRadius:hist.length>40?0:2,fill:false,tension:.35,order:1},
+      {label:'Custo',data:hist.map(()=>cost),borderColor:'rgba(100,116,139,.6)',backgroundColor:'transparent',borderWidth:1.5,borderDash:[5,3],pointRadius:0,fill:false,order:2},
+      {label:'Ganho/Perda',data:pnlData,borderColor:lp>=0?G:R,backgroundColor:lp>=0?GL:RL,borderWidth:1.5,pointRadius:0,fill:'origin',tension:.35,order:3},
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{display:true,position:'top',labels:{font:{size:10},boxWidth:10,padding:8}},
+        tooltip:{callbacks:{label:c=>{const v=c.parsed.y;return ` ${c.dataset.label}: ${v>=0?'+':''}${fF(v)}`;}}}
+      },
+      scales:{
+        x:{ticks:{font:{size:9},maxTicksLimit:8},grid:{display:false}},
+        y:{ticks:{font:{size:9},callback:fC},grid:{color:'rgba(0,0,0,.05)'}}
+      }
+    }
+  });
 }
