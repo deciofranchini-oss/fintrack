@@ -114,6 +114,7 @@ function renderCategories() {
             <span class="cat-sub-name" id="catName-${c.id}" ondblclick="startCatInlineEdit('${c.id}')">${esc(c.name)}</span>
             ${cCount > 0 ? `<span class="cat-tx-pill" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${c.id}','${esc(c.name)}')">📊 ${cCount}</span>` : ''}
             <div class="cat-inline-actions">
+              <button class="btn-icon" onclick="toggleCatFavorite('${c.id}')" title="${isCatFavorite(c.id)?'Remover favorito':'Favoritar'}" style="color:${isCatFavorite(c.id)?'var(--amber,#f59e0b)':'var(--muted)'};font-size:1.05rem">★</button>
               <button class="btn-icon" onclick="openCategoryModal('${c.id}')" title="Editar">✏️</button>
               <button class="btn-icon" onclick="deleteCategory('${c.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
             </div>
