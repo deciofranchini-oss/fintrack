@@ -1958,7 +1958,7 @@ async function loadFamiliesList() {
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
   try {
     const flagKeys = visibleFamilies.flatMap(f =>
-      ['grocery_enabled_','prices_enabled_'].map(p => p + f.id));
+      ['grocery_enabled_','prices_enabled_','investments_enabled_'].map(p => p + f.id));
     const { data: flagRows } = await sb.from('app_settings')
       .select('key,value').in('key', flagKeys);
     (flagRows||[]).forEach(r => {

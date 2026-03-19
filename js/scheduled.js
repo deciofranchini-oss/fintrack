@@ -593,7 +593,7 @@ function renderUpcoming() {
     }, 0);
 
     const gid = 'upg_' + date.replace(/-/g,'');
-    const rows = items.map(({sc}) => {
+    const rows = items.map(({sc, isPending}) => {
       const isExp    = sc.type==='expense'||sc.type==='card_payment'||sc.type==='transfer';
       const typeIcon = sc.type==='card_payment'?'💳':sc.type==='transfer'?'↔':isExp?'↑':'↓';
       const dest     = (sc.type==='transfer'||sc.type==='card_payment')
@@ -601,7 +601,7 @@ function renderUpcoming() {
       const catColor = sc.categories?.color || (isExp ? 'var(--red)' : 'var(--green)');
       const manualBadge = !sc.auto_register
         ? `<span class="sup-manual-badge">Manual</span>` : '';
-      const pendingBadge = u.isPending
+      const pendingBadge = isPending
         ? `<span class="sup-pending-badge" title="Aguardando registro">⚠ Pendente</span>` : '';
       return `<div class="sup-item${isToday?' sup-item--today':''}">
         <div class="sup-icon" style="background:color-mix(in srgb,${catColor} 14%,transparent);color:${catColor}">${typeIcon}</div>

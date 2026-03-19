@@ -1,21 +1,58 @@
 // ── Categories — per-family, with tx counts and safe deletion ─────────────
-// ── Favoritos de categoria (localStorage + app_settings) ─────────────────
-const _CAT_FAV_KEY=()=>`cat_fav_${typeof famId==='function'?famId()||'x':'x'}`;
-function _loadCatFavorites(){try{const r=localStorage.getItem(_CAT_FAV_KEY());return r?JSON.parse(r):[]}catch{return[];}}
-function _saveCatFavorites(ids){
-  try{localStorage.setItem(_CAT_FAV_KEY(),JSON.stringify(ids));}catch{}
-  if(typeof saveAppSetting==='function') saveAppSetting(_CAT_FAV_KEY(),ids).catch(()=>{});
+// ── Favoritos de categoria ────────────────────────────────────────────────
+// Chave por USUÁRIO (não por família) — membros distintos têm favoritos independentes
+const _CAT_FAV_KEY = () => {
+  const uid = (typeof currentUser !== 'undefined' && currentUser?.id) ? currentUser.id : 'anon';
+  return `cat_fav_user_${uid}`;
+};
+
+function _loadCatFavorites() {
+  try {
+    const raw = localStorage.getItem(_CAT_FAV_KEY());
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
-function isCatFavorite(id){return _loadCatFavorites().includes(id);}
-async function toggleCatFavorite(id){
-  const favs=_loadCatFavorites(),i=favs.indexOf(id);
-  if(i>=0) favs.splice(i,1); else favs.push(id);
-  _saveCatFavorites(favs); initCategoriesPage();
-  if(state.currentPage==='dashboard'&&typeof _renderDashFavCategories==='function') _renderDashFavCategories();
+
+async function _saveCatFavorites(ids) {
+  // 1. Persistir localmente (imediato)
+  const key = _CAT_FAV_KEY();
+  try { localStorage.setItem(key, JSON.stringify(ids)); } catch {}
+  // 2. Upsert direto no Supabase — sem depender de saveAppSetting
+  if (typeof sb === 'undefined' || !sb) return;
+  try {
+    const { error } = await sb.from('app_settings')
+      .upsert({ key, value: ids }, { onConflict: 'key' });
+    if (error) console.warn('[catFav] save error:', error.message);
+    else console.log('[catFav] saved', ids.length, 'favorites to Supabase');
+  } catch (e) { console.warn('[catFav] save exception:', e.message); }
 }
-async function _syncCatFavsFromServer(){
-  if(typeof loadAppSetting!=='function') return;
-  try{const v=await loadAppSetting(_CAT_FAV_KEY());if(Array.isArray(v)) localStorage.setItem(_CAT_FAV_KEY(),JSON.stringify(v));}catch{}
+
+function isCatFavorite(id) { return _loadCatFavorites().includes(id); }
+
+async function toggleCatFavorite(id) {
+  const favs = _loadCatFavorites();
+  const idx  = favs.indexOf(id);
+  if (idx >= 0) favs.splice(idx, 1); else favs.push(id);
+  await _saveCatFavorites(favs);
+  initCategoriesPage();
+  if (state.currentPage === 'dashboard' && typeof _renderDashFavCategories === 'function')
+    _renderDashFavCategories(_lastDashIncome, _lastDashExpense);
+}
+
+async function _syncCatFavsFromServer() {
+  // Busca direto do Supabase — não depende de cache nem de loadAppSetting
+  if (typeof sb === 'undefined' || !sb) return;
+  const key = _CAT_FAV_KEY();
+  if (key.endsWith('_anon')) return; // usuário ainda não logado
+  try {
+    const { data, error } = await sb.from('app_settings')
+      .select('value').eq('key', key).maybeSingle();
+    if (error) { console.warn('[catFav] sync error:', error.message); return; }
+    if (data?.value && Array.isArray(data.value)) {
+      localStorage.setItem(key, JSON.stringify(data.value));
+      console.log('[catFav] synced', data.value.length, 'favorites from Supabase');
+    }
+  } catch (e) { console.warn('[catFav] sync exception:', e.message); }
 }
 
 // Cache de contagem de transações por category_id: { [id]: number }
@@ -530,7 +567,12 @@ async function openCategoryHistory(catId, catName) {
 // ── Page init ─────────────────────────────────────────────────────────────
 
 async function initCategoriesPage() {
-  _syncCatFavsFromServer().catch(()=>{});
+  // Sync do servidor e re-render com dados atualizados
+  _syncCatFavsFromServer().then(() => {
+    if (typeof renderCategories === 'function') renderCategories();
+    if (state.currentPage === 'dashboard' && typeof _renderDashFavCategories === 'function')
+      _renderDashFavCategories(_lastDashIncome, _lastDashExpense);
+  }).catch(() => {});
   await _loadCatTxCounts();
   renderCategories();
 }

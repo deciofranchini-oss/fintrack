@@ -789,13 +789,33 @@ async function updateManualPrice(positionId) {
 
 async function applyInvestmentsFeature() {
   const famId_ = famId();
-  if (!famId_) return;
-  const enabled = await getAppSetting('investments_enabled_' + famId_, false);
   const navEl   = document.getElementById('investmentsNav');
   const pageEl  = document.getElementById('page-investments');
 
-  if (navEl)  navEl.style.display  = enabled ? '' : 'none';
-  if (pageEl) pageEl.style.display = enabled ? '' : 'none'; // page hidden by CSS .page rule
+  if (!famId_) {
+    if (navEl) navEl.style.display = 'none';
+    if (pageEl) pageEl.style.display = 'none';
+    if (typeof _syncModulesSection === 'function') _syncModulesSection();
+    return;
+  }
+
+  let enabled = false;
+  const cacheKey = 'investments_enabled_' + famId_;
+  if (window._familyFeaturesCache && cacheKey in window._familyFeaturesCache) {
+    enabled = !!window._familyFeaturesCache[cacheKey];
+  } else {
+    const raw = await getAppSetting(cacheKey, false);
+    enabled = raw === true || raw === 'true';
+    window._familyFeaturesCache = window._familyFeaturesCache || {};
+    window._familyFeaturesCache[cacheKey] = enabled;
+  }
+
+  if (navEl) {
+    navEl.style.display = enabled ? '' : 'none';
+    navEl.dataset.featureControlled = '1';
+  }
+  if (pageEl) pageEl.style.display = enabled ? '' : 'none';
+  if (typeof _syncModulesSection === 'function') _syncModulesSection();
 
   if (enabled) {
     await loadInvestments();
