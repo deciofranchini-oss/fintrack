@@ -454,6 +454,11 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </span>Orçamentos
       </button>
+      <button class="nav-item" onclick="navigate('ai-insights')" id="aiInsightsNav" data-nav="ai-insights" style="display:none">
+        <span class="ni-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.2 4.8L19 9l-4.8 2.2L12 16l-2.2-4.8L5 9l4.8-2.2L12 2z"/><path d="M5 19l1.2-2.8L9 15l-2.8-1.2L5 11l-1.2 2.8L1 15l2.8 1.2L5 19z"/><path d="M19 23l1-2 2-1-2-1-1-2-1 2-2 1 2 1 1 2z"/></svg>
+        </span>AI Insights
+      </button>
     </div>
 
     <div class="nav-section">
@@ -1101,6 +1106,43 @@
       </div>
     </div>
 
+
+    <div class="page" id="page-ai-insights" style="display:none">
+      <div class="aii-shell">
+        <div class="aii-hero">
+          <div>
+            <div class="section-title" style="font-size:1.12rem">AI Insights</div>
+            <div class="aii-sub">Leituras inteligentes da família com dados calculados pelo app e interpretação assistida por Gemini.</div>
+          </div>
+          <div class="aii-hero-actions">
+            <button class="btn btn-ghost btn-sm" onclick="refreshAIInsights(true)">🔄 Atualizar</button>
+            <button class="btn btn-primary btn-sm" onclick="exportAIInsightsSummary()">⬇️ Exportar</button>
+          </div>
+        </div>
+        <div class="aii-filter-card">
+          <div class="aii-filter-grid">
+            <div><label>Período</label><select id="aiiPeriod" onchange="onAIInsightsPeriodChange()"><option value="last30">Últimos 30 dias</option><option value="last90">Últimos 90 dias</option><option value="currentMonth">Mês atual</option><option value="previousMonth">Mês anterior</option><option value="custom">Intervalo livre</option></select></div>
+            <div id="aiiFromWrap" style="display:none"><label>De</label><input type="date" id="aiiFrom" onchange="refreshAIInsights()"></div>
+            <div id="aiiToWrap" style="display:none"><label>Até</label><input type="date" id="aiiTo" onchange="refreshAIInsights()"></div>
+            <div><label>Membro</label><select id="aiiMember" onchange="refreshAIInsights()"><option value="">Todos</option></select></div>
+            <div><label>Conta</label><select id="aiiAccount" onchange="refreshAIInsights()"><option value="">Todas</option></select></div>
+            <div><label>Categoria</label><select id="aiiCategory" onchange="refreshAIInsights()"><option value="">Todas</option></select></div>
+            <div><label>Beneficiário</label><select id="aiiPayee" onchange="refreshAIInsights()"><option value="">Todos</option></select></div>
+          </div>
+        </div>
+        <div class="aii-tabs"><button class="aii-tab active" id="aiiTabAnalysis" onclick="setAIInsightsTab('analysis')">📊 Análise</button><button class="aii-tab" id="aiiTabChat" onclick="setAIInsightsTab('chat')">💬 Assistente Financeiro</button></div>
+        <div id="aiiDisabledState" class="aii-empty" style="display:none"></div>
+        <div id="aiiAnalysisView">
+          <div id="aiiSummaryCards" class="aii-summary-grid"></div>
+          <div class="aii-grid-2"><div class="card aii-card"><div class="card-header"><span class="card-title">Resumo executivo</span></div><div id="aiiExecutiveSummary" class="aii-richtext"></div></div><div class="card aii-card"><div class="card-header"><span class="card-title">Principais insights</span></div><div id="aiiKeyInsights" class="aii-bullets"></div></div></div>
+          <div class="aii-grid-2"><div class="card aii-card"><div class="card-header"><span class="card-title">Fluxo no período</span></div><div class="aii-chart-wrap"><canvas id="aiiTrendChart"></canvas></div></div><div class="card aii-card"><div class="card-header"><span class="card-title">Despesas por categoria</span></div><div class="aii-chart-wrap"><canvas id="aiiCategoryChart"></canvas></div></div></div>
+          <div class="aii-grid-2"><div class="card aii-card"><div class="card-header"><span class="card-title">Gastos por membro</span></div><div class="aii-chart-wrap"><canvas id="aiiMemberChart"></canvas></div></div><div class="card aii-card"><div class="card-header"><span class="card-title">Top beneficiários</span></div><div class="aii-chart-wrap"><canvas id="aiiPayeeChart"></canvas></div></div></div>
+          <div class="aii-grid-2"><div class="card aii-card"><div class="card-header"><span class="card-title">Oportunidades de economia</span></div><div id="aiiSavingsList" class="aii-bullets"></div></div><div class="card aii-card"><div class="card-header"><span class="card-title">Alertas de fluxo de caixa</span></div><div id="aiiCashflowAlerts" class="aii-bullets"></div></div></div>
+          <div class="aii-grid-2"><div class="card aii-card"><div class="card-header"><span class="card-title">Padrões contextuais</span></div><div id="aiiPatterns" class="aii-bullets"></div></div><div class="card aii-card"><div class="card-header"><span class="card-title">Sugestões de classificação</span></div><div id="aiiClassSuggestions"></div></div></div>
+        </div>
+        <div id="aiiChatView" style="display:none"><div class="card aii-card"><div class="card-header"><span class="card-title">Assistente Financeiro</span><button class="btn btn-ghost btn-sm" onclick="resetAIInsightsChat()">↺ Novo contexto</button></div><div id="aiiSuggestedQuestions" class="aii-chip-row"></div><div id="aiiChatMessages" class="aii-chat-list"></div><div class="aii-chat-input-row"><textarea id="aiiChatInput" rows="2" placeholder="Pergunte algo sobre a família selecionada..."></textarea><button class="btn btn-primary" id="aiiChatSendBtn" onclick="sendAIInsightsChat()">Enviar</button></div><div class="aii-chat-footnote">Valores, saldos e totais vêm do app. A IA interpreta contexto, padrões e recomendações.</div></div></div>
+      </div>
+    </div>
     <!-- BUDGETS -->
 <div class="page" id="page-budgets">
 
@@ -3915,6 +3957,7 @@
   <script src="js/autocheck.js"></script>
   <script src="js/auto_register.js"></script>
 <script src="js/audit.js"></script>
+<script src="js/ai_core.js"></script>
 <script src="js/receipt_ai.js"></script>
 <script src="js/prices.js"></script>
   <script src="js/grocery.js"></script>
@@ -5004,6 +5047,7 @@
 
   <script src="js/family_members_composition.js"></script>
   <script src="js/investments.js"></script>
+  <script src="js/ai_insights.js"></script>
   <script src="js/orphan.js"></script>
   <script src="js/wizard.js"></script>
 
