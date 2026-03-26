@@ -33,7 +33,7 @@ function loadAutoCheckConfig() {
   if(enEl) enEl.checked = cfg.enabled;
   if(intEl) intEl.value = cfg.intervalMinutes;
   if(dayEl) dayEl.value = cfg.daysAhead;
-  if(emEl)  emEl.value  = cfg.emailDefault;
+  if(emEl)  emEl.value  = cfg.emailDefault || (typeof currentUser !== 'undefined' ? currentUser?.email || '' : '');
   if(mEl)   mEl.value   = cfg.method;
   updateAutoCheckUI(cfg);
   applyAutoCheckTimer(cfg);
@@ -477,4 +477,16 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_auto_register
   };
   overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

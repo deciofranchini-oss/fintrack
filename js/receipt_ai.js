@@ -192,7 +192,7 @@ async function readReceiptWithAI() {
 
   const apiKey = await getAppSetting(RECEIPT_AI_KEY_SETTING, '');
   if (!apiKey || !apiKey.startsWith('AIza')) {
-    toast('Configure a chave Gemini em Configurações → IA', 'warning');
+    toast(t('ai.no_api_key_config'), 'warning');
     showAiConfig();
     return;
   }
@@ -206,7 +206,7 @@ async function readReceiptWithAI() {
     _applyResultToForm(result);
     _renderAiResultPanel(result);
     window._lastReceiptAiResult = result; // used by Módulo de Preços
-    toast('✅ Campos preenchidos! Revise e salve.', 'success');
+    toast(t('toast.receipt_filled'), 'success');
     // Show "Registrar Preços" button if prices feature active for this family
     try {
       if (typeof isPricesEnabled === 'function' && await isPricesEnabled()) {
@@ -229,8 +229,10 @@ async function _callClaudeVision(apiKey, pending) {
   const payList = (state.payees     || []).slice(0, 80).map(p => p.name).join(', ');
   const today   = new Date().toISOString().slice(0, 10);
 
-  const prompt = `Você é especialista em leitura de recibos, notas fiscais e comprovantes financeiros brasileiros.
-Analise a imagem e extraia as informações para preencher uma transação financeira.
+  const storeList = typeof _px !== 'undefined' ? (_px.stores || []).slice(0,20).map(s=>s.name).join(', ') : '';
+
+  const prompt = `Você é especialista em leitura de notas fiscais e recibos brasileiros.
+Analise a imagem e extraia TODAS as informações: cabeçalho da nota E todos os itens com preços.
 Responda SOMENTE com JSON válido, sem markdown, sem texto antes ou depois.
 
 CONTEXTO DO APP:
@@ -238,6 +240,7 @@ CONTEXTO DO APP:
 - Categorias disponíveis (nome|tipo): ${catList || 'Alimentação|despesa, Transporte|despesa, Outros|despesa'}
 - Contas disponíveis (nome|moeda): ${accList || 'Conta Corrente|BRL'}
 - Beneficiários já cadastrados: ${payList || '(nenhum)'}
+- Estabelecimentos já cadastrados: ${storeList || '(nenhum)'}
 
 RETORNE EXATAMENTE ESTE JSON:
 {
@@ -248,19 +251,37 @@ RETORNE EXATAMENTE ESTE JSON:
   "category": "nome exato da lista ou null",
   "account": "nome exato da lista ou null",
   "payee": "nome limpo do estabelecimento ou null",
-  "memo": "itens comprados, número do pedido, CNPJ, endereço ou outros detalhes",
+  "address": "endereço do estabelecimento ou null",
+  "cnpj": "CNPJ formatado ou null",
+  "memo": "número do pedido, observações ou null",
   "confidence": 0.9,
-  "raw_total": "valor exato como aparece no documento (ex: R$ 45,90)"
+  "raw_total": "valor exato como aparece no documento (ex: R$ 45,90)",
+  "items": [
+    {
+      "description": "nome normalizado do produto (sem abreviações)",
+      "ai_name": "nome exato como aparece no recibo",
+      "quantity": 1,
+      "unit_price": 0.00,
+      "total_price": 0.00,
+      "category": "categoria da lista ou null"
+    }
+  ]
 }
 
 REGRAS:
-- amount: número positivo (ex: 45.90), sem símbolo de moeda
+- amount: TOTAL da nota (número positivo, ex: 45.90), sem símbolo de moeda
 - type: "expense" para compras/pagamentos, "income" para depósitos/recebimentos
 - date: se não encontrar, use ${today}
-- category: escolha a MAIS PRÓXIMA da lista; null se muito incerto
+- category: categoria do campo raiz = categoria geral da nota (mais frequente nos itens)
 - account: escolha a MAIS ADEQUADA da lista; null se incerto
-- payee: apenas o nome do local (sem CNPJ, sem endereço)
-- confidence: 0.0–1.0, sua confiança geral na extração
+- payee: apenas o nome do local (sem CNPJ, sem endereço); se bater com a lista use o nome exato
+- items: TODOS os itens da nota com quantidades e preços unitários
+  - description: nome limpo, sem abreviações, sem códigos de produto
+  - ai_name: transcrição exata do recibo (pode ser abreviado)
+  - unit_price: total_price / quantity
+  - total_price: valor total do item (qty * unit_price)
+  - category: categoria mais provável para este item específico
+- Se a nota tiver apenas 1 item (ex: comprovante de serviço), crie 1 item com o total
 - Se não for documento financeiro: {"error": "não é um documento financeiro"}
 
 Arquivo: ${pending.fileName}`;
@@ -277,7 +298,7 @@ Arquivo: ${pending.fileName}`;
           { text: prompt },
         ],
       }],
-      generationConfig: { maxOutputTokens: 800, temperature: 0.1 },
+      generationConfig: { maxOutputTokens: 2500, temperature: 0.1 },
     }),
   });
 
@@ -326,10 +347,22 @@ function _applyResultToForm(r) {
     if (el) el.value = r.description;
   }
 
-  // memo
-  if (r.memo) {
+  // memo — se há items, montar resumo legível; caso contrário usar memo bruto
+  {
     const el = document.getElementById('txMemo');
-    if (el) el.value = r.memo;
+    if (el) {
+      if (r.items && r.items.length > 1) {
+        // Summarize items into memo: "Leite x2 R$4,00 | Pão R$3,50 | ..."
+        const summary = r.items.slice(0, 8).map(it => {
+          const qty   = it.quantity && it.quantity !== 1 ? `x${it.quantity} ` : '';
+          const price = it.total_price || it.unit_price || 0;
+          return `${it.description || it.ai_name}${qty ? ' '+qty : ''} R$${price.toFixed(2)}`;
+        }).join(' | ');
+        el.value = summary + (r.items.length > 8 ? ` (+${r.items.length - 8} itens)` : '');
+      } else if (r.memo) {
+        el.value = r.memo;
+      }
+    }
   }
 
   // conta — match parcial tolerante
@@ -381,6 +414,10 @@ function _renderAiResultPanel(r) {
     ? `<div class="ai-res-row"><span class="ai-res-lbl">${lbl}</span><span class="ai-res-val">${esc(String(val))}</span></div>`
     : '';
 
+  const itemCount = r.items?.length || 0;
+  const itemsHint = itemCount > 0
+    ? `<div class="ai-res-row" style="color:var(--accent);font-weight:600"><span class="ai-res-lbl">Itens extraídos</span><span class="ai-res-val">${itemCount} item${itemCount !== 1 ? 'ns' : ''} prontos para Preços 🏷️</span></div>`
+    : '';
   panel.style.display = '';
   panel.innerHTML = `
     <div class="ai-res-header">
@@ -393,6 +430,7 @@ function _renderAiResultPanel(r) {
       ${row('Estabelecimento', r.payee)}
       ${row('Categoria',       r.category)}
       ${row('Conta',           r.account)}
+      ${itemsHint}
     </div>
     <p class="ai-res-hint">⚠️ Revise todos os campos antes de salvar.</p>`;
 }

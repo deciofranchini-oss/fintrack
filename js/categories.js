@@ -197,7 +197,7 @@ async function finishCatInlineEdit(id, newName) {
   const { error } = await sb.from('categories').update({ name: trimmed }).eq('id', id);
   if (error) { toast(error.message, 'error'); renderCategories(); return; }
   cat.name = trimmed;
-  toast('Nome atualizado', 'success');
+  toast(t('toast.name_updated'), 'success');
   buildCatPicker();
   renderCategories();
 }
@@ -248,7 +248,7 @@ async function catDrop(e, targetId) {
   } else if (!isTargetParent && !isDraggedChild) {
     toast('Solte em uma subcategoria para reparentar, ou use ✏️ para editar', 'info');
   } else {
-    toast('Edite a categoria para mudar seu pai', 'info');
+    toast(t('toast.cat_edit_parent'), 'info');
   }
   catDragId = null;
 }
@@ -328,7 +328,7 @@ async function saveCategory() {
     icon:      document.getElementById('categoryIcon').value || '📦',
     color:     document.getElementById('categoryColor').value,
   };
-  if (!data.name) { toast('Informe o nome', 'error'); return; }
+  if (!data.name) { toast(t('toast.err_name'), 'error'); return; }
   if (!id) data.family_id = famId();
 
   let err;
@@ -340,10 +340,10 @@ async function saveCategory() {
   if (err) { toast(err.message, 'error'); return; }
 
   const _isNew=!id;
-  toast('Categoria salva!','success');
+  toast(t('category.saved'),'success');
   closeModal('categoryModal');
   DB.categories.bust(); await loadCategories(true);
-  populateSelects(); renderCategories();
+  if(typeof populateSelects==='function') populateSelects(); renderCategories();
   if(_isNew) _scrollTopAndHighlight('.cat-group:first-child');
 
   if (window._catSaveCallback) {
@@ -436,7 +436,7 @@ async function confirmCatReassign() {
   const childIds  = JSON.parse(document.getElementById('catReassignChildIds').value || '[]');
   const toId      = document.getElementById('catReassignTarget').value;
 
-  if (!toId) { toast('Selecione a categoria destino', 'error'); return; }
+  if (!toId) { toast(t('toast.err_select_cat'), 'error'); return; }
 
   const allFromIds = [fromId, ...childIds];
 
@@ -479,7 +479,7 @@ async function confirmCatReassign() {
     await _doDeleteCategory(fromId);
 
     closeModal('catReassignModal');
-    toast('Categoria excluída e registros transferidos!', 'success');
+    toast(t('category.deleted'), 'success');
 
   } catch (err) {
     toast(err.message, 'error');
@@ -491,10 +491,10 @@ async function confirmCatReassign() {
 async function _doDeleteCategory(id) {
   const { error } = await sb.from('categories').delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
-  toast('Categoria excluída', 'success');
+  toast(t('category.deleted_simple'), 'success');
   DB.categories.bust(); await loadCategories(true);
   await _loadCatTxCounts();
-  populateSelects();
+  if(typeof populateSelects==='function') populateSelects();
   renderCategories();
 }
 
@@ -575,4 +575,16 @@ async function initCategoriesPage() {
   }).catch(() => {});
   await _loadCatTxCounts();
   renderCategories();
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

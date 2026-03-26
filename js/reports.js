@@ -1,6 +1,65 @@
 let rptState = { view:'regular', txData:[] };
 let rptTxSortField = 'date', rptTxSortAsc = false;
 
+// ── Category chart state — two independent charts ───────────────────────────
+let _rptCatTypeExp = 'bar';    // expense chart type
+let _rptCatTypeInc = 'bar';    // income chart type
+let _rptCatDataCache = { expEntries: [], incEntries: [] };
+
+function setRptCatChart(chartType, which) {
+  // which = 'exp' | 'inc'
+  if (which === 'exp') {
+    _rptCatTypeExp = chartType;
+    document.getElementById('rptChartBtnBarExp')?.classList.toggle('active', chartType === 'bar');
+    document.getElementById('rptChartBtnDonutExp')?.classList.toggle('active', chartType === 'doughnut');
+    _renderSingleCatChart('reportCatChart', _rptCatDataCache.expEntries, _rptCatTypeExp);
+  } else {
+    _rptCatTypeInc = chartType;
+    document.getElementById('rptChartBtnBarInc')?.classList.toggle('active', chartType === 'bar');
+    document.getElementById('rptChartBtnDonutInc')?.classList.toggle('active', chartType === 'doughnut');
+    _renderSingleCatChart('reportIncomeChart', _rptCatDataCache.incEntries, _rptCatTypeInc);
+  }
+}
+
+function _renderSingleCatChart(canvasId, entries, chartType) {
+  if (state.chartInstances[canvasId]) {
+    state.chartInstances[canvasId].destroy();
+    delete state.chartInstances[canvasId];
+  }
+  if (!entries || !entries.length) return;
+  const colors = new Set();
+  if (chartType === 'bar') {
+    const top = entries.slice(0, 12);
+    renderChart(canvasId, 'bar',
+      top.map(e => e[0]),
+      [{ data: top.map(e => +e[1].total.toFixed(2)),
+         backgroundColor: top.map((e, i) => _catColor(e[1].rawColor, i, colors)),
+         borderRadius: 5, borderSkipped: false }],
+      { indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { callback: v => fmt(v) } },
+          y: { ticks: { font: { size: 11 } } }
+        }
+      }
+    );
+  } else {
+    renderChart(canvasId, 'doughnut',
+      entries.map(e => e[0]),
+      [{ data: entries.map(e => +e[1].total.toFixed(2)),
+         backgroundColor: entries.map((e, i) => _catColor(e[1].rawColor, i, colors)),
+         borderWidth: 2, borderColor: '#fff', hoverOffset: 8 }]
+    );
+  }
+}
+
+// Legacy — kept for backward compat (PDF export etc.)
+function _renderCatChartFromState() {
+  _renderSingleCatChart('reportCatChart',   _rptCatDataCache.expEntries, _rptCatTypeExp);
+  _renderSingleCatChart('reportIncomeChart', _rptCatDataCache.incEntries, _rptCatTypeInc);
+}
+
+
 /* ── Date range ── */
 function getRptDateRange() {
   const p   = document.getElementById('rptPeriod')?.value || 'month';
@@ -45,8 +104,8 @@ function populateReportFilters() {
   ['rptAccount','forecastAccountFilter'].forEach(id=>{
     const el = document.getElementById(id); if(!el) return;
     const cur = el.value;
-    el.innerHTML = (id==='forecastAccountFilter'?'<option value="">Todas as contas</option>':'<option value="">Todas</option>') +
-      opts(state.accounts, a=>a.id, a=>a.name);
+    const placeholder = id==='forecastAccountFilter' ? 'Todas as contas' : 'Todas';
+    el.innerHTML = _accountOptions(state.accounts, placeholder);
     el.value = cur;
   });
   const catEl = document.getElementById('rptCategory');
@@ -102,12 +161,15 @@ function _refreshRptTagFilter() {
 
 let _rptLoading = false;
 async function loadCurrentReport(resetPage = false) {
-  if (_rptLoading) return; // prevent concurrent fetches
+  if (!sb || !currentUser) return;           // Supabase not ready yet
+  if (_rptLoading) return;                   // prevent concurrent fetches
   _rptLoading = true;
   try {
     if (rptState.view === 'regular')           await loadReports();
     else if (rptState.view === 'transactions') await loadReportTx();
     else if (rptState.view === 'forecast')     await loadForecast();
+  } catch(e) {
+    console.warn('[reports] loadCurrentReport error:', e?.message);
   } finally {
     _rptLoading = false;
   }
@@ -202,18 +264,6 @@ async function loadReports() {
   const expEntries = Object.entries(expMap).sort((a,b)=>b[1].total-a[1].total);
   // Always destroy stale instance — even if there is no data to render,
   // so filters don't leave the previous chart visible
-  if(state.chartInstances['reportCatChart']) {
-    state.chartInstances['reportCatChart'].destroy();
-    delete state.chartInstances['reportCatChart'];
-  }
-  if(expEntries.length){
-    const _expColors = new Set();
-    renderChart('reportCatChart','doughnut',expEntries.map(e=>e[0]),
-      [{data:expEntries.map(e=>e[1].total),
-        backgroundColor:expEntries.map((e,i)=>_catColor(e[1].rawColor,i,_expColors)),
-        borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
-  }
-
   /* Receitas por categoria */
   const incMap = {};
   incs.forEach(t=>{
@@ -222,18 +272,12 @@ async function loadReports() {
     incMap[n].total+=_rBrl(t); incMap[n].count++;
   });
   const incEntries = Object.entries(incMap).sort((a,b)=>b[1].total-a[1].total);
-  // Always destroy stale instance first
-  if(state.chartInstances['reportIncomeChart']) {
-    state.chartInstances['reportIncomeChart'].destroy();
-    delete state.chartInstances['reportIncomeChart'];
-  }
-  if(incEntries.length){
-    const _incColors = new Set();
-    renderChart('reportIncomeChart','doughnut',incEntries.map(e=>e[0]),
-      [{data:incEntries.map(e=>e[1].total),
-        backgroundColor:incEntries.map((e,i)=>_catColor(e[1].rawColor,i,_incColors)),
-        borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
-  }
+
+  // Cache entries for toggle re-renders
+  _rptCatDataCache = { expEntries, incEntries };
+  // Render both charts independently
+  _renderSingleCatChart('reportCatChart',    expEntries, _rptCatTypeExp);
+  _renderSingleCatChart('reportIncomeChart', incEntries, _rptCatTypeInc);
 
   /* Por conta */
   const accMap = {};
@@ -245,8 +289,8 @@ async function loadReports() {
   const accE = Object.entries(accMap).sort((a,b)=>(b[1].exp+b[1].inc)-(a[1].exp+a[1].inc));
   if(accE.length)
     renderChart('reportAccountChart','bar',accE.map(e=>e[0]),[
-      {label:'Despesas',data:accE.map(e=>+e[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.8)',borderRadius:5,borderSkipped:false},
-      {label:'Receitas',data:accE.map(e=>+e[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
+      {label:t('rpt.expense'),data:accE.map(e=>+e[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.8)',borderRadius:5,borderSkipped:false},
+      {label:t('rpt.income'),data:accE.map(e=>+e[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
     ]);
 
   /* Evolução */
@@ -340,15 +384,14 @@ async function renderTrendChart(from, to) {
     cur.setMonth(cur.getMonth()+1);
   }
   if(months.length<=1){
-    const wkMap={};
+    const wkMap={1:{inc:0,exp:0},2:{inc:0,exp:0},3:{inc:0,exp:0},4:{inc:0,exp:0}};
     rptState.txData.forEach(t=>{
       const d=new Date(t.date+'T12:00');
-      const w='Sem '+Math.ceil(d.getDate()/7);
-      if(!wkMap[w]) wkMap[w]={inc:0,exp:0};
-      if(t.amount<0) wkMap[w].exp+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); else wkMap[w].inc+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):parseFloat(t.brl_amount??t.amount)??0);
+      const wn=Math.min(Math.ceil(d.getDate()/7),4);
+      if(t.amount<0) wkMap[wn].exp+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):Math.abs(t.brl_amount??t.amount??0)); else wkMap[wn].inc+=(typeof txToBRL==="function"?Math.abs(txToBRL(t)):parseFloat(t.brl_amount??t.amount)??0);
     });
-    const wks=Object.entries(wkMap);
-    if(wks.length) renderChart('reportTrendChart','bar',wks.map(w=>w[0]),[
+    const wks=[[1,wkMap[1]],[2,wkMap[2]],[3,wkMap[3]],[4,wkMap[4]]].filter(w=>w[1].inc>0||w[1].exp>0);
+    if(wks.length) renderChart('reportTrendChart','bar',wks.map(w=>'Sem '+w[0]),[
       {label:'Receitas',data:wks.map(w=>+w[1].inc.toFixed(2)),backgroundColor:'rgba(42,122,74,.8)',borderRadius:5,borderSkipped:false},
       {label:'Despesas',data:wks.map(w=>+w[1].exp.toFixed(2)),backgroundColor:'rgba(192,57,43,.75)',borderRadius:5,borderSkipped:false},
     ]);
@@ -403,14 +446,14 @@ function renderReportTxTable(txs) {
   if(totEl){totEl.textContent=fmt(total);totEl.className=total>=0?'amount-pos':'amount-neg';}
   document.getElementById('reportTxBody').innerHTML=txs.length
     ? txs.map(t=>`<tr>
-        <td style="white-space:nowrap;font-size:.8rem;color:var(--muted)">${fmtDate(t.date)}</td>
-        <td style="max-width:180px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</div></td>
-        <td style="font-size:.8rem">${esc(t.accounts?.name||'—')}</td>
-        <td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30;font-size:.68rem">${esc(t.categories.name)}</span>`:'—'}</td>
-        <td style="font-size:.8rem;color:var(--muted)">${esc(t.payees?.name||'—')}</td>
-        <td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap;font-weight:600">${fmt(t.amount)}</td>
+        <td class="rpt-td-date">${fmtDate(t.date)}</td>
+        <td class="rpt-td-desc"><div class="rpt-desc-cell">${esc(t.description||'—')}</div></td>
+        <td class="rpt-td-acct">${esc(t.accounts?.name||'—')}</td>
+        <td class="rpt-td-cat">${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30;font-size:.68rem;white-space:nowrap">${esc(t.categories.name)}</span>`:'—'}</td>
+        <td class="rpt-td-pay">${esc(t.payees?.name||'—')}</td>
+        <td class="rpt-td-amt ${t.amount>=0?'amount-pos':'amount-neg'}">${fmt(t.amount)}</td>
       </tr>`).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:28px">Nenhuma transação no período</td></tr>';
+    : `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:28px">${t('tx.empty')}</td></tr>`;
 }
 
 /* ═══ VIEW TOGGLE ═══ */
@@ -419,17 +462,37 @@ function setReportView(view) {
   document.getElementById('reportRegularView').style.display  = view==='regular'       ? '' : 'none';
   document.getElementById('reportTxView').style.display       = view==='transactions'  ? '' : 'none';
   document.getElementById('reportForecastView').style.display = view==='forecast'      ? '' : 'none';
-  document.getElementById('reportFilterBar').style.display    = view==='forecast'      ? 'none' : '';
-  ['rptBtnRegular','rptBtnTx','rptBtnForecast'].forEach(id=>
+  document.getElementById('reportBudgetView')?.style && (document.getElementById('reportBudgetView').style.display = view==='budgets' ? '' : 'none');
+  // Hide the entire filter section (wrapper + bar) for views that don't need filters
+  const _hideFilters = (view === 'forecast' || view === 'budgets');
+  const _filterWrap = document.getElementById('rptFilterWrap');
+  if (_filterWrap) _filterWrap.style.display = _hideFilters ? 'none' : '';
+  // Keep filter bar collapsed when switching views — user opens it manually
+  if (_hideFilters) {
+    document.getElementById('reportFilterBar').style.display = 'none';
+  }
+  // If not hiding, leave bar in its current collapsed/expanded state (don't force open)
+  ['rptBtnRegular','rptBtnTx','rptBtnForecast','rptBtnBudgets'].forEach(id=>
     document.getElementById(id)?.classList.remove('active'));
-  const map={regular:'rptBtnRegular',transactions:'rptBtnTx',forecast:'rptBtnForecast'};
+  const map={regular:'rptBtnRegular',transactions:'rptBtnTx',forecast:'rptBtnForecast',budgets:'rptBtnBudgets'};
   document.getElementById(map[view])?.classList.add('active');
+  if (view === 'budgets') _rbtLoad();
   if(view==='forecast'){
     if(!document.getElementById('forecastFrom').value){
       const today=new Date().toISOString().slice(0,10);
       const in3=new Date();in3.setMonth(in3.getMonth()+3);
       document.getElementById('forecastFrom').value=today;
       document.getElementById('forecastTo').value=in3.toISOString().slice(0,10);
+    }
+    // Init multi-account picker (restore saved preference)
+    if (typeof _initForecastPicker === 'function') {
+      const savedIds = (() => {
+        try {
+          const p = typeof _dashGetPrefs === 'function' ? _dashGetPrefs() : {};
+          return Array.isArray(p.forecastAccounts) ? p.forecastAccounts : [];
+        } catch(_) { return []; }
+      })();
+      _initForecastPicker(savedIds);
     }
     loadForecast();
   } else {
@@ -958,7 +1021,7 @@ function _pdfSummaryBox(doc, y, txs) {
   doc.text('Resumo do período', 19, y + 7);
   doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_GRAY);
   doc.text(
-    `Receitas: ${fmt(totInc)}     Despesas: ${fmt(totExp)}     Saldo: ${fmt(bal)}     Transações: ${txs.length}`,
+    `Receitas: ${fmt(totInc)}     Despesas: ${fmt(totExp)}     ${fmt(bal)}     Transações: ${txs.length}`,
     19, y + 13
   );
   return y + 24;
@@ -1188,7 +1251,7 @@ async function exportReportPDF() {
   try {
     const { doc, from, to } = await _buildReportPDF();
     doc.save(`FinTrack_${from}_${to}_${rptState.view}.pdf`);
-    toast('✓ PDF gerado e baixado!', 'success');
+    toast(t('report.pdf_ok'), 'success');
   } catch (e) {
     toast('Erro ao gerar PDF: ' + e.message, 'error');
     console.error('[PDF]', e);
@@ -1768,151 +1831,537 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
   return state.chartInstances[id];
 }
 
-function populateSelects(){populateReportFilters();
-  const aOpts=state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
-  ['txAccountId','txTransferTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">Selecione a conta</option>'+aOpts;});
-  const txAF=document.getElementById('txAccount');if(txAF)txAF.innerHTML='<option value="">Todas as contas</option>'+aOpts;
-  // payee autocomplete uses state.payees directly - no select to populate
-  buildCatPicker(); // hierarchical picker replaces flat select
-  const pCat=document.getElementById('payeeCategory');if(pCat)pCat.innerHTML='<option value="">— Nenhuma —</option>'+state.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+// ── populateSelects: canonical definition (utils.js is also loaded but reports.js
+//    is guaranteed to be in index.html, so this acts as the authoritative source) ──
+function populateSelects(){
+  try { populateReportFilters(); } catch(e) { console.warn('[populateSelects] reportFilters:', e?.message); }
+  try {
+    const accs = state.accounts || [];
+    ['txAccountId','txTransferTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=(typeof _accountOptions==='function')?_accountOptions(accs,'Selecione a conta'):'<option value="">Selecione a conta</option>'+accs.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');});
+    const txAF=document.getElementById('txAccount');if(txAF)txAF.innerHTML=(typeof _accountOptions==='function')?_accountOptions(accs,'Todas as contas'):'<option value="">Todas as contas</option>'+accs.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+    const catF=document.getElementById('txCategoryFilter');if(catF){const cur=catF.value;catF.innerHTML='<option value="">Categoria</option>'+((typeof _buildCategoryFilterOptions==='function')?_buildCategoryFilterOptions():(state.categories||[]).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join(''));catF.value=cur;}
+  } catch(e) { console.warn('[populateSelects] accounts/cats:', e?.message); }
+  try { if(typeof buildCatPicker==='function') buildCatPicker(); } catch(e) {}
+  try {
+    const pCat=document.getElementById('payeeCategory');
+    if(pCat)pCat.innerHTML='<option value="">— Nenhuma —</option>'+(state.categories||[]).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  } catch(e) {}
 }
 
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
-function toast(msg,type='info'){
-  const icons={success:'✓',error:'✕',info:'i'};
-  const el=document.createElement('div');el.className=`toast ${type}`;el.innerHTML=`<span style="font-weight:700">${icons[type]||'i'}</span><span>${msg}</span>`;
-  document.getElementById('toast-container').appendChild(el);
-  setTimeout(()=>{el.style.opacity='0';el.style.transform='translateX(16px)';el.style.transition='.2s';setTimeout(()=>el.remove(),200);},3200);
-}
+// Shared modal/toast/amount helpers are provided by utils.js
 
-function fmt(v,currency='BRL'){if(state.privacyMode)return'••••••';return new Intl.NumberFormat('pt-BR',{style:'currency',currency:currency||'BRL',minimumFractionDigits:2}).format(v||0);}
-// Parse a user-typed amount string: handles both "1.234,56" (BR) and "1,234.56" (EN) and negatives
-function parseAmtInput(s) {
-  if (!s && s !== 0) return 0;
-  const str = String(s).trim();
-  if (!str) return 0;
-  const neg = str.startsWith('-');
-  let clean = str.replace(/^-/, '');
-  // Detect BR format: ends with ,XX (comma as decimal separator)
-  if (/,\d{1,2}$/.test(clean)) {
-    clean = clean.replace(/\./g, '').replace(',', '.');
-  } else {
-    // EN format or plain integer: remove commas
-    clean = clean.replace(/,/g, '');
-  }
-  const v = parseFloat(clean);
-  if (isNaN(v)) return 0;
-  return neg ? -Math.abs(v) : v;
-}
-
-// Sign toggle button state: fieldId → true means negative
-const _amtSignState = {};
-
-function toggleAmtSign(fieldId) {
-  _amtSignState[fieldId] = !_amtSignState[fieldId];
-  _updateSignBtn(fieldId);
-}
-
-function _updateSignBtn(fieldId) {
-  const btn = document.getElementById(fieldId + 'SignBtn');
-  if (!btn) return;
-  const isNeg = !!_amtSignState[fieldId];
-  btn.textContent = isNeg ? '−' : '+';
-  btn.classList.toggle('negative', isNeg);
-  btn.classList.toggle('positive', !isNeg);
-}
-
-// Set amount field value and sign btn state from a numeric value (e.g. when editing)
-function setAmtField(fieldId, value) {
-  const isNeg = (value < 0);
-  _amtSignState[fieldId] = isNeg;
-  const el = document.getElementById(fieldId);
-  if (el) el.value = value !== 0 ? Math.abs(value).toFixed(2).replace('.', ',') : '';
-  _updateSignBtn(fieldId);
-}
-
-// Read the signed value from an amount field
-function getAmtField(fieldId) {
-  const el = document.getElementById(fieldId);
-  if (!el) return 0;
-  const raw = el.value.trim();
-  if (!raw) return 0;
-  // Parse the absolute value
-  let clean = raw.replace(/\./g, '').replace(',', '.'); // handle BR format
-  if (!/[.,]/.test(raw)) clean = raw; // plain integer
-  const abs = Math.abs(parseFloat(clean) || 0);
-  return _amtSignState[fieldId] ? -abs : abs;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Amount inputs: auto-decimals (centavos) mask
-// Goal: user never needs to type comma/decimal separator.
-// Examples while typing digits:
-//   "1"   → "0,01"
-//   "12"  → "0,12"
-//   "123" → "1,23"
-// Works well on mobile numeric keypad.
-//
-// Notes:
-// - We keep the sign separated via the existing +/- button state.
-// - We always format in pt-BR with comma decimal separator.
-// - We intentionally keep caret at end (simple + robust).
-// ─────────────────────────────────────────────────────────────
-
-function _formatCentsBRFromDigits(digits) {
-  const d = String(digits || '').replace(/\D/g, '');
-  if (!d) return '';
-  const n = parseInt(d, 10);
-  if (!isFinite(n)) return '';
-  const v = (n / 100);
-  return v.toFixed(2).replace('.', ',');
-}
-
-function bindAmtAutoDecimals(fieldId) {
-  const el = document.getElementById(fieldId);
-  if (!el) return;
-  if (el.dataset && el.dataset.amtAutoDecimals === '1') return; // avoid double binding
-  if (el.dataset) el.dataset.amtAutoDecimals = '1';
-
-  const applyMask = () => {
-    const raw = (el.value || '').toString();
-    const digits = raw.replace(/\D/g, '');
-    const masked = _formatCentsBRFromDigits(digits);
-    el.value = masked;
-    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
-  };
-
-  el.addEventListener('input', () => {
-    if (!el.value) return;
-    applyMask();
-  });
-
-  el.addEventListener('blur', () => {
-    if (!el.value) return;
-    applyMask();
-  });
-
-  el.addEventListener('paste', () => {
-    setTimeout(() => {
-      if (!el.value) return;
-      applyMask();
-    }, 0);
-  });
-}
-
-function bindAllAmtAutoDecimals(fieldIds) {
-  const ids = Array.isArray(fieldIds)
-    ? fieldIds
-    : ['txAmount','accountBalance','budgetAmount','scAmount','occAmount'];
-  ids.forEach(id => { try { bindAmtAutoDecimals(id); } catch(e) {} });
-}
-function fmtDate(d){if(!d)return'—';const[y,m,day]=d.split('T')[0].split('-');return`${day}/${m}/${y}`;}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 
 /* ═══════════════════════════════════════
    PAYEE AUTOCOMPLETE
 ═══════════════════════════════════════ */
+
+
+// ══════════════════════════════════════════════════════════════════════════
+//  REPORT BUDGET TAB  (_rbt*)
+//  Independent budget analysis inside reports — reuses budget DB queries
+// ══════════════════════════════════════════════════════════════════════════
+
+let _rbtType = 'monthly'; // 'monthly' | 'annual'
+
+function _rbtSetType(type) {
+  _rbtType = type;
+  const monthEl  = document.getElementById('rbtMonth');
+  const yearEl   = document.getElementById('rbtYear');
+  const btnM     = document.getElementById('rbtBtnMonth');
+  const btnA     = document.getElementById('rbtBtnAnnual');
+  if (monthEl) monthEl.style.display = type === 'monthly' ? '' : 'none';
+  if (yearEl)  yearEl.style.display  = type === 'annual'  ? '' : 'none';
+  btnM?.classList.toggle('active', type === 'monthly');
+  btnA?.classList.toggle('active', type === 'annual');
+  _rbtLoad();
+}
+window._rbtSetType = _rbtSetType;
+
+async function _rbtLoad() {
+  const grid    = document.getElementById('rbtGrid');
+  const kpiEl   = document.getElementById('rbtKpis');
+  if (!grid) return;
+
+  // Init controls with today's month if empty
+  const monthEl = document.getElementById('rbtMonth');
+  const yearEl  = document.getElementById('rbtYear');
+  if (monthEl && !monthEl.value) monthEl.value = new Date().toISOString().slice(0,7);
+  if (yearEl  && !yearEl.value)  yearEl.value  = new Date().getFullYear();
+
+  const period = _rbtType === 'monthly'
+    ? { type: 'monthly', month: monthEl?.value || new Date().toISOString().slice(0,7) }
+    : { type: 'annual',  year: parseInt(yearEl?.value) || new Date().getFullYear() };
+
+  grid.innerHTML = '<div class="empty-state"><span>⏳</span></div>';
+
+  // Query budgets — defensive: works with old schema (no budget_type) and new schema
+  // Old budgets may have budget_type=NULL; never filter them out
+  const hasNew = await _rbtCheckSchema();
+  let budgets = null, be = null;
+
+  if (period.type === 'monthly') {
+    const monthStr = (period.month || new Date().toISOString().slice(0,7)) + '-01';
+    // Try with budget_type filter first (new schema)
+    if (hasNew) {
+      ({ data: budgets, error: be } = await famQ(
+        sb.from('budgets').select('*, categories(id,name,icon,color,parent_id)')
+      ).eq('month', monthStr).or('budget_type.eq.monthly,budget_type.is.null'));
+    }
+    // Fallback: query by month only (old schema or if above returned nothing)
+    if (!budgets?.length) {
+      ({ data: budgets, error: be } = await famQ(
+        sb.from('budgets').select('*, categories(id,name,icon,color,parent_id)')
+      ).eq('month', monthStr));
+    }
+  } else {
+    // Annual view
+    if (!hasNew) {
+      grid.innerHTML = '<div class="empty-state"><p>Orçamentos anuais requerem migration do banco.</p></div>'; return;
+    }
+    ({ data: budgets, error: be } = await famQ(
+      sb.from('budgets').select('*, categories(id,name,icon,color,parent_id)')
+    ).eq('year', period.year).or('budget_type.eq.annual,budget_type.is.null').is('month', null));
+  }
+
+  if (be) { grid.innerHTML = `<div class="empty-state"><p>Erro: ${esc(be.message)}</p></div>`; return; }
+  if (!budgets?.length) {
+    grid.innerHTML = '<div class="empty-state"><div class="es-icon">🎯</div><p>Nenhum orçamento encontrado para este período.</p></div>';
+    if (kpiEl) kpiEl.innerHTML = '';
+    return;
+  }
+
+  // Query spending
+  let txQ = famQ(sb.from('transactions').select('category_id,amount,brl_amount')).lt('amount',0);
+  if (period.type === 'monthly') {
+    const [y,m] = (period.month||'').split('-');
+    const last = new Date(+y, +m, 0).getDate();
+    txQ = txQ.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-${String(last).padStart(2,'0')}`);
+  } else {
+    txQ = txQ.gte('date',`${period.year}-01-01`).lte('date',`${period.year}-12-31`);
+  }
+  const { data: txs } = await txQ;
+
+  // Build spending map
+  const rawSpend = {};
+  (txs||[]).forEach(t => {
+    if (!t.category_id) return;
+    const val = Math.abs(parseFloat(t.brl_amount ?? t.amount ?? 0));
+    rawSpend[t.category_id] = (rawSpend[t.category_id] || 0) + val;
+  });
+
+  // Category family lookup (for hierarchy spending)
+  const allCats = state.categories || [];
+  const catById = Object.fromEntries(allCats.map(c => [c.id, c]));
+  function _catFamily(cid) {
+    const ids = [cid];
+    const addChildren = (id) => {
+      allCats.filter(c => c.parent_id === id).forEach(c => { ids.push(c.id); addChildren(c.id); });
+    };
+    addChildren(cid);
+    return ids;
+  }
+
+  // Resolve spending per budget
+  const items = budgets.map(b => {
+    const cat   = b.categories || {};
+    const limit = parseFloat(b.amount || 0);
+    const fam   = _catFamily(b.category_id);
+    const used  = fam.reduce((s, cid) => s + (rawSpend[cid] || 0), 0);
+    const pct   = limit > 0 ? Math.min(100, used / limit * 100) : 0;
+    const over  = used > limit && limit > 0;
+    const near  = !over && pct >= 75;
+    return { b, cat, limit, used, pct, over, near };
+  });
+
+  // KPI summary
+  const totalLimit  = items.reduce((s,i) => s + i.limit, 0);
+  const totalUsed   = items.reduce((s,i) => s + i.used, 0);
+  const overCount   = items.filter(i => i.over).length;
+  const okCount     = items.filter(i => !i.over && !i.near).length;
+  const totalPct    = totalLimit > 0 ? Math.min(100, totalUsed / totalLimit * 100) : 0;
+
+  if (kpiEl) {
+    const nearCount = items.filter(i => !i.over && i.near).length;
+    const pctColor  = totalPct >= 100 ? 'var(--red)' : totalPct >= 75 ? 'var(--amber,#f59e0b)' : 'var(--accent)';
+    kpiEl.innerHTML = `
+      <div class="rbt-kpi">
+        <span class="rbt-kpi-label">Orçamento total</span>
+        <span class="rbt-kpi-val">${fmt(totalLimit)}</span>
+      </div>
+      <div class="rbt-kpi">
+        <span class="rbt-kpi-label">Consumido</span>
+        <span class="rbt-kpi-val" style="color:${pctColor}">${fmt(totalUsed)}</span>
+        <span style="font-size:.65rem;color:var(--muted);margin-top:1px">${totalPct.toFixed(0)}% do total</span>
+      </div>
+      <div class="rbt-kpi">
+        <span class="rbt-kpi-label">Disponível</span>
+        <span class="rbt-kpi-val" style="color:${totalUsed>totalLimit?'var(--red)':'var(--green)'}">${fmt(Math.max(0,totalLimit-totalUsed))}</span>
+      </div>
+      <div class="rbt-kpi">
+        <span class="rbt-kpi-label">✓ OK</span>
+        <span class="rbt-kpi-val" style="color:var(--green)">${okCount}</span>
+        <span style="font-size:.65rem;color:var(--muted)">categoria${okCount!==1?'s':''}</span>
+      </div>
+      ${nearCount ? `<div class="rbt-kpi">
+        <span class="rbt-kpi-label">⚡ Atenção</span>
+        <span class="rbt-kpi-val" style="color:var(--amber,#f59e0b)">${nearCount}</span>
+        <span style="font-size:.65rem;color:var(--muted)">≥75% do limite</span>
+      </div>` : ''}
+      ${overCount ? `<div class="rbt-kpi">
+        <span class="rbt-kpi-label">⚠ Excedido</span>
+        <span class="rbt-kpi-val" style="color:var(--red)">${overCount}</span>
+        <span style="font-size:.65rem;color:var(--muted)">categoria${overCount!==1?'s':''}</span>
+      </div>` : ''}
+    `;
+  }
+
+  // Sort: over → near → ok → by pct desc (default)
+  const sortMode = document.getElementById('rbtSort')?.value || 'status';
+  items.sort((a,b) => {
+    if (sortMode === 'pct_desc')  return b.pct - a.pct;
+    if (sortMode === 'pct_asc')   return a.pct - b.pct;
+    if (sortMode === 'used_desc') return b.used - a.used;
+    if (sortMode === 'name')      return (a.cat.name||'').localeCompare(b.cat.name||'');
+    // default 'status': over → near → ok → pct desc
+    return (b.over-a.over)||(b.near-a.near)||(b.pct-a.pct);
+  });
+
+  // ── Cards view ────────────────────────────────────────────────────────
+  const now = new Date();
+  const daysInM  = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const daysDone = now.getDate();
+  grid.innerHTML = items.map(({ b, cat, limit, used, pct, over, near }) => {
+    const color    = cat.color || 'var(--accent)';
+    const icon     = cat.icon  || '📦';
+    const avail    = limit - used;
+    const barColor = over ? 'var(--red)' : near ? 'var(--amber,#f59e0b)' : 'var(--accent)';
+    const barW     = Math.min(100, pct).toFixed(1);
+    const pctLabel = pct > 999 ? '>999%' : pct.toFixed(0) + '%';
+    // Projection for current month
+    const isCurrentMonth = period.type === 'monthly' && period.month === now.toISOString().slice(0,7);
+    const dailyAvg = daysDone > 0 ? used / daysDone : 0;
+    const projected = dailyAvg * daysInM;
+    const showProj  = isCurrentMonth && !over && limit > 0 && projected > limit * 0.85;
+    return `<div class="rbt-card${over?' rbt-over':near?' rbt-near':''}">
+      <div class="rbt-card-top">
+        <div class="rbt-cat-badge" style="background:${color}18;color:${color}">${icon}</div>
+        <div class="rbt-card-info">
+          <div class="rbt-cat-name">${esc(cat.name||'—')}</div>
+          <div class="rbt-amounts">
+            <strong style="color:${barColor}">${fmt(used)}</strong>
+            <span class="rbt-sep">de</span>${fmt(limit)}
+          </div>
+        </div>
+        <div class="rbt-pct" style="color:${barColor}">${pctLabel}</div>
+      </div>
+      <div class="rbt-bar-track">
+        <div class="rbt-bar-fill" style="width:${barW}%;background:${barColor}"></div>
+      </div>
+      <div class="rbt-avail" style="display:flex;justify-content:space-between;align-items:center">
+        <span>
+          ${over
+            ? `<span style="color:var(--red);font-weight:700">⚠ ${fmt(Math.abs(avail))} acima</span>`
+            : `Disponível: <strong style="color:var(--green)">${fmt(avail)}</strong>`}
+        </span>
+        ${showProj ? `<span style="font-size:.68rem;color:var(--amber);font-weight:600" title="Projeção baseada no ritmo atual">📈 ${fmt(projected)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── Total progress bar ────────────────────────────────────────────────
+  const totalBar  = document.getElementById('rbtTotalBar');
+  const totalFill = document.getElementById('rbtTotalFill');
+  const totalPctEl= document.getElementById('rbtTotalPct');
+  const totalSub  = document.getElementById('rbtTotalSub');
+  if (totalBar) {
+    totalBar.style.display = '';
+    const pctColor = totalPct >= 100 ? 'var(--red)' : totalPct >= 75 ? 'var(--amber,#f59e0b)' : 'var(--accent)';
+    if (totalFill)  { totalFill.style.width = Math.min(100,totalPct).toFixed(1)+'%'; totalFill.style.background = pctColor; }
+    if (totalPctEl) { totalPctEl.textContent = totalPct.toFixed(0)+'%'; totalPctEl.style.color = pctColor; }
+    if (totalSub)   totalSub.textContent = `${fmt(totalUsed)} consumido de ${fmt(totalLimit)} · ${fmt(Math.max(0,totalLimit-totalUsed))} disponível`;
+  }
+
+  // ── Table view ────────────────────────────────────────────────────────
+  const tbody = document.getElementById('rbtTableBody');
+  const tfoot = document.getElementById('rbtTableFoot');
+  if (tbody) {
+    tbody.innerHTML = items.map(({ cat, limit, used, pct, over, near }) => {
+      const avail      = limit - used;
+      const color      = cat.color || 'var(--accent)';
+      const barColor   = over ? 'var(--red)' : near ? 'var(--amber,#f59e0b)' : 'var(--accent)';
+      const barW       = Math.min(100, pct).toFixed(1);
+      const statusCls  = over ? 'rbt-status-over' : near ? 'rbt-status-near' : 'rbt-status-ok';
+      const statusTxt  = over ? '⚠ Excedido' : near ? '⚡ Atenção' : '✓ OK';
+      return `<tr>
+        <td>
+          <div class="rbt-td-cat">
+            <div class="rbt-td-badge" style="background:${color}18;color:${color}">${esc(cat.icon||'📦')}</div>
+            <span style="font-weight:600;font-size:.82rem">${esc(cat.name||'—')}</span>
+          </div>
+        </td>
+        <td class="rbt-td-num">${fmt(limit)}</td>
+        <td class="rbt-td-num" style="color:${barColor};font-weight:700">${fmt(used)}</td>
+        <td class="rbt-td-num" style="color:${over?'var(--red)':'var(--green)'};${over?'font-weight:700':''}">${fmt(avail)}</td>
+        <td class="rbt-td-num">
+          <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+            <div style="width:48px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0">
+              <div style="width:${barW}%;height:100%;background:${barColor};border-radius:2px"></div>
+            </div>
+            <span style="color:${barColor};font-weight:700;min-width:36px;text-align:right">${pct.toFixed(0)}%</span>
+          </div>
+        </td>
+        <td><span class="rbt-status-pill ${statusCls}">${statusTxt}</span></td>
+      </tr>`;
+    }).join('');
+  }
+  if (tfoot) {
+    const pctColor = totalPct >= 100 ? 'var(--red)' : 'var(--accent)';
+    tfoot.innerHTML = `<tr style="font-weight:700;border-top:2px solid var(--border)">
+      <td>Total</td>
+      <td class="rbt-th-num">${fmt(totalLimit)}</td>
+      <td class="rbt-th-num" style="color:${pctColor}">${fmt(totalUsed)}</td>
+      <td class="rbt-th-num" style="color:var(--green)">${fmt(Math.max(0,totalLimit-totalUsed))}</td>
+      <td class="rbt-th-num" style="color:${pctColor}">${totalPct.toFixed(0)}%</td>
+      <td></td>
+    </tr>`;
+  }
+
+  // ── Trend chart (Chart.js — last 6 months) ────────────────────────────
+  if (period.type === 'monthly' && typeof Chart !== 'undefined') {
+    const [cy, cm] = period.month.split('-').map(Number);
+    const months6 = [];
+    for (let i = 5; i >= 0; i--) {
+      let mm = cm - i, yy = cy;
+      while (mm <= 0) { mm += 12; yy--; }
+      months6.push(`${yy}-${String(mm).padStart(2,'0')}`);
+    }
+    const trendFrom = months6[0] + '-01';
+    const lastM = months6[months6.length-1];
+    const lastDay = new Date(+lastM.split('-')[0], +lastM.split('-')[1], 0).getDate();
+    const trendTo = `${lastM}-${String(lastDay).padStart(2,'0')}`;
+
+    const { data: trendTxs } = await famQ(
+      sb.from('transactions').select('category_id,amount,brl_amount,date')
+    ).lt('amount',0).gte('date',trendFrom).lte('date',trendTo);
+
+    // Group spend per month (all budget categories combined)
+    const monthSpend = new Array(6).fill(0);
+    const catIds = new Set(items.map(i => i.b.category_id));
+    (trendTxs||[]).forEach(t => {
+      if (!t.category_id) return;
+      const txMonth = (t.date||'').slice(0,7);
+      const mIdx = months6.indexOf(txMonth);
+      if (mIdx < 0) return;
+      // Check if this category belongs to any budget (direct or as child)
+      const matchesBudget = items.some(item => {
+        const allCats = state.categories || [];
+        function _cf(cid) { const ids=[cid]; allCats.filter(c=>c.parent_id===cid).forEach(c=>ids.push(..._cf(c.id))); return ids; }
+        return _cf(item.b.category_id).includes(t.category_id);
+      });
+      if (matchesBudget) monthSpend[mIdx] += Math.abs(parseFloat(t.brl_amount ?? t.amount ?? 0));
+    });
+
+    const avgLimit = totalLimit; // limit is same each month (current period)
+    const monthLabels = months6.map(m => {
+      const [y,mo] = m.split('-');
+      const names = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      return names[parseInt(mo)-1] + '/' + y.slice(2);
+    });
+
+    const trendCanvas = document.getElementById('rbtTrendChart');
+    if (trendCanvas) {
+      const existingChart = Chart.getChart?.(trendCanvas) || state.chartInstances?.['rbtTrend'];
+      if (existingChart) existingChart.destroy();
+      const newChart = new Chart(trendCanvas, {
+        type: 'bar',
+        data: {
+          labels: monthLabels,
+          datasets: [
+            {
+              label: 'Consumo real',
+              data: monthSpend.map(v => +v.toFixed(2)),
+              backgroundColor: monthSpend.map((v,i) => i === 5 ? 'rgba(42,96,73,.85)' : 'rgba(42,96,73,.35)'),
+              borderRadius: 4,
+              order: 1,
+            },
+            {
+              label: 'Limite total',
+              data: new Array(6).fill(+avgLimit.toFixed(2)),
+              type: 'line',
+              borderColor: 'var(--red)',
+              borderWidth: 1.5,
+              borderDash: [4,3],
+              pointRadius: 0,
+              fill: false,
+              order: 0,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom', labels: { font: { size: 11 } } },
+            tooltip: { callbacks: { label: ctx => ' ' + fmt(ctx.parsed.y) } }
+          },
+          scales: {
+            y: { ticks: { callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,.05)' } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+      if (!state.chartInstances) state.chartInstances = {};
+      state.chartInstances['rbtTrend'] = newChart;
+    }
+
+    // Trend insights: categories with highest average overage
+    const insightsEl = document.getElementById('rbtTrendInsights');
+    if (insightsEl) {
+      // Per-category trend (use last-6-months spend for each budget category)
+      const catTrend = items.map(item => {
+        const allCats = state.categories || [];
+        function _cf(cid) { const ids=[cid]; allCats.filter(c=>c.parent_id===cid).forEach(c=>ids.push(..._cf(c.id))); return ids; }
+        const famIds = new Set(_cf(item.b.category_id));
+        const mSpend = new Array(6).fill(0);
+        (trendTxs||[]).forEach(t => {
+          if (!famIds.has(t.category_id)) return;
+          const mIdx = months6.indexOf((t.date||'').slice(0,7));
+          if (mIdx >= 0) mSpend[mIdx] += Math.abs(parseFloat(t.brl_amount ?? t.amount ?? 0));
+        });
+        const avg = mSpend.reduce((a,b)=>a+b,0) / 6;
+        const overMonths = mSpend.filter(v => v > item.limit).length;
+        return { ...item, mSpend, avg, overMonths };
+      }).sort((a,b) => b.overMonths - a.overMonths || b.avg - a.avg).slice(0,5);
+
+      insightsEl.innerHTML = catTrend.map(item => {
+        const color = item.cat.color || 'var(--accent)';
+        const overRatio = item.limit > 0 ? item.avg / item.limit : 0;
+        const trendIcon = overRatio > 0.9 ? '📈' : overRatio < 0.5 ? '✅' : '➡️';
+        const trendColor = overRatio > 0.9 ? 'var(--red)' : overRatio < 0.5 ? 'var(--green)' : 'var(--muted)';
+        const avgPct = item.limit > 0 ? (item.avg / item.limit * 100).toFixed(0) + '%' : '—';
+        return `<div class="rbt-insight-row">
+          <div class="rbt-insight-badge" style="background:${color}18;color:${color}">${item.cat.icon||'📦'}</div>
+          <div class="rbt-insight-info">
+            <div class="rbt-insight-name">${esc(item.cat.name||'—')}</div>
+            <div class="rbt-insight-sub">
+              Média ${fmt(item.avg)}/mês (${avgPct} do limite) ·
+              ${item.overMonths > 0
+                ? `<span style="color:var(--red);font-weight:600">${item.overMonths} ${item.overMonths===1?'mês':'meses'} excedido</span>`
+                : '<span style="color:var(--green);font-weight:600">sem excedências</span>'}
+            </div>
+          </div>
+          <div class="rbt-insight-stat" style="color:${trendColor}">${trendIcon}</div>
+        </div>`;
+      }).join('') || '<div style="padding:16px;color:var(--muted);font-size:.8rem;text-align:center">Dados insuficientes para análise.</div>';
+    }
+  }
+}
+window._rbtLoad = _rbtLoad;
+
+// ── Switch between Cards / Table / Trend views ────────────────────────────
+function _rbtSwitchView(view) {
+  ['cards','table','trend'].forEach(v => {
+    const panel = document.getElementById(`rbtView${v.charAt(0).toUpperCase()+v.slice(1)}`);
+    const btn   = document.getElementById(`rbtTab${v.charAt(0).toUpperCase()+v.slice(1)}`);
+    if (panel) panel.style.display = v === view ? '' : 'none';
+    if (btn)   btn.classList.toggle('active', v === view);
+  });
+}
+window._rbtSwitchView = _rbtSwitchView;
+
+async function _rbtCheckSchema() {
+  try {
+    const { error } = await famQ(sb.from('budgets').select('budget_type').limit(1));
+    return !error;
+  } catch { return false; }
+}
+
+// Export budget context for AI
+async function _rbtGetBudgetContext() {
+  const grid = document.getElementById('rbtGrid');
+  if (!grid || !grid.querySelector('.rbt-card')) return null;
+  // Re-run quietly and return data
+  const period = _rbtType === 'monthly'
+    ? { type:'monthly', month: document.getElementById('rbtMonth')?.value || new Date().toISOString().slice(0,7) }
+    : { type:'annual',  year: parseInt(document.getElementById('rbtYear')?.value) || new Date().getFullYear() };
+
+  const hasNew = await _rbtCheckSchema();
+  let budgets = null;
+  const monthStr = (period.month || '') + '-01';
+  if (period.type === 'monthly') {
+    if (hasNew) {
+      ({ data: budgets } = await famQ(sb.from('budgets').select('*, categories(id,name,icon,color)'))
+        .eq('month', monthStr).or('budget_type.eq.monthly,budget_type.is.null'));
+    }
+    if (!budgets?.length) {
+      ({ data: budgets } = await famQ(sb.from('budgets').select('*, categories(id,name,icon,color)'))
+        .eq('month', monthStr));
+    }
+  } else if (hasNew) {
+    ({ data: budgets } = await famQ(sb.from('budgets').select('*, categories(id,name,icon,color)'))
+      .eq('year', period.year).or('budget_type.eq.annual,budget_type.is.null').is('month', null));
+  }
+  if (!budgets?.length) return null;
+
+  let txQ = famQ(sb.from('transactions').select('category_id,amount,brl_amount')).lt('amount',0);
+  if (period.type === 'monthly') {
+    const [y,m] = (period.month||'').split('-');
+    txQ = txQ.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-${new Date(+y,+m,0).getDate()}`);
+  } else {
+    txQ = txQ.gte('date',`${period.year}-01-01`).lte('date',`${period.year}-12-31`);
+  }
+  const { data: txs } = await txQ;
+  const rawSpend = {};
+  (txs||[]).forEach(t => {
+    if (!t.category_id) return;
+    rawSpend[t.category_id] = (rawSpend[t.category_id]||0) + Math.abs(parseFloat(t.brl_amount??t.amount??0));
+  });
+  const allCats = state.categories||[];
+  function _cf(cid) { const ids=[cid]; allCats.filter(c=>c.parent_id===cid).forEach(c=>ids.push(..._cf(c.id))); return ids; }
+
+  return {
+    period,
+    budgets: budgets.map(b => {
+      const cat   = b.categories || {};
+      const limit = parseFloat(b.amount||0);
+      const used  = _cf(b.category_id).reduce((s,c)=>s+(rawSpend[c]||0),0);
+      return {
+        category: cat.name || '—',
+        limit:    +limit.toFixed(2),
+        used:     +used.toFixed(2),
+        available:+Math.max(0,limit-used).toFixed(2),
+        pct:      limit>0?+(used/limit*100).toFixed(1):0,
+        over:     used>limit&&limit>0,
+      };
+    }),
+  };
+}
+window._rbtGetBudgetContext = _rbtGetBudgetContext;
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}
+
+
+// === Handle navigation from dashboard forecast ===
+(function handleForecastFromDashboard() {
+  const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  if (params.get('tab') === 'forecast') {
+    try {
+      if (typeof setReportTab === 'function') setReportTab('forecast');
+      if (params.get('range') === '90d' && typeof setForecastRange === 'function') {
+        setForecastRange(90);
+      }
+    } catch(e) {
+      console.warn('Forecast navigation failed', e);
+    }
+  }
+})();

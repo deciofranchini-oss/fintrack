@@ -1,4 +1,4 @@
-const ICON_META = {
+window.ICON_META = window.ICON_META || {
   // Brazilian banks
   'itau':       {label:'Itaú',        color:'#FF6600', type:'bank'},
   'inter':      {label:'Inter',       color:'#FF7A00', type:'bank'},
@@ -39,6 +39,7 @@ const ICON_META = {
   'sams':       {label:"Sam's",       color:'#0067A0', type:'card'},
   'porto':      {label:'Porto',       color:'#005B8E', type:'card'},
 };
+const ICON_META = window.ICON_META;
 
 // Render icon from stored key into an element
 function renderIconEl(iconKey, color, size=28) {
@@ -127,6 +128,11 @@ function syncIconPickerToValue(iconKey, color) {
 ═══════════════════════════════════════ */
 let catPickerOpen = false;
 
+// ID helpers for the search input element inside each picker dropdown
+function _catSearchId(ctx) {
+  return ctx === 'sc' ? 'scCatPickerSearch' : 'catPickerSearch';
+}
+
 function buildCatPicker(typeFilter, ctx) {
   ctx = ctx || 'tx';
   var c = _catCtx(ctx);
@@ -147,11 +153,26 @@ function buildCatPicker(typeFilter, ctx) {
     .filter(function(c){ return !c.parent_id; })
     .sort(function(a, b){ return a.name.localeCompare(b.name); });
 
-  let html = '<div class="cat-none-option" onclick="setCatPickerValue(null, \'' + ctx + '\')">' +
+  // ── Search input (sticky, top of dropdown) ───────────────────────────────
+  const searchId = _catSearchId(ctx);
+  let html = '<div class="cat-search-wrap">' +
+    '<span class="cat-search-icon">&#128269;</span>' +
+    '<input type="text" id="' + searchId + '" class="cat-search-input"' +
+    ' placeholder="Buscar categoria..." autocomplete="off" autocorrect="off" spellcheck="false"' +
+    ' oninput="_catPickerFilter(\'' + ctx + '\', this.value)"' +
+    ' onclick="event.stopPropagation()"' +
+    ' onkeydown="_catPickerSearchKeydown(event, \'' + ctx + '\')">' +
+    '<button type="button" class="cat-search-clear" id="' + searchId + 'Clear"' +
+    ' onclick="event.stopPropagation();_catPickerClearSearch(\'' + ctx + '\')" tabindex="-1" aria-label="Limpar">&#10005;</button>' +
+    '</div>';
+
+  // ── "Sem categoria" option ────────────────────────────────────────────────
+  html += '<div class="cat-none-option" onclick="setCatPickerValue(null, \'' + ctx + '\')">' +
     '<span style="width:10px;height:10px;border-radius:50%;background:var(--border);display:inline-block;flex-shrink:0"></span>' +
     '<span style="color:var(--muted)">\u2014 Sem categoria \u2014</span>' +
     '</div>';
 
+  // ── Category groups ───────────────────────────────────────────────────────
   parents.forEach(function(p) {
     const children = cats
       .filter(function(c){ return c.parent_id === p.id; })
@@ -162,7 +183,8 @@ function buildCatPicker(typeFilter, ctx) {
     const icon = p.icon || '\ud83d\udce6';
     const groupId = 'catGroup-' + p.id;
 
-    html += '<div class="cat-group-header" id="catGH-' + p.id + '">' +
+    // data-cat-name enables fast text-match without touching state in filter fn
+    html += '<div class="cat-group-header" id="catGH-' + p.id + '" data-cat-name="' + esc(p.name.toLowerCase()) + '">' +
       '<span style="width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' +
       '<span style="font-size:.9rem;flex-shrink:0">' + icon + '</span>' +
       '<span class="cat-group-label">' + esc(p.name) + '</span>' +
@@ -174,7 +196,7 @@ function buildCatPicker(typeFilter, ctx) {
       html += '<div class="cat-children" id="' + groupId + '">';
       children.forEach(function(c) {
         const cc = c.color || color;
-        html += '<div class="cat-option" id="catOpt-' + c.id + '" data-cat-id="' + c.id + '" onclick="setCatPickerValue(\'' + c.id + '\', \'' + ctx + '\')">' +
+        html += '<div class="cat-option" id="catOpt-' + c.id + '" data-cat-id="' + c.id + '" data-cat-name="' + esc(c.name.toLowerCase()) + '" data-parent-name="' + esc(p.name.toLowerCase()) + '" onclick="setCatPickerValue(\'' + c.id + '\', \'' + ctx + '\')">' +
           '<span class="cat-picker-dot" style="background:' + cc + '"></span>' +
           '<span style="font-size:.8rem">' + (c.icon || '▸') + '</span>' +
           '<span>' + esc(c.name) + '</span>' +
@@ -184,13 +206,13 @@ function buildCatPicker(typeFilter, ctx) {
     }
   });
 
-  // Add "create category" quick button at bottom of picker
+  // ── "Nova categoria" button ───────────────────────────────────────────────
   var createType = typeFilter === 'despesa' ? 'despesa' : typeFilter === 'receita' ? 'receita' : 'despesa';
   html += '<div class="cat-create-btn" onclick="event.stopPropagation();quickCreateCategory(\'' + createType + '\', \'' + ctx + '\')" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-top:1px solid var(--border);cursor:pointer;color:var(--accent);font-size:.8rem;font-weight:600;" onmouseover="this.style.background=\'var(--accent-lt)\'" onmouseout="this.style.background=\'\'"><span>+</span><span>Nova categoria</span></div>';
 
   dd.innerHTML = html;
 
-  // Attach toggle handlers
+  // Attach toggle handlers for groups (not needed during search — handled separately)
   parents.forEach(function(p) {
     const children = cats.filter(function(c){ return c.parent_id === p.id; });
     if (!children.length) return;
@@ -204,6 +226,110 @@ function buildCatPicker(typeFilter, ctx) {
     if (currentId) {
       const cat = allCats.find(function(x){ return x.id === currentId; });
       if (cat && cat.type !== typeFilter) setCatPickerValue(null, ctx);
+    }
+  }
+}
+
+// ── Search filter ─────────────────────────────────────────────────────────────
+function _catPickerFilter(ctx, rawQuery) {
+  var c  = _catCtx(ctx);
+  var dd = document.getElementById(c.ddId);
+  if (!dd) return;
+
+  var q = (rawQuery || '').trim().toLowerCase();
+
+  // Toggle clear button visibility
+  var clearBtn = document.getElementById(_catSearchId(ctx) + 'Clear');
+  if (clearBtn) clearBtn.style.display = q ? '' : 'none';
+
+  if (!q) {
+    // Restore everything to default collapsed state
+    dd.querySelectorAll('.cat-group-header').forEach(function(el) { el.style.display = ''; });
+    dd.querySelectorAll('.cat-children').forEach(function(el) {
+      el.style.display = '';          // let CSS class control visibility
+      el.classList.remove('open');   // collapse back to normal state
+    });
+    dd.querySelectorAll('.cat-option').forEach(function(el) { el.style.display = ''; });
+    dd.querySelectorAll('.cat-none-option').forEach(function(el) { el.style.display = ''; });
+    return;
+  }
+
+  // Hide "sem categoria" when actively searching
+  dd.querySelectorAll('.cat-none-option').forEach(function(el) { el.style.display = 'none'; });
+
+  // For each group header: show if parent name matches
+  dd.querySelectorAll('.cat-group-header').forEach(function(gh) {
+    var parentName = gh.getAttribute('data-cat-name') || '';
+    var parentMatches = parentName.includes(q);
+
+    // Check children
+    var pid = gh.id.replace('catGH-', '');
+    var childrenWrap = document.getElementById('catGroup-' + pid);
+    var anyChildMatch = false;
+
+    if (childrenWrap) {
+      childrenWrap.querySelectorAll('.cat-option').forEach(function(opt) {
+        var childName  = opt.getAttribute('data-cat-name') || '';
+        var parentN    = opt.getAttribute('data-parent-name') || '';
+        var matches    = childName.includes(q) || parentN.includes(q);
+        opt.style.display = (matches || parentMatches) ? '' : 'none';
+        if (matches) anyChildMatch = true;
+      });
+
+      if (parentMatches || anyChildMatch) {
+        // Force children visible and expanded during search
+        childrenWrap.style.display = 'block';
+      } else {
+        childrenWrap.style.display = 'none';
+      }
+    }
+
+    // Show the group header if parent name matches OR any child matched
+    gh.style.display = (parentMatches || anyChildMatch) ? '' : 'none';
+  });
+}
+
+// Clear search and restore full list
+function _catPickerClearSearch(ctx) {
+  var inp = document.getElementById(_catSearchId(ctx));
+  if (inp) { inp.value = ''; inp.focus(); }
+  _catPickerFilter(ctx, '');
+}
+
+// Keyboard: Escape clears search; Enter selects first visible option
+function _catPickerSearchKeydown(e, ctx) {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    var inp = document.getElementById(_catSearchId(ctx));
+    if (inp && inp.value) {
+      _catPickerClearSearch(ctx);
+    } else {
+      _closeCatPickerByCtx(ctx);
+    }
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    var c  = _catCtx(ctx);
+    var dd = document.getElementById(c.ddId);
+    if (!dd) return;
+    // Find first visible cat-option
+    var opts = dd.querySelectorAll('.cat-option');
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].style.display !== 'none') {
+        opts[i].click();
+        return;
+      }
+    }
+    // If no child visible, try first visible parent "usar" button
+    var usarBtns = dd.querySelectorAll('.cat-group-select');
+    for (var j = 0; j < usarBtns.length; j++) {
+      var gh = usarBtns[j].closest('.cat-group-header');
+      if (gh && gh.style.display !== 'none') {
+        usarBtns[j].click();
+        return;
+      }
     }
   }
 }
@@ -244,6 +370,7 @@ function toggleCatPicker(ctx) {
   _catPickerCtx = ctx;
   dd.classList.add('open');
   btn.classList.add('open');
+  // Auto-expand group of currently selected category
   var currentId = document.getElementById(c.inputId) ? document.getElementById(c.inputId).value : '';
   if (currentId) {
     var cat = (state.categories || []).find(function(x){ return x.id === currentId; });
@@ -253,6 +380,11 @@ function toggleCatPicker(ctx) {
       if (grp && !grp.classList.contains('open')) { grp.classList.add('open'); if (arr) arr.classList.add('open'); }
     }
   }
+  // Focus the search input after a short delay (allows dropdown animation to start)
+  setTimeout(function() {
+    var inp = document.getElementById(_catSearchId(ctx));
+    if (inp) inp.focus();
+  }, 60);
   setTimeout(function() { document.addEventListener('click', _catPickerOutsideHandler, { once: true }); }, 10);
 }
 
@@ -273,6 +405,12 @@ function _closeCatPickerByCtx(ctx) {
   var btn = document.getElementById(c.btnId);
   if (dd)  dd.classList.remove('open');
   if (btn) btn.classList.remove('open');
+  // Clear search so next open starts fresh
+  var inp = document.getElementById(_catSearchId(ctx));
+  if (inp && inp.value) {
+    inp.value = '';
+    _catPickerFilter(ctx, '');
+  }
   if (_catPickerCtx === ctx) _catPickerCtx = null;
 }
 
@@ -350,7 +488,7 @@ function setCatPickerValue(catId, ctx) {
   function _shouldMask(el){
     if(!el || el.disabled || el.readOnly) return false;
     // opt-in by id (surgical: no CSS/class refactor)
-    const ids = ['txAmount','scAmount','accountBalance','budgetAmount'];
+    const ids = ['txAmount','scAmount','accountBalance','budgetAmount','debtFormAmount','consolidateAmount'];
     return ids.includes(el.id);
   }
 
@@ -398,7 +536,7 @@ function setCatPickerValue(catId, ctx) {
   }
 
   function initMoneyInputs(){
-    ['txAmount','scAmount','accountBalance','budgetAmount'].forEach(function(id){
+    ['txAmount','scAmount','accountBalance','budgetAmount','debtFormAmount','consolidateAmount'].forEach(function(id){
       const el = document.getElementById(id);
       if(el) bindMoneyInput(el);
     });
@@ -414,3 +552,15 @@ function setCatPickerValue(catId, ctx) {
     initMoneyInputs();
   }
 })();
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}

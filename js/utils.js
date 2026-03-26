@@ -1,17 +1,312 @@
-function populateSelects(){populateReportFilters();
-  const aOpts=state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
-  ['txAccountId','txTransferTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">Selecione a conta</option>'+aOpts;});
-  const txAF=document.getElementById('txAccount');if(txAF)txAF.innerHTML='<option value="">Todas as contas</option>'+aOpts;
-  // payee autocomplete uses state.payees directly - no select to populate
-  buildCatPicker(); // hierarchical picker replaces flat select
-  const pCat=document.getElementById('payeeCategory');if(pCat)pCat.innerHTML='<option value="">— Nenhuma —</option>'+state.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+/* ═══════════════════════════════════════
+   RESIZABLE TABLE COLUMNS (desktop ≥768px)
+   Strategy: inject <colgroup><col> elements so widths survive
+   thead/tbody re-renders. Persist per table.id in localStorage.
+═══════════════════════════════════════ */
+
+const _COL_W_PREFIX = 'col_w_';
+
+function _saveColWidths(table) {
+  if (!table?.id) return;
+  try {
+    const cols = table.querySelectorAll('colgroup col');
+    if (!cols.length) return;
+    const widths = [...cols].map(c => c.style.width || '');
+    localStorage.setItem(_COL_W_PREFIX + table.id, JSON.stringify(widths));
+  } catch(_) {}
 }
+
+function _restoreColWidths(table) {
+  if (!table?.id) return;
+  try {
+    const raw = localStorage.getItem(_COL_W_PREFIX + table.id);
+    if (!raw) return;
+    const widths = JSON.parse(raw);
+    const cols   = table.querySelectorAll('colgroup col');
+    cols.forEach((col, i) => { if (widths[i]) col.style.width = widths[i]; });
+  } catch(_) {}
+}
+
+function _ensureColgroup(table) {
+  // Always keep colgroup in sync with current thead column count
+  const ths = table.querySelectorAll('thead tr:first-child th');
+  if (!ths.length) return null;
+  let cg = table.querySelector('colgroup');
+  if (!cg) {
+    cg = document.createElement('colgroup');
+    table.insertBefore(cg, table.firstChild);
+  }
+  // Add missing <col> elements
+  while (cg.children.length < ths.length) {
+    cg.appendChild(document.createElement('col'));
+  }
+  // Remove extras
+  while (cg.children.length > ths.length) {
+    cg.removeChild(cg.lastChild);
+  }
+  return cg;
+}
+
+function initResizableTable(table) {
+  if (!table || window.innerWidth < 768) return;
+  // Always (re-)sync colgroup and restore saved widths — even on re-init
+  const cg = _ensureColgroup(table);
+  if (!cg) return;
+  _restoreColWidths(table);
+  if (table.dataset.resizeInited) return; // handles already attached
+  table.dataset.resizeInited = '1';
+  table.style.tableLayout = 'fixed';
+
+  const ths = table.querySelectorAll('thead tr:first-child th');
+  ths.forEach((th, i) => {
+    if (i === ths.length - 1) return; // skip last column (actions)
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    handle.title = 'Arrastar para redimensionar';
+    th.appendChild(handle);
+
+    let startX = 0, startW = 0;
+
+    const onMove = e => {
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const nw = Math.max(36, startW + clientX - startX);
+      const col = cg.children[i];
+      if (col) col.style.width = nw + 'px';
+    };
+
+    const onUp = () => {
+      handle.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      _saveColWidths(table);
+    };
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      // Use the <col> width if already set, otherwise measure the th
+      const col = cg.children[i];
+      const colW = col?.style.width ? parseFloat(col.style.width) : 0;
+      startX = e.clientX;
+      startW = colW || th.offsetWidth;
+      handle.classList.add('dragging');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+// Re-sync colgroup + restore widths whenever a resizable table's content changes
+function refreshResizableTable(tableOrId) {
+  const table = typeof tableOrId === 'string'
+    ? document.getElementById(tableOrId)
+    : tableOrId;
+  if (!table) return;
+  _ensureColgroup(table);
+  _restoreColWidths(table);
+}
+
+function initAllResizableTables() {
+  if (window.innerWidth < 768) return;
+  document.querySelectorAll('table.resizable-table').forEach(t => {
+    // Always re-sync colgroup (thead may have been re-rendered)
+    _ensureColgroup(t);
+    _restoreColWidths(t);
+    if (!t.dataset.resizeInited) initResizableTable(t);
+  });
+}
+
+// Auto-init via MutationObserver
+(function() {
+  if (typeof MutationObserver === 'undefined') return;
+  const obs = new MutationObserver(mutations => {
+    let needsSync = false;
+    mutations.forEach(m => {
+      if (m.type === 'childList') needsSync = true;
+    });
+    if (needsSync) initAllResizableTables();
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    obs.observe(document.body, { childList: true, subtree: true });
+    initAllResizableTables();
+  });
+})();
+
+
+/* ═══════════════════════════════════════
+   FORECAST MULTI-ACCOUNT PICKER
+   Shared by Relatórios/Forecast and Dashboard Forecast.
+   State persisted in _dashSavePrefs under 'forecastAccounts' and 'dashForecastAccounts'.
+═══════════════════════════════════════ */
+
+// Map pickerId → { accountIds: Set, onChange: fn }
+const _fcPickers = {};
+
+function _fcPickerToggle(pickerId) {
+  const dd = document.getElementById(pickerId.replace('Picker','Dropdown').replace('AcctPicker','AcctDropdown'));
+  if (!dd) return;
+  const isOpen = dd.classList.toggle('open');
+  if (isOpen) {
+    // Close on outside click
+    setTimeout(() => {
+      const handler = e => {
+        const picker = document.getElementById(pickerId);
+        if (picker && !picker.contains(e.target)) {
+          dd.classList.remove('open');
+          document.removeEventListener('click', handler);
+        }
+      };
+      document.addEventListener('click', handler);
+    }, 0);
+  }
+}
+
+function _fcPickerBuild(pickerId, selectedIds, onChange) {
+  const ddId = pickerId.replace('AcctPicker','AcctDropdown');
+  const dd = document.getElementById(ddId);
+  if (!dd) return;
+
+  const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  _fcPickers[pickerId] = { selected, onChange };
+
+  const accs = state.accounts || [];
+  const favs = accs.filter(a => a.is_favorite);
+  const rest = accs.filter(a => !a.is_favorite);
+
+  let html = `<div class="fc-acct-opt">
+    <input type="checkbox" id="${ddId}_all" ${selected.size===0?'checked':''}
+      onchange="_fcPickerToggleAll('${pickerId}', this.checked)">
+    <span style="font-weight:600;color:var(--text)">Todas as contas</span>
+  </div>`;
+
+  const renderGroup = (list, label) => {
+    if (!list.length) return '';
+    let g = label ? `<div class="fc-acct-sep">${label}</div>` : '';
+    g += list.map(a => `
+      <div class="fc-acct-opt">
+        <input type="checkbox" id="${ddId}_${a.id}" value="${a.id}"
+          ${selected.has(a.id)?'checked':''}
+          onchange="_fcPickerToggleOne('${pickerId}','${a.id}',this.checked)">
+        <span class="fc-acct-opt-dot" style="background:${a.color||'var(--accent)'}"></span>
+        <span>${esc(a.name)} <span style="color:var(--muted);font-size:.75em">${a.currency}</span></span>
+      </div>`).join('');
+    return g;
+  };
+
+  html += renderGroup(favs, favs.length && rest.length ? '⭐ Favoritas' : '');
+  html += renderGroup(rest, favs.length && rest.length ? 'Outras' : '');
+  dd.innerHTML = html;
+  _fcPickerUpdateLabel(pickerId);
+}
+
+function _fcPickerToggleAll(pickerId, checked) {
+  const p = _fcPickers[pickerId];
+  if (!p) return;
+  if (checked) {
+    p.selected.clear();
+  } else {
+    // Re-check "all" if user unchecks it (can't have nothing)
+    const allChk = document.getElementById(pickerId.replace('AcctPicker','AcctDropdown') + '_all');
+    if (allChk) allChk.checked = true;
+    return;
+  }
+  // Uncheck all individual
+  document.querySelectorAll(`#${pickerId.replace('AcctPicker','AcctDropdown')} input[value]`)
+    .forEach(cb => { cb.checked = false; });
+  _fcPickerUpdateLabel(pickerId);
+  p.onChange?.([]);
+}
+
+function _fcPickerToggleOne(pickerId, accountId, checked) {
+  const p = _fcPickers[pickerId];
+  if (!p) return;
+  if (checked) {
+    p.selected.add(accountId);
+  } else {
+    p.selected.delete(accountId);
+  }
+  // Sync "all" checkbox
+  const ddId = pickerId.replace('AcctPicker','AcctDropdown');
+  const allChk = document.getElementById(ddId + '_all');
+  if (allChk) allChk.checked = p.selected.size === 0;
+  // If nothing selected, revert to "all"
+  if (p.selected.size === 0 && allChk) allChk.checked = true;
+  _fcPickerUpdateLabel(pickerId);
+  p.onChange?.(p.selected.size ? [...p.selected] : []);
+}
+
+function _fcPickerGetSelected(pickerId) {
+  return _fcPickers[pickerId] ? [...(_fcPickers[pickerId].selected)] : [];
+}
+
+function _fcPickerUpdateLabel(pickerId) {
+  const p = _fcPickers[pickerId];
+  if (!p) return;
+  const labelId = pickerId.replace('AcctPicker','AcctLabel');
+  const el = document.getElementById(labelId);
+  if (!el) return;
+  if (p.selected.size === 0) {
+    el.textContent = pickerId.includes('dash') ? 'Todas' : 'Todas as contas';
+    return;
+  }
+  const accs = state.accounts || [];
+  const names = [...p.selected].map(id => accs.find(a=>a.id===id)?.name || id);
+  if (names.length <= 2) {
+    el.textContent = names.join(', ');
+  } else {
+    el.textContent = `${names.length} contas`;
+  }
+}
+
+
+function _buildCategoryFilterOptions() {
+  const cats = state.categories || [];
+  const roots = cats.filter(c => !c.parent_id).sort((a,b) => a.name.localeCompare(b.name));
+  const lines = [];
+  const walk = (list, depth) => list.forEach(c => {
+    const indent = '\u00a0\u00a0'.repeat(depth);
+    lines.push(`<option value="${c.id}">${indent}${esc(c.name)}</option>`);
+    const children = cats.filter(x => x.parent_id === c.id).sort((a,b) => a.name.localeCompare(b.name));
+    if (children.length) walk(children, depth + 1);
+  });
+  walk(roots, 0);
+  return lines.join('');
+}
+
+function _accountOptions(accounts, placeholder) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const favs = list.filter(a => a.is_favorite);
+  const rest = list.filter(a => !a.is_favorite);
+  const renderOpt = (a, isFav=false) => `<option value="${a.id}">${isFav ? '⭐ ' : ''}${esc(a.name)} (${a.currency})</option>`;
+
+  let html = placeholder ? `<option value="">${placeholder}</option>` : '';
+
+  if (favs.length) {
+    html += favs.map(a => renderOpt(a, true)).join('');
+    if (rest.length) {
+      html += `<option value="" disabled>──────────</option>`;
+      html += rest.map(a => renderOpt(a, false)).join('');
+    }
+  } else {
+    html += rest.map(a => renderOpt(a, false)).join('');
+  }
+
+  return html;
+}
+
+// populateSelects is defined in reports.js (always loaded).
+// _accountOptions and _buildCategoryFilterOptions are helpers used by it.
 
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
 function toast(msg,type='info'){
+  // Auto-translate if message exists as direct-text key in i18n builtin
+  if (typeof t === 'function' && msg && typeof msg === 'string') {
+    const translated = t(msg);
+    // t() returns the key itself when not found — only use if actually translated
+    if (translated && translated !== msg) msg = translated;
+  }
   const icons={success:'✓',error:'✕',info:'i'};
   const el=document.createElement('div');el.className=`toast ${type}`;el.innerHTML=`<span style="font-weight:700">${icons[type]||'i'}</span><span>${msg}</span>`;
   document.getElementById('toast-container').appendChild(el);
@@ -125,6 +420,13 @@ function selectPayee(id, name, ctx) {
   hidePayeeSimilar();
   // Category suggestion only for tx modal
   if(ctx !== 'sc') suggestCategoryForPayee(id);
+  // Debt amortization detection (tx modal only, expense transactions)
+  if(ctx === 'tx' || ctx === undefined) {
+    const txType = document.getElementById('txTypeField')?.value;
+    if(txType === 'expense' && typeof checkDebtAmortization === 'function') {
+      checkDebtAmortization(id).catch(() => {});
+    }
+  }
 }
 
 async function suggestCategoryForPayee(payeeId) {
@@ -170,6 +472,18 @@ function applyCatSuggestion() {
 // ── payee AC context helpers ─────────────────────────────────────────────────
 // ctx = 'tx' (transaction modal) | 'sc' (scheduled modal)
 function payeeCtx(ctx) {
+  // 'dbt' context: creditor autocomplete inside the debt form modal
+  if (ctx === 'dbt') {
+    return {
+      idEl:     document.getElementById('dbtPayeeId'),
+      nameEl:   document.getElementById('dbtPayeeName'),
+      statusEl: document.getElementById('dbtPayeeStatus'),
+      ddEl:     document.getElementById('dbtPayeeDropdown'),
+      bannerEl: null,
+      typeEl:   null,
+      ctx:      'dbt',
+    };
+  }
   const p = ctx === 'sc' ? 'sc' : 'tx';
   return {
     idEl:     document.getElementById(p + 'PayeeId'),
@@ -310,8 +624,11 @@ function checkSimilarPayee(typed) {
       <button class="btn btn-primary btn-sm" onmousedown="event.preventDefault()" onclick="confirmSimilarPayee('${best.p.id}','${esc(best.p.name)}')">
         Sim, usar "${esc(best.p.name)}"
       </button>
+      <button class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="cancelPayeeCreation('tx')">
+        Não, escolher outro
+      </button>
       <button class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="createPayeeFromInput('tx')">
-        Não, criar novo
+        Criar novo
       </button>
     </div>`;
   banner.style.display = 'block';
@@ -326,11 +643,26 @@ function showCreateNewBanner(typed) {
       <button class="btn btn-primary btn-sm" onmousedown="event.preventDefault()" onclick="createPayeeFromInput('tx')">
         Criar agora
       </button>
-      <button class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="clearPayeeField('tx')">
-        Cancelar
+      <button class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="cancelPayeeCreation('tx')">
+        Escolher existente
       </button>
     </div>`;
   banner.style.display = 'block';
+}
+
+function cancelPayeeCreation(ctx) {
+  // Hide the banner but keep the typed text so user can edit and pick from dropdown
+  hidePayeeSimilar();
+  const c = payeeCtx(ctx);
+  // Re-focus the name input so the dropdown can reappear
+  if (c.nameEl) {
+    c.nameEl.focus();
+    // Trigger dropdown with current value
+    const val = c.nameEl.value;
+    if (val && val.length >= 2) {
+      onPayeeInput(val, ctx);
+    }
+  }
 }
 
 function confirmSimilarPayee(id, name) {
@@ -354,49 +686,125 @@ async function createPayeeFromInput(ctx) {
 }
 
 
-/* ═══════════════════════════════════════
-   ICON PICKER
-═══════════════════════════════════════ */
-const ICON_META = {
-  // Brazilian banks
-  'itau':       {label:'Itaú',        color:'#FF6600', type:'bank'},
-  'inter':      {label:'Inter',       color:'#FF7A00', type:'bank'},
-  'bradesco':   {label:'Bradesco',    color:'#CC092F', type:'bank'},
-  'nubank':     {label:'Nubank',      color:'#820AD1', type:'bank'},
-  'bb':         {label:'BB',          color:'#F5A623', type:'bank'},
-  'caixa':      {label:'Caixa',       color:'#005CA9', type:'bank'},
-  'santander':  {label:'Santander',   color:'#EC0000', type:'bank'},
-  'xp':         {label:'XP',          color:'#000000', type:'bank'},
-  'c6':         {label:'C6',          color:'#242424', type:'bank'},
-  'neon':       {label:'Neon',        color:'#00D4FF', type:'bank'},
-  'next':       {label:'Next',        color:'#00AF3F', type:'bank'},
-  'picpay':     {label:'PicPay',      color:'#21C25E', type:'bank'},
-  'mercadopago':{label:'Mercado Pago',color:'#009EE3', type:'bank'},
-  'sicoob':     {label:'Sicoob',      color:'#006837', type:'bank'},
-  'rico':       {label:'Rico',        color:'#00A86B', type:'bank'},
-  'will':       {label:'Will',        color:'#7B2D8B', type:'bank'},
-  // French banks
-  'boursobank': {label:'Boursobank',  color:'#1A2E5A', type:'bank'},
-  'bnp':        {label:'BNP Paribas', color:'#009B55', type:'bank'},
-  'sg':         {label:'Soc. Gén.',   color:'#E30613', type:'bank'},
-  'ca':         {label:'Crédit Ag.',  color:'#009A44', type:'bank'},
-  'lcl':        {label:'LCL',         color:'#005BAB', type:'bank'},
-  'laposte':    {label:'La Poste',    color:'#FDD000', type:'bank'},
-  'cic':        {label:'CIC',         color:'#003087', type:'bank'},
-  'bred':       {label:'BRED',        color:'#C8102E', type:'bank'},
-  'revolut':    {label:'Revolut',     color:'#0075EB', type:'bank'},
-  'n26':        {label:'N26',         color:'#3B82F6', type:'bank'},
-  'wise':       {label:'Wise',        color:'#9FE870', type:'bank'},
-  'paypal':     {label:'PayPal',      color:'#003087', type:'bank'},
-  // Cards
-  'visa':       {label:'Visa',        color:'#1A1F71', type:'card'},
-  'mastercard': {label:'Mastercard',  color:'#EB001B', type:'card'},
-  'amex':       {label:'Amex',        color:'#2E77BC', type:'card'},
-  'elo':        {label:'Elo',         color:'#000000', type:'card'},
-  'hipercard':  {label:'Hipercard',   color:'#B40019', type:'card'},
-  'dinersclub': {label:'Diners',      color:'#004B87', type:'card'},
-  'sams':       {label:"Sam's",       color:'#0067A0', type:'card'},
-  'porto':      {label:'Porto',       color:'#005B8E', type:'card'},
-};
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}
 
-// Render icon from stored key into an element
+
+/* ═══════════════════════════════════════
+   AI AUTO-DESCRIPTION (shared desktop + mobile)
+═══════════════════════════════════════ */
+function _afdClean(v) {
+  return String(v || '').replace(/\s+/g, ' ').trim();
+}
+
+function _afdTitle(v) {
+  const s = _afdClean(v);
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function buildAutoDescriptionFallback(categoryName, payeeName, memberName) {
+  const cat = _afdTitle(categoryName);
+  const pay = _afdTitle(payeeName);
+  const mem = _afdTitle(memberName);
+  if (cat && pay && mem) return `${cat} do ${mem} no ${pay}`;
+  if (cat && pay) return `${cat} no ${pay}`;
+  if (cat && mem) return `${cat} do ${mem}`;
+  return cat || pay || mem || 'Lançamento';
+}
+
+async function generateAutoTransactionDescription({ categoryName, payeeName, memberName } = {}) {
+  const fallback = buildAutoDescriptionFallback(categoryName, payeeName, memberName);
+  const cat = _afdClean(categoryName);
+  const pay = _afdClean(payeeName);
+  const mem = _afdClean(memberName);
+  if (!cat && !pay && !mem) return fallback;
+
+  try {
+    const apiKey = await getAppSetting('gemini_api_key', '').catch(() => '');
+    if (!apiKey || !apiKey.startsWith('AIza')) return fallback;
+
+    const prompt = `Você cria descrições curtas e padronizadas para lançamentos financeiros.
+Retorne SOMENTE a descrição final, sem aspas, sem markdown, sem explicações.
+
+REGRA DE FORMATO PREFERENCIAL:
+- Se houver categoria e beneficiário: "<Categoria> no <Beneficiário>"
+- Se houver categoria, beneficiário e membro: "<Categoria> do <Membro> no <Beneficiário>"
+- Preserve nomes próprios corretamente.
+- Seja curto, direto e natural em português do Brasil.
+- Não invente informação além dos campos fornecidos.
+- Não use ponto final.
+- Máximo de 60 caracteres.
+
+DADOS:
+Categoria: ${cat || '(vazio)'}
+Beneficiário: ${pay || '(vazio)'}
+Membro: ${mem || '(vazio)'}
+
+Exemplos válidos:
+Supermercado no Pão de Açúcar
+Supermercado do Décio no Pão de Açúcar
+Farmácia na Drogasil
+Presente da Chloe na Amazon`;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 80 }
+      })
+    });
+    if (!resp.ok) return fallback;
+
+    const json = await resp.json().catch(() => null);
+    const text = _afdClean(json?.candidates?.[0]?.content?.parts?.map(p => p?.text || '').join(' ') || '');
+    if (!text) return fallback;
+
+    const cleaned = text.replace(/^['"“”]+|['"“”]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!cleaned || cleaned.length > 80) return fallback;
+    return cleaned;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function ensureTransactionDescription(input) {
+  const el = typeof input === 'string' ? document.getElementById(input) : input;
+  const current = _afdClean(el?.value);
+  if (current) return current;
+
+  const categoryId = document.getElementById('txCategoryId')?.value || document.getElementById('scCategoryId')?.value || '';
+  const payeeId    = document.getElementById('txPayeeId')?.value    || document.getElementById('scPayeeId')?.value    || '';
+
+  let memberId = null;
+  if (typeof getFmcMultiPickerSelected === 'function') {
+    const txIds = getFmcMultiPickerSelected('txFamilyMemberPicker');
+    const scIds = getFmcMultiPickerSelected('scFamilyMemberPicker');
+    memberId = (txIds && txIds[0]) || (scIds && scIds[0]) || null;
+  }
+  memberId = memberId || document.getElementById('txFamilyMember')?.value || null;
+
+  const categoryName = (state.categories || []).find(c => c.id === categoryId)?.name || '';
+  const payeeName    = (state.payees || []).find(p => p.id === payeeId)?.name || '';
+  const memberName   = (typeof getFamilyMemberById === 'function' && memberId)
+    ? (getFamilyMemberById(memberId)?.name || '')
+    : '';
+
+  const generated = await generateAutoTransactionDescription({ categoryName, payeeName, memberName });
+  if (el && generated) el.value = generated;
+  return generated;
+}
+
+window.buildAutoDescriptionFallback = buildAutoDescriptionFallback;
+window.generateAutoTransactionDescription = generateAutoTransactionDescription;
+window.ensureTransactionDescription = ensureTransactionDescription;

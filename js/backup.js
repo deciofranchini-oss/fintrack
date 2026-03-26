@@ -5,6 +5,7 @@ const BACKUP_VERSION = '4.2';
 const BACKUP_TABLES = [
   'families',
   'family_members',
+  'family_composition',
   'account_groups',
   'accounts',
   'categories',
@@ -17,6 +18,13 @@ const BACKUP_TABLES = [
   'price_items',
   'price_stores',
   'price_history',
+  'debts',
+  'debt_ledger',
+  'investment_positions',
+  'investment_transactions',
+  'investment_price_history',
+  'grocery_lists',
+  'grocery_items',
 ];
 
 const BACKUP_RELATIONS = [
@@ -90,11 +98,15 @@ async function _resolveActiveFamilyId() {
 }
 
 async function _collectFamilyBackupPayload(fid) {
-  const qf = (table) => sb.from(table).select('*').eq('family_id', fid);
+  const qf = (table) => Promise.resolve(sb.from(table).select('*').eq('family_id', fid));
 
-  const [familiesRes, membersRes, groupsRes, accountsRes, categoriesRes, payeesRes, txRes, budgetsRes, schedRes, priceItemsRes, priceStoresRes, backupsRes] = await Promise.all([
+  // Core tables — always present
+  const [familiesRes, membersRes, compositionRes, groupsRes, accountsRes,
+         categoriesRes, payeesRes, txRes, budgetsRes, schedRes,
+         priceItemsRes, priceStoresRes, debtsRes, groceryListsRes, backupsRes] = await Promise.all([
     sb.from('families').select('*').eq('id', fid).limit(1),
     sb.from('family_members').select('*').eq('family_id', fid),
+    qf('family_composition').catch(() => ({ data: [] })),
     qf('account_groups'),
     qf('accounts'),
     qf('categories'),
@@ -102,49 +114,73 @@ async function _collectFamilyBackupPayload(fid) {
     qf('transactions'),
     qf('budgets'),
     qf('scheduled_transactions'),
-    qf('price_items'),
-    qf('price_stores'),
-    qf('app_backups'),
+    qf('price_items').catch(() => ({ data: [] })),
+    qf('price_stores').catch(() => ({ data: [] })),
+    qf('debts').catch(() => ({ data: [] })),
+    qf('grocery_lists').catch(() => ({ data: [] })),
+    qf('app_backups').catch(() => ({ data: [] })),
   ]);
 
-  const scheduledIds = _arr(schedRes.data).map(r => r.id);
-  const transactionIds = _arr(txRes.data).map(r => r.id);
-  const priceItemIds = _arr(priceItemsRes.data).map(r => r.id);
-  const priceStoreIds = _arr(priceStoresRes.data).map(r => r.id);
+  const scheduledIds    = _arr(schedRes.data).map(r => r.id);
+  const transactionIds  = _arr(txRes.data).map(r => r.id);
+  const priceItemIds    = _arr(priceItemsRes.data).map(r => r.id);
+  const priceStoreIds   = _arr(priceStoresRes.data).map(r => r.id);
+  const debtIds         = _arr(debtsRes.data).map(r => r.id);
+  const groceryListIds  = _arr(groceryListsRes.data).map(r => r.id);
 
-  const [occRes, runLogRes, priceHistoryRes] = await Promise.all([
+  // Secondary tables that depend on primary IDs
+  const [occRes, runLogRes, priceHistoryRes, debtLedgerRes,
+         invPositionsRes, invTxRes, invPriceRes, groceryItemsRes] = await Promise.all([
     scheduledIds.length
       ? sb.from('scheduled_occurrences').select('*').in('scheduled_id', scheduledIds)
-      : Promise.resolve({ data: [], error: null }),
-    sb.from('scheduled_run_logs').select('*').or([
+      : Promise.resolve({ data: [] }),
+    Promise.resolve(sb.from('scheduled_run_logs').select('*').or([
       `family_id.eq.${fid}`,
-      scheduledIds.length ? `scheduled_id.in.(${scheduledIds.join(',')})` : null,
+      scheduledIds.length   ? `scheduled_id.in.(${scheduledIds.join(',')})` : null,
       transactionIds.length ? `transaction_id.in.(${transactionIds.join(',')})` : null,
-    ].filter(Boolean).join(',')),
-    priceItemIds.length || priceStoreIds.length
-      ? sb.from('price_history').select('*').or([
+    ].filter(Boolean).join(','))).catch(() => ({ data: [] })),
+    (priceItemIds.length || priceStoreIds.length)
+      ? Promise.resolve(sb.from('price_history').select('*').or([
           `family_id.eq.${fid}`,
-          priceItemIds.length ? `item_id.in.(${priceItemIds.join(',')})` : null,
+          priceItemIds.length  ? `item_id.in.(${priceItemIds.join(',')})` : null,
           priceStoreIds.length ? `store_id.in.(${priceStoreIds.join(',')})` : null,
-        ].filter(Boolean).join(','))
-      : Promise.resolve({ data: [], error: null }),
+        ].filter(Boolean).join(','))).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+    debtIds.length
+      ? Promise.resolve(sb.from('debt_ledger').select('*').in('debt_id', debtIds)).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
+    // Investments — optional module
+    qf('investment_positions').catch(() => ({ data: [] })),
+    qf('investment_transactions').catch(() => ({ data: [] })),
+    qf('investment_price_history').catch(() => ({ data: [] })),
+    groceryListIds.length
+      ? Promise.resolve(sb.from('grocery_items').select('*').in('list_id', groceryListIds)).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] }),
   ]);
 
   const payload = {
-    families: _arr(familiesRes.data),
-    family_members: _arr(membersRes.data),
-    account_groups: _arr(groupsRes.data),
-    accounts: _arr(accountsRes.data),
-    categories: _arr(categoriesRes.data),
-    payees: _arr(payeesRes.data),
-    transactions: _arr(txRes.data),
-    budgets: _arr(budgetsRes.data),
-    scheduled_transactions: _arr(schedRes.data),
-    scheduled_occurrences: _arr(occRes.data),
-    scheduled_run_logs: _arr(runLogRes.data),
-    price_items: _arr(priceItemsRes.data),
-    price_stores: _arr(priceStoresRes.data),
-    price_history: _arr(priceHistoryRes.data),
+    families:                 _arr(familiesRes.data),
+    family_members:           _arr(membersRes.data),
+    family_composition:       _arr(compositionRes.data),
+    account_groups:           _arr(groupsRes.data),
+    accounts:                 _arr(accountsRes.data),
+    categories:               _arr(categoriesRes.data),
+    payees:                   _arr(payeesRes.data),
+    transactions:             _arr(txRes.data),
+    budgets:                  _arr(budgetsRes.data),
+    scheduled_transactions:   _arr(schedRes.data),
+    scheduled_occurrences:    _arr(occRes.data),
+    scheduled_run_logs:       _arr(runLogRes.data),
+    price_items:              _arr(priceItemsRes.data),
+    price_stores:             _arr(priceStoresRes.data),
+    price_history:            _arr(priceHistoryRes.data),
+    debts:                    _arr(debtsRes.data),
+    debt_ledger:              _arr(debtLedgerRes.data),
+    investment_positions:     _arr(invPositionsRes.data),
+    investment_transactions:  _arr(invTxRes.data),
+    investment_price_history: _arr(invPriceRes.data),
+    grocery_lists:            _arr(groceryListsRes.data),
+    grocery_items:            _arr(groceryItemsRes.data),
   };
 
   const counts = {};
@@ -713,7 +749,7 @@ async function restoreBackup(event) {
     await _restoreBackupData(backup.data, status, restoreOptions);
     await _reloadAfterRestore();
     _backupStatus(status, '✓ Restaurado com sucesso!', 'var(--green)');
-    toast('Backup restaurado!', 'success');
+    toast(t('toast.backup_restored'), 'success');
   } catch (e) {
     _backupStatus(status, '✗ ' + e.message, 'var(--red)');
     toast('Erro: ' + e.message, 'error');
@@ -816,47 +852,145 @@ async function openFamilyBackupManager(fid, familyName = '') {
       return;
     }
     const resolved = _familyDisplayName?.(fid, familyName || '') || familyName || fid;
-    const backups = await _fetchDbBackupsForFamily(fid, 30);
-    const html = `
-      <div style="display:grid;gap:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-          <div>
-            <div style="font-weight:700">Família: ${esc(resolved)}</div>
-            <div style="font-size:.82rem;color:var(--muted)">${backups.length} snapshot(s) encontrados.</div>
-          </div>
-          <button class="btn btn-primary" id="familyBackupCreateFromModal">📸 Criar novo snapshot</button>
-        </div>
-        ${_renderFamilyBackupsHtml(backups, fid, resolved)}
-      </div>`;
+    const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
+
+    // ── Build modal shell ──────────────────────────────────────────────────
     const old = document.getElementById('familyBackupManagerModal');
     old?.remove();
     const wrap = document.createElement('div');
     wrap.id = 'familyBackupManagerModal';
-    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
     wrap.innerHTML = `
-      <div style="width:min(980px,96vw);max-height:90vh;overflow:hidden;background:var(--card, #fff);color:var(--text, #111);border:1px solid var(--border, #ddd);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.28);display:flex;flex-direction:column">
-        <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div style="width:min(980px,96vw);max-height:92vh;overflow:hidden;background:var(--card,#fff);color:var(--text,#111);border:1px solid var(--border,#ddd);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.28);display:flex;flex-direction:column">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-shrink:0">
           <div>
             <div style="font-size:1rem;font-weight:800">Snapshots da família</div>
-            <div style="font-size:.82rem;color:var(--muted)">Crie, pré-valide e restaure snapshots desta família específica.</div>
+            <div style="font-size:.8rem;color:var(--muted)">Crie, pré-valide e restaure snapshots desta família específica.</div>
           </div>
-          <button id="familyBackupManagerCloseX" class="btn btn-ghost btn-sm">✕</button>
+          <button id="familyBackupManagerCloseX" class="btn btn-ghost btn-sm" style="flex-shrink:0">✕</button>
         </div>
-        <div style="padding:18px;overflow:auto">${html}</div>
-        <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px">
-          <button id="familyBackupManagerClose" class="btn btn-ghost">Fechar</button>
+
+        <!-- Header: nome + contador + botão criar -->
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div>
+              <div style="font-weight:700;font-size:.9rem">Família: ${esc(resolved)}</div>
+              <div id="fbmCount" style="font-size:.78rem;color:var(--muted)">Carregando…</div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="familyBackupCreateFromModal" style="white-space:nowrap">
+              📸 Criar novo snapshot
+            </button>
+          </div>
+          <!-- Label input — oculto por padrão, aparece ao clicar criar -->
+          <div id="fbmLabelRow" style="display:none;margin-top:10px;display:none">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="fbmLabelInput" type="text" class="form-control" placeholder="Nome do snapshot (opcional)"
+                style="flex:1;min-width:160px;font-size:.84rem;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text)">
+              <button id="fbmLabelConfirm" class="btn btn-primary btn-sm">✓ Confirmar</button>
+              <button id="fbmLabelCancel" class="btn btn-ghost btn-sm">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- List -->
+        <div id="fbmList" style="padding:14px 16px;overflow:auto;flex:1">
+          <div style="text-align:center;padding:30px;color:var(--muted);font-size:.83rem">⏳ Carregando snapshots…</div>
+        </div>
+
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;flex-shrink:0">
+          <button id="familyBackupManagerClose" class="btn btn-ghost btn-sm">Fechar</button>
         </div>
       </div>`;
     document.body.appendChild(wrap);
+
     const close = () => wrap.remove();
     wrap.querySelector('#familyBackupManagerClose')?.addEventListener('click', close);
     wrap.querySelector('#familyBackupManagerCloseX')?.addEventListener('click', close);
     wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
-    wrap.querySelector('#familyBackupCreateFromModal')?.addEventListener('click', async () => {
-      await openDbBackupCreateForFamily(fid, resolved);
-      close();
-      setTimeout(() => openFamilyBackupManager(fid, resolved), 200);
+
+    // ── Refresh list in-place ──────────────────────────────────────────────
+    async function _refreshList() {
+      const listEl  = wrap.querySelector('#fbmList');
+      const countEl = wrap.querySelector('#fbmCount');
+      if (!listEl) return;
+      listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-size:.83rem">⏳ Carregando snapshots…</div>';
+      try {
+        const fresh = await _fetchDbBackupsForFamily(fid, 30);
+        if (countEl) countEl.textContent = `${fresh.length} snapshot(s) encontrado(s).`;
+        listEl.innerHTML = `<div style="display:grid;gap:10px">${_renderFamilyBackupsHtml(fresh, fid, resolved)}</div>`;
+      } catch (err) {
+        listEl.innerHTML = `<div style="color:var(--red);padding:16px">${esc(err.message)}</div>`;
+      }
+    }
+
+    // ── Create button logic ────────────────────────────────────────────────
+    const createBtn = wrap.querySelector('#familyBackupCreateFromModal');
+    const labelRow  = wrap.querySelector('#fbmLabelRow');
+    const labelInput = wrap.querySelector('#fbmLabelInput');
+    const confirmBtn = wrap.querySelector('#fbmLabelConfirm');
+    const cancelBtn  = wrap.querySelector('#fbmLabelCancel');
+
+    const _defaultLabel = () => `Backup — ${resolved} — ${new Date().toLocaleDateString('pt-BR')}`;
+
+    const _doCreate = async () => {
+      const label = (labelInput?.value || '').trim() || _defaultLabel();
+      // Show loading state
+      createBtn.disabled = true;
+      createBtn.textContent = '⏳ Criando…';
+      if (isMobile) document.body.style.cursor = 'wait';
+      if (labelRow) labelRow.style.display = 'none';
+      try {
+        const { payload, counts } = await _collectFamilyBackupPayload(fid);
+        const famRow = _backupTableRows(payload, 'families')[0] || null;
+        const famName = _familyDisplayName?.(fid, resolved || famRow?.name || '') || resolved || famRow?.name || fid;
+        const row = {
+          family_id: fid,
+          label,
+          created_by: currentUser?.name || currentUser?.email || 'sistema',
+          payload,
+          counts,
+          size_kb: Math.round(JSON.stringify(payload).length / 1024),
+          backup_type: 'manual',
+        };
+        const { error } = await sb.from('app_backups').insert(row);
+        if (error) throw error;
+        toast(`✅ Snapshot "${label}" criado!`, 'success');
+        if (labelInput) labelInput.value = '';
+        await _refreshList();
+      } catch (e) {
+        toast('Erro ao criar snapshot: ' + e.message, 'error');
+      } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = '📸 Criar novo snapshot';
+        if (isMobile) document.body.style.cursor = '';
+      }
+    };
+
+    createBtn?.addEventListener('click', () => {
+      if (isMobile) {
+        // Mobile: mostra input inline (sem prompt nativo)
+        if (labelRow) {
+          labelRow.style.display = labelRow.style.display === 'none' ? 'block' : 'none';
+          if (labelRow.style.display === 'block') {
+            if (labelInput) { labelInput.value = _defaultLabel(); labelInput.focus(); labelInput.select(); }
+          }
+        }
+      } else {
+        // Desktop: prompt nativo rápido
+        const label = prompt('Nome/etiqueta para este snapshot (opcional):', _defaultLabel());
+        if (label === null) return;
+        if (labelInput) labelInput.value = label;
+        _doCreate();
+      }
     });
+
+    confirmBtn?.addEventListener('click', _doCreate);
+    cancelBtn?.addEventListener('click', () => { if (labelRow) labelRow.style.display = 'none'; });
+    labelInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') _doCreate(); });
+
+    // ── Initial load ───────────────────────────────────────────────────────
+    await _refreshList();
+
   } catch (e) {
     toast('Erro ao abrir snapshots da família: ' + e.message, 'error');
   }
@@ -906,7 +1040,7 @@ async function _createDbBackup_legacy_unused(label = '') {
     };
     const { error } = await sb.from('app_backups').insert(row);
     if (error) throw error;
-    toast('✅ Backup criado no banco!', 'success');
+    toast(t('toast.backup_ok'), 'success');
     await loadDbBackups();
   } catch (e) {
     toast('Erro ao criar backup: ' + e.message, 'error');
@@ -979,7 +1113,7 @@ async function downloadDbBackup(id) {
     a.download = `FinTrack_Backup_${data.created_at.slice(0, 10)}_${id.slice(0, 8)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast('Backup baixado!', 'success');
+    toast(t('toast.backup_downloaded'), 'success');
   } catch (e) {
     toast('Erro ao baixar backup: ' + e.message, 'error');
   }
@@ -1034,7 +1168,7 @@ async function deleteDbBackup(id) {
   if (!confirm('Excluir este backup?')) return;
   const { error } = await sb.from('app_backups').delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
-  toast('Backup excluído', 'success');
+  toast(t('toast.backup_deleted'), 'success');
   await loadDbBackups();
 }
 
@@ -1104,7 +1238,7 @@ async function executeClearDatabase() {
     state.accounts = []; state.categories = []; state.payees = []; state.transactions = []; state.budgets = [];
     if (state.scheduled) state.scheduled = [];
     state.txTotal = 0; state.txPage = 0;
-    populateSelects();
+    if(typeof populateSelects==='function') populateSelects();
     if (failed.length > 0) {
       alert('⚠️ Limpeza parcial:\n\n• ' + failed.join('\n• '));
       toast('Limpeza parcial — veja detalhes', 'error');
@@ -1116,5 +1250,17 @@ async function executeClearDatabase() {
     toast('Erro ao limpar: ' + (e?.message || e), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⚠️ Limpar Tudo'; }
+  }
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
   }
 }

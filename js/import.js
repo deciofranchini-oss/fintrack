@@ -1086,7 +1086,7 @@ async function commitImport() {
         else importLogMsg('ok', `✓ Conta "${acc.name}" criada`);
       }
       await loadAccounts();
-      populateSelects();
+      if(typeof populateSelects==='function') populateSelects();
     }
 
     // 2. Create categories

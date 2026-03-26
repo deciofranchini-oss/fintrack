@@ -2,7 +2,8 @@
    FX_RATES.JS — Cache de cotações de moedas estrangeiras → BRL
    ─────────────────────────────────────────────────────────────────────────
    • Cotações armazenadas em app_settings (TTL 4 h) + memória
-   • Fonte: api.frankfurter.app (gratuita, sem chave)
+   • Fonte primária: api.frankfurter.dev/v1 (gratuita, sem chave)
+   • Fallback: api.frankfurter.app (domínio legado)
    • Chamada única por sessão se cache válido; revalidação silenciosa
    ─────────────────────────────────────────────────────────────────────────
    API pública:
@@ -17,7 +18,15 @@
 const _FX_CACHE_KEY   = 'fx_rates_cache';
 const _FX_TS_KEY      = 'fx_rates_ts';
 const _FX_TTL_MIN     = 240;              // 4 horas
-const _FX_API         = 'https://api.frankfurter.app';
+const _FX_BAR_PINNED  = ['USD'];          // sempre exibir USD→BRL na barra
+
+// URL primária (novo domínio oficial) e fallback (legado)
+const _FX_API_PRIMARY  = 'https://api.frankfurter.dev/v1';
+const _FX_API_FALLBACK = 'https://api.frankfurter.app';
+
+// Expõe a URL base para transactions.js e scheduled.js usarem
+// Eles sobrescrevem com FX_API_BASE se já declarado, senão usa a primária
+window.FX_API_BASE = window.FX_API_BASE || _FX_API_PRIMARY;
 
 // Estado em memória
 window._fxRates   = { BRL: 1 };
@@ -89,11 +98,12 @@ async function refreshFxRates() {
 // INTERNOS
 // ─────────────────────────────────────────────────────────────────────────
 function _usedCurrencies() {
-  return [...new Set(
-    (state?.accounts || [])
+  return [...new Set([
+    ..._FX_BAR_PINNED,
+    ...(state?.accounts || [])
       .map(a => (a.currency || 'BRL').toUpperCase())
       .filter(c => c !== 'BRL')
-  )];
+  ])].filter(c => c && c !== 'BRL');
 }
 
 function _fxAgeMin() {
@@ -136,12 +146,28 @@ async function _loadCached() {
 
 async function _fetchOneCurrency(cur) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
+  const timer = setTimeout(() => controller.abort(), 6000);
   try {
-    const res  = await fetch(`${_FX_API}/latest?base=${cur}&symbols=BRL`,
-                              { signal: controller.signal });
+    // Tenta URL primária (frankfurter.dev/v1)
+    let res = null;
+    try {
+      res = await fetch(
+        `${_FX_API_PRIMARY}/latest?base=${cur}&to=BRL`,
+        { signal: controller.signal }
+      );
+    } catch (_) {
+      // Rede falhou na primária — tenta fallback
+    }
+    // Fallback para domínio legado se necessário
+    if (!res || !res.ok) {
+      res = await fetch(
+        `${_FX_API_FALLBACK}/latest?base=${cur}&symbols=BRL`,
+        { signal: controller.signal }
+      );
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    // Ambas as APIs retornam { rates: { BRL: ... } }
     return data?.rates?.BRL || null;
   } catch(e) {
     console.warn(`[FX] ${cur}→BRL falhou:`, e.message);
@@ -181,9 +207,23 @@ function _renderFxBadge() {
   const ratesEl  = document.getElementById('fxBarRates');
   const ageEl    = document.getElementById('fxBarAge');
   const refreshEl= document.getElementById('fxBarRefreshBtn');
+  const familyEl = document.getElementById('fxBarFamily');
+  const familyTextEl = document.getElementById('fxBarFamilyText');
   if (!el) return;
 
-  const pairs = Object.entries(window._fxRates).filter(([c]) => c !== 'BRL');
+  try {
+    const fid = currentUser?.family_id;
+    const familyName = fid
+      ? ((typeof _familyDisplayName === 'function' ? _familyDisplayName(fid, '') : '') || (currentUser?.families || []).find(f => String(f.id) === String(fid))?.name || '')
+      : '';
+    if (familyEl) familyEl.style.display = familyName ? '' : 'none';
+    if (familyTextEl) familyTextEl.textContent = familyName || '';
+  } catch (_) {}
+
+  const wanted = _usedCurrencies();
+  const pairs = wanted
+    .map(c => [c, window._fxRates[c]])
+    .filter(([, rate]) => rate != null);
   if (!pairs.length) { el.style.display = 'none'; return; }
 
   const age    = _fxAgeMin();
@@ -208,5 +248,17 @@ function _renderFxBadge() {
     refreshEl.textContent = stale ? '⚠️' : '🔄';
     refreshEl.title       = stale ? 'Cotações desatualizadas — clique para atualizar' : 'Atualizar cotações';
     refreshEl.classList.toggle('fx-bar-stale', stale);
+  }
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
   }
 }

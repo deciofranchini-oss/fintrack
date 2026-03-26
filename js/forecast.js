@@ -1,3 +1,10 @@
+
+// ── Init / refresh the forecast account multi-picker ─────────────────────────
+function _initForecastPicker(savedIds) {
+  if (typeof _fcPickerBuild !== 'function') return;
+  _fcPickerBuild('forecastAcctPicker', savedIds || [], loadForecast);
+}
+
 let forecastChartInstance = null;
 
 function _destroyForecastChart() {
@@ -10,12 +17,21 @@ function _destroyForecastChart() {
 async function loadForecast() {
   const fromStr = document.getElementById('forecastFrom').value;
   const toStr   = document.getElementById('forecastTo').value;
-  const accFilter = document.getElementById('forecastAccountFilter').value;
+  // Multi-account: get array of selected IDs (empty = all)
+  const accIds = typeof _fcPickerGetSelected === 'function'
+    ? _fcPickerGetSelected('forecastAcctPicker')
+    : [];
   const includeScheduled = document.getElementById('forecastIncludeScheduled').checked;
   if (!fromStr || !toStr) return;
 
+  // Save preference
+  try {
+    const prefs = typeof _dashGetPrefs === 'function' ? _dashGetPrefs() : {};
+    if (typeof _dashSavePrefs === 'function') _dashSavePrefs({ ...prefs, forecastAccounts: accIds }).catch(()=>{});
+  } catch(_) {}
+
   const container = document.getElementById('forecastAccountsContainer');
-  if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.5rem;margin-bottom:8px">⏳</div>Carregando previsão...</div>';
+  if (container) container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.5rem;margin-bottom:8px">⏳</div>${t('fc.loading')}</div>`;
 
   // ── 1. Real transactions in period ──────────────────────────────────────
   let q = famQ(sb.from('transactions')
@@ -23,7 +39,8 @@ async function loadForecast() {
     .gte('date', fromStr)
     .lte('date', toStr)
     .order('date'));
-  if (accFilter) q = q.eq('account_id', accFilter);
+  if (accIds.length === 1) q = q.eq('account_id', accIds[0]);
+  else if (accIds.length > 1) q = q.in('account_id', accIds);
   const { data: txData, error: txErr } = await q;
   if (txErr) { toast(txErr.message, 'error'); return; }
 
@@ -31,8 +48,8 @@ async function loadForecast() {
   let scheduledItems = [];
   if (includeScheduled && state.scheduled.length) {
     // Filter: conta origem OU conta destino bate com o filtro
-    const schToProcess = accFilter
-      ? state.scheduled.filter(s => s.account_id === accFilter || s.transfer_to_account_id === accFilter)
+    const schToProcess = accIds.length
+      ? state.scheduled.filter(s => accIds.includes(s.account_id) || accIds.includes(s.transfer_to_account_id))
       : state.scheduled;
 
     schToProcess.forEach(sc => {
@@ -53,7 +70,7 @@ async function loadForecast() {
         // - expense: saída (negativo)
         // - income: entrada (positivo)
         // - transfer/card_payment: perna de débito (negativo)
-        if (!accFilter || sc.account_id === accFilter) {
+        if (!accIds.length || accIds.includes(sc.account_id)) {
           let originAmount = 0;
           if (isIncome) originAmount = baseAmt;
           else if (isExpense || isTransfer || isCardPayment) originAmount = -baseAmt;
@@ -61,7 +78,7 @@ async function loadForecast() {
           if (originAmount !== 0) {
             scheduledItems.push({
               date,
-              description: sc.description + ' 📅',
+              description: sc.description,
               amount: originAmount,
               currency: sc.currency || sc.accounts?.currency || null,
               account_id: sc.account_id,
@@ -75,12 +92,12 @@ async function loadForecast() {
         }
 
         // Conta destino: apenas transferências/cartão, sempre positivo
-        if ((isTransfer || isCardPayment) && sc.transfer_to_account_id && (!accFilter || sc.transfer_to_account_id === accFilter)) {
+        if ((isTransfer || isCardPayment) && sc.transfer_to_account_id && (!accIds.length || accIds.includes(sc.transfer_to_account_id))) {
           let creditAmt = baseAmt;
           if (sc.fx_mode === 'fixed' && sc.fx_rate > 0) creditAmt = creditAmt * sc.fx_rate;
           scheduledItems.push({
             date,
-            description: sc.description + ' 📅',
+            description: sc.description,
             amount: creditAmt,
             currency: null, // credit leg uses destination account currency
             account_id: sc.transfer_to_account_id,
@@ -101,8 +118,8 @@ async function loadForecast() {
 
   const accountIds = [...new Set(allItems.map(t => t.account_id))].filter(Boolean);
   // Look up accounts from state (has real balance, color, currency, icon)
-  const accounts = accFilter
-    ? state.accounts.filter(a => a.id === accFilter)
+  const accounts = accIds.length
+    ? state.accounts.filter(a => accIds.includes(a.id))
     : state.accounts.filter(a => accountIds.includes(a.id));
 
   if (!accounts.length && !allItems.length) {
@@ -175,13 +192,72 @@ function renderForecastChart(allItems, accounts, fromStr, toStr) {
         legend: { position: 'bottom' },
         tooltip: { callbacks: {
           label: ctx => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`
-        }}
+        }},
+        // Annotation: zero baseline + min/max per dataset
+        annotation: (() => {
+          const annotations = {
+            zeroLine: {
+              type: 'line', yMin: 0, yMax: 0,
+              borderColor: 'rgba(220,38,38,0.55)',
+              borderWidth: 1.5,
+              borderDash: [5, 4],
+              label: { content: 'Zero', enabled: true, position: 'start',
+                       font: { size: 10 }, color: '#dc2626',
+                       backgroundColor: 'rgba(220,38,38,0.08)' }
+            }
+          };
+          datasets.forEach((ds, i) => {
+            const vals = ds.data.map(p => p.y);
+            if (!vals.length) return;
+            const minVal = Math.min(...vals);
+            const maxVal = Math.max(...vals);
+            const minPt  = ds.data.find(p => p.y === minVal);
+            const maxPt  = ds.data.find(p => p.y === maxVal);
+            annotations[`min_${i}`] = {
+              type: 'point', xValue: minPt.x, yValue: minVal,
+              radius: 5, backgroundColor: '#dc2626',
+              borderColor: '#fff', borderWidth: 2
+            };
+            annotations[`max_${i}`] = {
+              type: 'point', xValue: maxPt.x, yValue: maxVal,
+              radius: 5, backgroundColor: '#16a34a',
+              borderColor: '#fff', borderWidth: 2
+            };
+          });
+          return { annotations };
+        })()
       },
       scales: {
         x: { type: 'category', ticks: { maxTicksLimit: 12, color: '#8c8278' }, grid: { color: '#e8e4de44' } },
-        y: { ticks: { callback: v => fmt(v), color: '#8c8278' }, grid: { color: '#e8e4de44' } }
+        y: {
+          ticks: { callback: v => fmt(v), color: '#8c8278' },
+          grid: {
+            color: ctx => ctx.tick.value === 0 ? 'rgba(220,38,38,0.7)' : '#e8e4de44',
+            lineWidth: ctx => ctx.tick.value === 0 ? 2 : 1,
+          }
+        }
       }
-    }
+    },
+    plugins: [{
+      id: 'zeroBaseline',
+      afterDraw(chart) {
+        const yScale = chart.scales.y;
+        if (!yScale) return;
+        const yZero = yScale.getPixelForValue(0);
+        const min = yScale.min, max = yScale.max;
+        if (yZero === undefined || yZero < yScale.top || yZero > yScale.bottom) return;
+        const ctx2 = chart.ctx;
+        ctx2.save();
+        ctx2.beginPath();
+        ctx2.moveTo(chart.chartArea.left, yZero);
+        ctx2.lineTo(chart.chartArea.right, yZero);
+        ctx2.strokeStyle = 'rgba(220,38,38,0.8)';
+        ctx2.lineWidth = 2;
+        ctx2.setLineDash([6, 4]);
+        ctx2.stroke();
+        ctx2.restore();
+      }
+    }]
   });
 }
 
@@ -189,6 +265,26 @@ function renderForecastTables(allItems, accounts) {
   const container = document.getElementById('forecastAccountsContainer');
   if (!container) return;
   const today = new Date().toISOString().slice(0, 10);
+
+function _forecastDateParts(iso){
+  try {
+    const dt = new Date(`${String(iso || '').slice(0,10)}T12:00:00`);
+    if (Number.isNaN(dt.getTime())) return { weekday:'', day:'--', monthYear:'', short:'—' };
+    const locale = document?.documentElement?.lang || 'pt-BR';
+    const weekday = new Intl.DateTimeFormat(locale, { weekday:'short' }).format(dt).replace('.', '').toUpperCase();
+    const day = new Intl.DateTimeFormat(locale, { day:'2-digit' }).format(dt);
+    const month = new Intl.DateTimeFormat(locale, { month:'short' }).format(dt).replace('.', '').toUpperCase();
+    const year = new Intl.DateTimeFormat(locale, { year:'2-digit' }).format(dt);
+    return {
+      weekday,
+      day,
+      monthYear: `${month} · ${year}`,
+      short: `${day}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`
+    };
+  } catch(_e){
+    return { weekday:'', day:'--', monthYear:'', short:'—' };
+  }
+}
 
   if (!accounts.length) {
     container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:2rem;margin-bottom:12px">📅</div><p>Nenhuma transação no período selecionado.</p></div>';
@@ -212,6 +308,7 @@ function renderForecastTables(allItems, accounts) {
       realSum +
       txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
 
+    let currentDateGroup = null;
     const rows = txs.map(t => {
       runningBalance += parseFloat(t.amount) || 0;
       const isPast   = t.date < today;
@@ -220,21 +317,44 @@ function renderForecastTables(allItems, accounts) {
       const isPos    = runningBalance > 0;
       const rowClass = isPast ? 'forecast-row-past' : isToday ? 'forecast-row-today' : '';
       const balClass = isNeg ? 'forecast-row-negative' : '';
-      const dateMeta = t.isScheduled
-        ? `<span class="forecast-date-flag">${t.transferLeg === 'credit' ? 'prog.↑' : t.transferLeg === 'debit' ? 'prog.↓' : 'prog.'}</span>`
-        : '<span class="forecast-date-flag">&nbsp;</span>';
-      const todayMarker = isToday ? '<span class="forecast-date-today">hoje</span>' : '<span class="forecast-date-today">&nbsp;</span>';
-      const categoryLine = `<div class="forecast-line forecast-category">${t.categories?.name ? esc(t.categories.name) : '&nbsp;'}</div>`;
-      const payeeLine = `<div class="forecast-line forecast-payee">${t.payees?.name ? esc(t.payees.name) : '&nbsp;'}</div>`;
-      return `<tr class="${rowClass} ${balClass} forecast-tx-row">
+      const _catIcon = t.categories?.icon || null;
+      const _catColor = t.categories?.color || 'var(--accent)';
+      const todayMarker = isToday ? '<span class="forecast-date-today">Hoje</span>' : '';
+      const dateParts = _forecastDateParts(t.date);
+      const groupHeader = currentDateGroup !== t.date
+        ? (() => {
+            currentDateGroup = t.date;
+            return `<tr class="forecast-date-group-row ${isToday ? 'forecast-date-group-row--today' : ''}">
+              <td colspan="3">
+                <div class="forecast-date-group-pill">
+                  <div class="forecast-date-group-copy">
+                    <span class="forecast-date-group-main">${dateParts.weekday}</span>
+                    <span class="forecast-date-group-sub">${dateParts.short}</span>
+                  </div>
+                  ${todayMarker}
+                </div>
+              </td>
+            </tr>`;
+          })()
+        : '';
+      const _catName  = t.categories?.name ? esc(t.categories.name) : null;
+      const _catLine  = _catName
+        ? `<div class="forecast-line forecast-category" style="color:${_catColor}"><span class="forecast-cat-dot" style="background:${_catColor}"></span>${_catIcon ? _catIcon + ' ' : ''}${_catName}</div>`
+        : '';
+      const payeeLine = t.payees?.name
+        ? `<div class="forecast-line forecast-payee">${esc(t.payees.name)}</div>`
+        : '';
+      return `${groupHeader}<tr class="${rowClass} ${balClass} forecast-tx-row">
         <td class="forecast-date-cell ${isToday ? 'forecast-date-cell--today' : ''}">
-          <div class="forecast-date-main">${fmtDate(t.date)}</div>
-          ${dateMeta}
-          ${todayMarker}
+          <div class="forecast-date-card forecast-date-card--compact" aria-label="${dateParts.short}">
+            <div class="forecast-date-weekday">${dateParts.weekday}</div>
+            <div class="forecast-date-daynum">${dateParts.day}</div>
+            <div class="forecast-date-monthyear">${dateParts.monthYear}</div>
+          </div>
         </td>
         <td class="forecast-desc-cell">
           <div class="forecast-line forecast-title">${esc(t.description||'')}</div>
-          ${categoryLine}
+          ${_catLine}
           ${payeeLine}
         </td>
         <td class="forecast-amount-cell ${(parseFloat(t.amount)||0)>=0?'amount-pos':'amount-neg'}">
@@ -256,35 +376,46 @@ function renderForecastTables(allItems, accounts) {
         <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:${accentColor}22;flex-shrink:0">${renderIconEl(a.icon, a.color, 22)}</div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:.95rem">${esc(a.name)}</div>
-          <div style="font-size:.75rem;color:var(--muted)">Saldo atual: <strong>${fmt(a.balance || 0, a.currency)}</strong> · ${txs.length} transação${txs.length !== 1 ? 'ões' : ''} no período</div>
+          <div style="font-size:.75rem;color:var(--muted)">${t("fc.current_balance")} <strong>${fmt(a.balance || 0, a.currency)}</strong> · ${txs.length} ${txs.length !== 1 ? t("fc.txs_in_period_pl") : t("fc.txs_in_period")}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:var(--font-serif);font-weight:700;font-size:1rem;color:${finalBalance >= 0 ? 'var(--green,#16a34a)' : 'var(--red)'}">${fmt(finalBalance, a.currency)}</div>
-          <div style="font-size:.68rem;color:var(--muted)">saldo final prev.</div>
+          <div style="font-size:.68rem;color:var(--muted)">${t("fc.final_balance")}</div>
         </div>
         <span id="forecastToggle-${a.id}" style="color:var(--muted);font-size:.75rem;margin-left:8px">▼</span>
       </div>
       <div class="forecast-table-wrap" id="forecastBody-${a.id}">
         ${txs.length ? `
         <div class="table-wrap" style="margin:0">
-          <table>
-            <thead><tr><th style="width:68px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+          <table class="resizable-table forecast-grid-table" id="forecastTable-${a.id}">
+            <colgroup>
+              <col class="forecast-col-date">
+              <col class="forecast-col-desc">
+              <col class="forecast-col-amount">
+            </colgroup>
+            <thead><tr>
+              <th class="forecast-head-date">${t("fc.date")}</th>
+              <th class="forecast-head-desc">${t("fc.description")}</th>
+              <th class="forecast-head-amount">${t("fc.amount")}</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
             <tfoot>
               <tr style="background:var(--surface2);font-weight:600">
-                <td colspan="2" style="padding:7px 8px;font-size:.78rem">Total do período</td>
+                <td colspan="2" style="padding:7px 8px;font-size:.78rem">${t("fc.period_total")}</td>
                 <td class="${periodSum>=0?'amount-pos':'amount-neg'}" style="text-align:right;padding:7px 8px">${periodSum>=0?'+':''}${fmt(periodSum,a.currency)}</td>
               </tr>
               <tr style="background:color-mix(in srgb,${accentColor} 8%,var(--surface));border-top:2px solid ${accentColor}40">
-                <td colspan="2" style="padding:7px 8px;font-size:.78rem;color:var(--muted);font-weight:600">Saldo final previsto</td>
+                <td colspan="2" style="padding:7px 8px;font-size:.78rem;color:var(--muted);font-weight:600">${t("fc.final_balance")}</td>
                 <td class="${finalBalance<0?'amount-neg':''}" style="text-align:right;padding:7px 8px;font-weight:800;font-size:.95rem;font-family:var(--font-serif)">${fmt(finalBalance,a.currency)}</td>
               </tr>
             </tfoot>
           </table>
-        </div>` : '<div style="padding:20px;text-align:center;color:var(--muted);font-size:.85rem">Nenhuma transação neste período</div>'}
+        </div>` : `<div style="padding:20px;text-align:center;color:var(--muted);font-size:.85rem">${t('fc.empty')}</div>`}
       </div>
     </div>`;
   }).join('');
+  // Init resizable columns
+  setTimeout(() => { if (typeof initAllResizableTables === 'function') initAllResizableTables(); }, 50);
 }
 
 function toggleForecastSection(id) {
@@ -294,4 +425,16 @@ function toggleForecastSection(id) {
   const isOpen = body.style.display !== 'none';
   body.style.display = isOpen ? 'none' : '';
   if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

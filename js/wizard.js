@@ -761,7 +761,7 @@ async function _wzRunSetup() {
     await saveAppSetting('wizard_dismissed', true).catch(()=>{});
 
     // Reload data in background
-    DB.preload().then(() => { populateSelects(); }).catch(()=>{});
+    DB.preload().then(() => { if(typeof populateSelects==='function') populateSelects(); }).catch(()=>{});
 
     document.getElementById('wzDoneBtn').style.display = '';
     const sub = document.getElementById('wzSubtitle');

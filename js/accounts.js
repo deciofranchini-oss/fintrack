@@ -8,6 +8,101 @@ async function recalcAccountBalances() {
 }
 
 let _accountsViewMode='';
+// ── Consolidar Saldo da Conta ──────────────────────────────────────────────
+function openConsolidateModal(accountId) {
+  const a = (state.accounts || []).find(x => x.id === accountId);
+  if (!a) { toast(t('account.not_found'), 'error'); return; }
+  document.getElementById('consolidateAccountId').value = accountId;
+  document.getElementById('consolidateAccountName').textContent = a.name;
+  const cur = a.currency || 'BRL';
+  document.getElementById('consolidateCurrencyBadge').textContent = cur;
+  const balEl = document.getElementById('consolidateCurrentBalance');
+  balEl.textContent = fmt(a.balance, cur);
+  balEl.style.color = a.balance >= 0 ? 'var(--accent)' : 'var(--red)';
+  setAmtField('consolidateAmount', 0);
+  document.getElementById('consolidateDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('consolidateDesc').value = 'Consolidação de saldo';
+  document.getElementById('consolidatePreview').style.display = 'none';
+  document.getElementById('consolidateError').style.display = 'none';
+  // Reset sign state to positive
+  if (typeof _amtSignState !== 'undefined') _amtSignState['consolidateAmount'] = false;
+  const signBtn = document.getElementById('consolidateAmountSignBtn');
+  if (signBtn) { signBtn.textContent = '+'; signBtn.classList.remove('negative'); signBtn.classList.add('positive'); }
+  openModal('consolidateModal');
+  // Bind the same decimal money mask used in tx/sched modals
+  setTimeout(() => {
+    const amtEl = document.getElementById('consolidateAmount');
+    if (amtEl && typeof bindMoneyInput === 'function') {
+      amtEl._moneyBound = false; // force rebind in case of re-open
+      bindMoneyInput(amtEl);
+      amtEl.value = '0,00';
+    }
+  }, 60);
+}
+
+// ── Decimal auto-format for consolidate amount — handled by bindMoneyInput ──
+// (see ui_helpers.js — consolidateAmount is in the initMoneyInputs list)
+
+function _updateConsolidatePreview() {
+  const accId = document.getElementById('consolidateAccountId')?.value;
+  const a = (state.accounts||[]).find(x => x.id === accId);
+  if (!a) return;
+  const cur = a.currency || 'BRL';
+  const target = getAmtField('consolidateAmount');
+  const current = parseFloat(a.balance) || 0;
+  const diff = target - current;
+  const preview = document.getElementById('consolidatePreview');
+  if (!preview) return;
+  if (Math.abs(diff) < 0.005) {
+    preview.style.display = '';
+    preview.innerHTML = '<span style="color:var(--muted)">✓ Sem diferença — nenhum ajuste necessário.</span>';
+    return;
+  }
+  const isPos = diff > 0;
+  preview.style.display = '';
+  preview.style.borderColor = isPos ? 'var(--green,#16a34a)' : 'var(--red)';
+  preview.innerHTML = `<strong style="color:${isPos?'var(--green,#16a34a)':'var(--red)'}">${isPos?'+':''}${fmt(diff,cur)} de ajuste</strong><br><span style="font-size:.78rem;color:var(--muted)">Atual: ${fmt(current,cur)} → Novo: ${fmt(target,cur)}</span>`;
+}
+
+async function saveConsolidation() {
+  const accId = document.getElementById('consolidateAccountId')?.value;
+  const a = (state.accounts||[]).find(x => x.id === accId);
+  if (!a) return;
+  const cur = a.currency || 'BRL';
+  const target = getAmtField('consolidateAmount');
+  const current = parseFloat(a.balance) || 0;
+  const diff = +(target - current).toFixed(10);
+  const errEl = document.getElementById('consolidateError');
+  errEl.style.display = 'none';
+  if (Math.abs(diff) < 0.005) { toast(t('toast.no_diff'), 'info'); closeModal('consolidateModal'); return; }
+  const date = document.getElementById('consolidateDate')?.value || new Date().toISOString().slice(0,10);
+  const desc = document.getElementById('consolidateDesc')?.value?.trim() || 'Consolidação de saldo';
+  const btn = document.getElementById('consolidateSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+  try {
+    const { error } = await sb.from('transactions').insert({
+      account_id: accId, date, amount: diff, currency: cur,
+      brl_amount: cur === 'BRL' ? diff : null,
+      description: desc, status: 'confirmed',
+      is_transfer: false, family_id: famId(),
+    });
+    if (error) throw error;
+    DB.accounts.bust();
+    try { await recalcAccountBalances(); } catch(_) {}
+    toast(`✓ Ajuste de ${fmt(diff,cur)} criado!`, 'success');
+    closeModal('consolidateModal');
+    if (state.currentPage === 'accounts') renderAccounts();
+    if (state.currentPage === 'transactions') loadTransactions();
+    if (state.currentPage === 'dashboard') loadDashboard();
+  } catch(e) {
+    errEl.textContent = 'Erro: ' + e.message;
+    errEl.style.display = '';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚖️ Criar Ajuste'; }
+  }
+}
+
+
 function renderAccounts(ft=''){
   _accountsViewMode=ft;
   const grid=document.getElementById('accountGrid');
@@ -47,7 +142,7 @@ function _syncAccountsTab(ft) {
 
 
 function renderAccountsFlat(accs,grid){
-  if(!accs.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">🏦</div><p>Nenhuma conta encontrada</p></div>';return;}
+  if(!accs.length){grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">🏦</div><p>${t('acct.empty')}</p></div>`;return;}
   // Favoritas no topo (Feature 7)
   const sorted = [...accs].sort((a,b)=>(b.is_favorite?1:0)-(a.is_favorite?1:0));
   grid.innerHTML=sorted.map(a=>accountCardHTML(a)).join('');
@@ -108,7 +203,7 @@ function renderAccountsGrouped(accs,grid){
          style="--grp-color:var(--muted)">
       <span class="account-group-badge" style="background:var(--bg2)">📂</span>
       <div style="flex:1;min-width:0">
-        <span class="account-group-title">Sem grupo</span>
+        <span class="account-group-title">${t('acct.no_group')}</span>
         <span class="account-group-count" style="margin-left:8px">${ungrouped.length} conta${ungrouped.length!==1?'s':''}</span>
       </div>
       <span class="account-group-chevron ${_collapsed['__none__']?'':'expanded'}">▾</span>
@@ -137,7 +232,7 @@ function renderAccountsSummary(){
   const total=accs.reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
   const pos=accs.filter(a=>a.balance>=0).reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
   const neg=accs.filter(a=>a.balance<0).reduce((s,a)=>s+toBRL(parseFloat(a.balance)||0,a.currency||'BRL'),0);
-  el.innerHTML=`<span class="summary-label">Total:</span><span class="summary-value ${total<0?'text-red':'text-accent'}">${fmt(total)}</span>${pos?`<span class="summary-sep">·</span><span class="summary-pos">+${fmt(pos)}</span>`:''}${neg?`<span class="summary-sep">·</span><span class="summary-neg">${fmt(neg)}</span>`:''}`;
+  el.innerHTML=`<span class="summary-label">${t('acct.total')}</span><span class="summary-value ${total<0?'text-red':'text-accent'}">${fmt(total)}</span>${pos?`<span class="summary-sep">·</span><span class="summary-pos">+${fmt(pos)}</span>`:''}${neg?`<span class="summary-sep">·</span><span class="summary-neg">${fmt(neg)}</span>`:''}`;
 }
 
 function accountCardHTML(a){
@@ -147,7 +242,7 @@ function accountCardHTML(a){
   return `<div class="account-card" onclick="goToAccountTransactions('${a.id}')" style="position:relative">
     ${favStar}
     <div class="account-card-stripe" style="background:${a.color||'var(--accent)'}"></div>
-    <div class="account-actions"><button class="btn-icon" onclick="event.stopPropagation();openAccountModal('${a.id}')">✏️</button><button class="btn-icon" onclick="event.stopPropagation();deleteAccount('${a.id}')">🗑️</button></div>
+    <div class="account-actions"><button class="btn-icon" title="Consolidar saldo" onclick="event.stopPropagation();openConsolidateModal('${a.id}')">⚖️</button><button class="btn-icon" onclick="event.stopPropagation();openAccountModal('${a.id}')">✏️</button><button class="btn-icon" onclick="event.stopPropagation();deleteAccount('${a.id}')">🗑️</button></div>
     <div class="account-icon" style="font-size:1.6rem;margin-bottom:8px">${renderIconEl(a.icon,a.color,36)}</div>
     <div class="account-name">${esc(a.name)}</div>
     <div class="account-type">${accountTypeLabel(a.type)}</div>
@@ -244,7 +339,7 @@ async function saveAccount(){
     due_day: isCC&&ddEl&&ddEl.value ? (parseInt(ddEl.value)||null) : null,
     updated_at:new Date().toISOString()
   };
-  if(!data.name){toast('Informe o nome da conta','error');return;}
+  if(!data.name){toast(t('toast.err_account_name'),'error');return;}
   if(!id) data.family_id=famId();
   let err;
   if(id){({error:err}=await sb.from('accounts').update(data).eq('id',id));}
@@ -253,7 +348,7 @@ async function saveAccount(){
   toast(id?'Conta atualizada!':'Conta criada!','success');
   closeModal('accountModal');
   await loadAccounts();
-  populateSelects();
+  if(typeof populateSelects==='function') populateSelects();
   if(state.currentPage==='accounts')renderAccounts(_accountsViewMode);
   if(state.currentPage==='dashboard')loadDashboard();
 }
@@ -475,7 +570,7 @@ async function confirmDeleteAccount() {
         sb.from('scheduled_transactions').delete()
       ).eq('transfer_to_account_id', _delAccId);
 
-      toast('✓ Todos os registros excluídos', 'success');
+      toast(t('toast.all_deleted'), 'success');
     }
 
     // ── Finally: deactivate the account ─────────────────────────────
@@ -484,11 +579,11 @@ async function confirmDeleteAccount() {
     if (deactErr) throw new Error('Erro ao desativar conta: ' + deactErr.message);
 
     closeModal('deleteAccountModal');
-    toast('✓ Conta excluída com sucesso', 'success');
+    toast(t('account.deleted'), 'success');
     _delAccId = null;
 
     await loadAccounts();
-    populateSelects();
+    if(typeof populateSelects==='function') populateSelects();
     renderAccounts(_accountsViewMode);
     if (state.currentPage === 'transactions') loadTransactions();
 
@@ -543,7 +638,7 @@ async function deleteGroup(id){
   await sb.from('accounts').update({group_id:null}).eq('group_id',id);
   const{error}=await sb.from('account_groups').delete().eq('id',id);
   if(error){toast(error.message,'error');return;}
-  toast('Grupo removido','success');
+  toast(t('toast.group_removed'),'success');
   await loadGroups();
   renderGroupManager();
   await loadAccounts();
@@ -591,13 +686,13 @@ async function saveGroup(){
     currency:currEl?currEl.value:'BRL',
     updated_at:new Date().toISOString()
   };
-  if(!data.name){toast('Informe o nome do grupo','error');return;}
+  if(!data.name){toast(t('toast.err_group_name'),'error');return;}
   if(!id)data.family_id=famId();
   let err;
   if(id){({error:err}=await sb.from('account_groups').update(data).eq('id',id));}
   else{({error:err}=await sb.from('account_groups').insert(data));}
   if(err){toast(err.message,'error');return;}
-  toast('Grupo salvo!','success');
+  toast(t('toast.group_saved'),'success');
   cancelGroupEdit();
   await loadGroups();
   renderGroupManager();
@@ -637,4 +732,16 @@ function initAccountsPage() {
   const hasFav = (state.accounts || []).some(a => a.is_favorite);
   const mode = hasFav ? '__fav__' : (_accountsViewMode || '');
   renderAccounts(mode);
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

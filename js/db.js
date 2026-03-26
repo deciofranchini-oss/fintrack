@@ -197,6 +197,15 @@ const _transactions = {
       else if (filter.type === 'card_payment') q = q.eq('is_card_payment', true);
       if (filter.status === 'pending')         q = q.eq('status', 'pending');
       else if (filter.status === 'confirmed')  q = q.eq('status', 'confirmed');
+      // Reconciliation filter
+      if (filter.reconciled === 'done')        q = q.eq('is_reconciled', true);
+      else if (filter.reconciled === 'pending') q = q.or('is_reconciled.is.null,is_reconciled.eq.false');
+      // Category filter: includes selected category and all its children
+      if (filter.categoryId) {
+        const catIds = _resolveCategoryIds(filter.categoryId);
+        if (catIds.length === 1) q = q.eq('category_id', catIds[0]);
+        else                     q = q.in('category_id', catIds);
+      }
       // Member filter: array of selected member IDs
       if (filter.memberIds && filter.memberIds.length > 0) {
         // Match transactions where any of the selected members appears
@@ -260,8 +269,30 @@ const _dashboard = {
         if (brl > 0) income += brl; else expense += Math.abs(brl);
       });
 
-      const total = state.accounts.reduce((s, a) =>
-        s + toBRL(parseFloat(a.balance) || 0, a.currency || 'BRL'), 0);
+      // Patrimônio Total:
+      //   + saldo de cada conta (cartão de crédito já entra negativo)
+      //   + para contas de investimento: usa _totalPortfolioBalance (inclui market value das posições)
+      //   - dívidas ativas (current_balance convertido em BRL)
+      const accountTotal = state.accounts.reduce((s, a) => {
+        const bal = (a.type === 'investimento' && a._totalPortfolioBalance != null)
+          ? a._totalPortfolioBalance
+          : (parseFloat(a.balance) || 0);
+        return s + toBRL(bal, a.currency || 'BRL');
+      }, 0);
+
+      // Subtrair dívidas ativas (se módulo habilitado)
+      let debtTotal = 0;
+      try {
+        const { data: debtsData } = await Promise.resolve(
+          famQ(sb.from('debts').select('current_balance,original_amount,currency').eq('status', 'active'))
+        ).catch(() => ({ data: [] }));
+        if (debtsData?.length) {
+          debtTotal = debtsData.reduce((s, d) =>
+            s + toBRL(parseFloat(d.current_balance ?? d.original_amount) || 0, d.currency || 'BRL'), 0);
+        }
+      } catch (_) { /* tabela não existe — módulo desabilitado */ }
+
+      const total = accountTotal - debtTotal;
 
       return { income, expense, total, pendingCount: pendRes.count || 0 };
     });
@@ -369,6 +400,40 @@ const _prices = {
         if (error) throw new Error('price_history insert: ' + error.message);
       }
 
+      // 5. Refresh stats (avg_price, last_price, record_count) for every affected item
+      //    These are denormalised columns on price_items used by the list UI.
+      //    We recalculate them here so they are always consistent after any insert.
+      const affectedIds = [...new Set(historyRows.map(r => r.item_id).filter(Boolean))];
+      if (affectedIds.length) {
+        // Fetch all history for affected items in one query (cheaper than N queries)
+        const { data: hist } = await sb.from('price_history')
+          .select('item_id, unit_price, purchased_at')
+          .in('item_id', affectedIds)
+          .order('purchased_at', { ascending: false });
+
+        const byItem = {};
+        (hist || []).forEach(r => {
+          if (!byItem[r.item_id]) byItem[r.item_id] = [];
+          byItem[r.item_id].push(r.unit_price);
+        });
+
+        await Promise.all(affectedIds.map(id => {
+          const prices = (byItem[id] || []).filter(v => v != null);
+          if (!prices.length) {
+            return sb.from('price_items')
+              .update({ avg_price: null, last_price: null, record_count: 0 })
+              .eq('id', id);
+          }
+          const avg  = prices.reduce((a, b) => a + b, 0) / prices.length;
+          const last = prices[0]; // already sorted DESC by purchased_at
+          return sb.from('price_items').update({
+            avg_price:    Math.round(avg  * 100) / 100,
+            last_price:   last,
+            record_count: prices.length,
+          }).eq('id', id);
+        }));
+      }
+
       return { saved: historyRows.length };
     });
   },
@@ -403,3 +468,16 @@ window.DB = {
   preload:      dbPreload,
   bustAll:      dbBustAll,
 };
+
+// Resolve a category ID to itself + all descendant IDs (for hierarchical filter)
+function _resolveCategoryIds(rootId) {
+  const all = state.categories || [];
+  const result = [];
+  const queue = [rootId];
+  while (queue.length) {
+    const id = queue.shift();
+    result.push(id);
+    all.filter(c => c.parent_id === id).forEach(c => queue.push(c.id));
+  }
+  return result;
+}

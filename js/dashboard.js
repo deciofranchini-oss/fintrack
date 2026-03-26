@@ -10,6 +10,31 @@ function toggleDashGroup(key) {
 }
 
 // Dashboard formatter: no decimals (0 casas) for quick glance
+
+function _dashRenderIcon(iconKey, color, size){
+  try {
+    if (typeof renderIconEl === 'function') return renderIconEl(iconKey, color, size);
+  } catch(_) {}
+  return `<span style="font-size:${size || 18}px">🏦</span>`;
+}
+
+function _dashRenderChart(id, type, labels, datasets, extraOptions={}) {
+  if (typeof renderChart === 'function') return renderChart(id, type, labels, datasets, extraOptions);
+  const canvas = document.getElementById(id);
+  const ctx = canvas?.getContext?.('2d');
+  if (!ctx || typeof Chart === 'undefined') return null;
+  state.chartInstances = state.chartInstances || {};
+  if (state.chartInstances[id]) {
+    try { state.chartInstances[id].destroy(); } catch(_) {}
+  }
+  state.chartInstances[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: Object.assign({ responsive:true, maintainAspectRatio:true }, extraOptions || {})
+  });
+  return state.chartInstances[id];
+}
+
 function dashFmt(value, currency='BRL'){
   if (state?.privacyMode) return '••••••';
   const v = Number(value) || 0;
@@ -37,7 +62,7 @@ async function loadDashboardRecent(memberIds = null){
   const qFiltered = _applyDashMemberFilter(q, memberIds);
   if (qFiltered === null) {
     const body = document.getElementById('recentTxBody');
-    if (body) body.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Nenhuma transação para este filtro</td></tr>';
+    if (body) body.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">${t('dash.empty_tx')}</td></tr>`;
     return;
   }
   q = qFiltered;
@@ -50,7 +75,7 @@ async function loadDashboardRecent(memberIds = null){
 
   const items = recent || [];
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Sem transações</td></tr>';
+    body.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">${t('dash.empty_tx')}</td></tr>`;
     return;
   }
 
@@ -160,6 +185,18 @@ function _openDashMonthTx(type, memberIds) {
   navigate('transactions');
 }
 async function loadDashboard(){
+  // Atualizar nome da família ativa no topo do dashboard
+  try {
+    const famNameEl = document.getElementById('dashFamilyNameText');
+    if (famNameEl) {
+      const fid = currentUser?.family_id;
+      const name = (typeof _familyDisplayName === 'function' && fid)
+        ? _familyDisplayName(fid, '')
+        : (currentUser?.families?.[0]?.name || '');
+      famNameEl.textContent = name || '—';
+    }
+  } catch(_e) {}
+
   // Aplicar prefs de customização imediatamente (evita flash de cards ocultos)
   try { _dashApplyPrefs(_dashGetPrefs()); } catch(_e) {}
   // Sincronizar prefs do servidor em background
@@ -243,12 +280,14 @@ async function loadDashboard(){
   await loadDashboardRecent(_dashMemberIds);
   if (typeof renderDashboardUpcoming === 'function') await renderDashboardUpcoming(_dashMemberIds);
   if(typeof _renderDashFavCategories==='function') await _renderDashFavCategories(income, expense);
+  _renderDashForecast().catch(()=>{});
   await loadDashboardAutoRunSummary();
 
   // Render account balances grouped by account group
   (function renderAccountBalances() {
     const el = document.getElementById('accountBalancesList');
-    const accs = state.accounts;
+    if (!el) { console.warn('[dashboard] accountBalancesList not found'); return; }
+    const accs = Array.isArray(state.accounts) ? state.accounts : [];
     const groups = state.groups || [];
     const favs = accs.filter(a => a.is_favorite);
 
@@ -267,7 +306,7 @@ async function loadDashboard(){
         return `<div class="dash-fav-card" onclick="goToAccountTransactions('${a.id}')"
           style="--card-clr:${_cardColor}">
           <div class="dash-fav-card__top">
-            <div class="dash-fav-card__icon">${renderIconEl(a.icon,a.color,20)}</div>
+            <div class="dash-fav-card__icon">${_dashRenderIcon(a.icon,a.color,20)}</div>
             <span class="dash-fav-card__type">${esc(_typeLabel)}</span>
           </div>
           <div class="dash-fav-card__name">${esc(a.name)}</div>
@@ -278,7 +317,7 @@ async function loadDashboard(){
       }
       // Standard row for non-favorites
       return `<div onclick="goToAccountTransactions('${a.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:4px;margin:0 -4px;padding-left:4px;padding-right:4px" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-        <div style="display:flex;align-items:center;gap:9px">${renderIconEl(a.icon,a.color,18)}<span style="font-size:.83rem;color:var(--text2)">${esc(a.name)}</span></div>
+        <div style="display:flex;align-items:center;gap:9px">${_dashRenderIcon(a.icon,a.color,18)}<span style="font-size:.83rem;color:var(--text2)">${esc(a.name)}</span></div>
         <span class="${a.balance<0?'text-red':'text-accent'}" style="font-size:.83rem;font-weight:500">${fmt(a.balance,a.currency)}</span>
       </div>`;
     };
@@ -369,22 +408,24 @@ async function loadDashboard(){
   if (typeof refreshAllFamilyMemberSelects === 'function') {
     refreshAllFamilyMemberSelects();
   } else {
-    const dashMemSel = document.getElementById('dashMemberFilter');
-    if (dashMemSel && typeof populateFamilyMemberSelect === 'function') {
-      populateFamilyMemberSelect('dashMemberFilter', { placeholder: 'Família (todos)' });
-      dashMemSel.style.display = dashMemSel.options.length > 1 ? '' : 'none';
-    }
+    // member filter removed
   }
 
-  await Promise.all([renderCashflowChart(_dashMemberIds),renderCategoryChart()]);
+  // Render charts independently — failure in one must not block the other
+  await Promise.all([
+    renderCashflowChart(_dashMemberIds).catch(e => console.warn('[dashboard] cashflow:', e?.message)),
+    renderCategoryChart().catch(e => console.warn('[dashboard] categoryChart:', e?.message)),
+  ]);
 }
 async function renderCashflowChart(memberIds = null){
   // Populate account filter (refresh every time dashboard loads)
   const sel = document.getElementById('cashflowAccountFilter');
   if(sel) {
     const curVal = sel.value;
-    sel.innerHTML = '<option value="">Todas as contas</option>' +
-      state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+    sel.innerHTML = `<option value="">${t('dash.all_accounts')}</option>` +
+      (typeof _accountOptions === 'function'
+        ? _accountOptions(state.accounts, null)
+        : state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join(''));
     if(curVal) sel.value = curVal; // restore selection
   }
   const accId = sel ? sel.value : '';
@@ -396,7 +437,7 @@ async function renderCashflowChart(memberIds = null){
   const balances = cashRows.map(r => r.balance);
   labels.length = 0;
   cashRows.forEach(r => labels.push(r.label));
-  renderChart('cashflowChart','bar',labels,[
+  _dashRenderChart('cashflowChart','bar',labels,[
     {label:'Receitas',data:incomes,backgroundColor:'rgba(42,122,74,.8)',borderRadius:6,borderSkipped:false,order:2},
     {label:'Despesas',data:expenses,backgroundColor:'rgba(192,57,43,.75)',borderRadius:6,borderSkipped:false,order:2},
     {label:'Saldo',data:balances,type:'line',borderColor:'#1e5ba8',backgroundColor:'rgba(30,91,168,.12)',borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#1e5ba8',fill:true,tension:0.35,order:1},
@@ -457,37 +498,42 @@ function _catColor(color, idx, usedSet) {
 
 async function renderCategoryChart(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const memberId  = document.getElementById('dashMemberFilter')?.value || '';
-  const relGroup  = document.getElementById('dashRelGroup')?.value || '';
+  const _txSelect = 'id,date,description,amount,brl_amount,currency,account_id,category_id,categories(id,name,color),payees(name),accounts!transactions_account_id_fkey(name)';
+  const _dateGte = `${y}-${m}-01`, _dateLte = `${y}-${m}-31`;
 
-  // Resolve member IDs from relationship group filter
-  let memberIds = null;
-  if (relGroup && typeof getMemberIdsByRelGroup === 'function') {
-    memberIds = getMemberIdsByRelGroup(relGroup);
+  // Build expense query (amount < 0)
+  const qExp = famQ(sb.from('transactions').select(_txSelect))
+    .gte('date',_dateGte).lte('date',_dateLte).lt('amount',0).not('category_id','is',null);
+  // Build income query (amount > 0)
+  const qInc = famQ(sb.from('transactions').select(_txSelect))
+    .gte('date',_dateGte).lte('date',_dateLte).gt('amount',0).not('category_id','is',null);
+
+  const [{data}, {data: dataInc}] = await Promise.all([qExp, qInc]);
+
+  // Build parent lookup from state.categories (already loaded, has parent_id)
+  const allCats = state.categories || [];
+  const catById = Object.fromEntries(allCats.map(c => [c.id, c]));
+  function _getRootCat(tx) {
+    // Start from the category_id on the transaction (not the join, to avoid nested FK issues)
+    const startId = tx.category_id;
+    if (!startId) return { name: 'Outros', color: '', id: null };
+    let cur = catById[startId];
+    if (!cur) {
+      // Fallback: use join data if state doesn't have it yet
+      return { name: tx.categories?.name || 'Outros', color: tx.categories?.color || '', id: startId };
+    }
+    while (cur.parent_id && catById[cur.parent_id]) {
+      cur = catById[cur.parent_id];
+    }
+    return { name: cur.name, color: cur.color || '', id: cur.id };
   }
-  if (memberId) memberIds = [memberId]; // specific member overrides group
-
-  let q = famQ(
-    sb.from('transactions')
-      .select('id,date,description,amount,brl_amount,currency,account_id,categories(name,color),payees(name),accounts!transactions_account_id_fkey(name)')
-  ).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`).lt('amount',0).not('category_id','is',null);
-
-  if (memberIds && memberIds.length > 0) {
-    q = q.in('family_member_id', memberIds);
-  } else if (memberIds && memberIds.length === 0) {
-    // Group exists but has no members — return empty
-    const catChartEl = document.getElementById('catChartCard');
-    if (catChartEl) catChartEl.style.display = 'none';
-    return;
-  }
-
-  const{data}=await q;
 
   const catMap={};
   (data||[]).forEach(t=>{
-    const n=t.categories?.name||'Outros';
-    const rawColor=t.categories?.color||'';
-    if(!catMap[n]) catMap[n]={rawColor, txs:[], total:0};
+    const root = _getRootCat(t);
+    const n = root.name;
+    const rawColor = root.color;
+    if(!catMap[n]) catMap[n]={rawColor, txs:[], total:0, rootId: root.id};
     const brl = t.brl_amount != null ? Math.abs(t.brl_amount) : toBRL(Math.abs(t.amount), t.currency||'BRL');
     catMap[n].total+=brl;
     catMap[n].txs.push({...t, _brl: brl});
@@ -502,38 +548,52 @@ async function renderCategoryChart(){
       total: v.total,
       color: _catColor(v.rawColor, i, _usedColors),
       txs: v.txs.sort((a,b)=>b._brl-a._brl),
+      rootId: v.rootId,
     }));
+
+  // Build income category entries (same logic, positive amounts)
+  const incMap = {};
+  (dataInc||[]).forEach(t => {
+    const root = _getRootCat(t);
+    const n = root.name, rawColor = root.color;
+    if (!incMap[n]) incMap[n] = {rawColor, txs:[], total:0, rootId:root.id};
+    const brl = t.brl_amount != null ? Math.abs(t.brl_amount) : toBRL(Math.abs(t.amount), t.currency||'BRL');
+    incMap[n].total += brl;
+    incMap[n].txs.push({...t, _brl:brl});
+  });
+  const _incColors = new Set();
+  window._catChartIncEntries = Object.entries(incMap)
+    .sort((a,b)=>b[1].total-a[1].total).slice(0,8)
+    .map(([name,v],i)=>({ name, total:v.total, color:_catColor(v.rawColor,i,_incColors), txs:v.txs.sort((a,b)=>b._brl-a._brl), rootId:v.rootId }));
+
+  // Cache both for mode toggle
+  window._catChartExpEntriesRaw = [..._catChartEntries];
+  window._catChartIncEntriesRaw = [...(window._catChartIncEntries||[])];
 
   if(!_catChartEntries.length){
     const el=document.getElementById('categoryChart');
-    if(el){const ctx=el.getContext('2d');ctx.clearRect(0,0,el.width,el.height);ctx.fillStyle='#8c8278';ctx.textAlign='center';ctx.font='13px Outfit';ctx.fillText('Sem despesas no mês',el.width/2,el.height/2);}
-    return;
+    if(el){const ctx=el.getContext('2d');ctx.clearRect(0,0,el.width,el.height);ctx.fillStyle='#8c8278';ctx.textAlign='center';ctx.font='13px Outfit';ctx.fillText(t('dash.empty_tx'),el.width/2,el.height/2);}
   }
 
   closeCatDetail(); // reset any open detail
 
-  renderChart('categoryChart','doughnut',
-    _catChartEntries.map(e=>e.name),
-    [{
-      data: _catChartEntries.map(e=>e.total),
-      backgroundColor: _catChartEntries.map(e=>e.color),
-      borderWidth: 2,
-      borderColor: '#fff',
-      hoverOffset: 8,
-      hoverBorderWidth: 3,
-    }],
-    {
-      onClick(event, elements) {
-        if (!elements.length) return;
-        const idx = elements[0].index;
-        openCatDetail(idx);
-      },
-      onHover(event, elements) {
-        const canvas = event.native?.target;
-        if (canvas) canvas.style.cursor = elements.length ? 'pointer' : 'default';
-      },
-    }
-  );
+  // Restore chart type from prefs
+  const savedType = _dashGetPrefs()?.catChartType || 'bar';
+  if (savedType !== _catChartType) {
+    _catChartType = savedType;
+    // sync toggle buttons
+    const pie = document.getElementById('catChartTypePie');
+    const bar = document.getElementById('catChartTypeBar');
+    if (pie) { pie.classList.toggle('active', savedType === 'doughnut'); pie.style.background=''; pie.style.color=''; }
+    if (bar) { bar.classList.toggle('active', savedType === 'bar');     bar.style.background=''; bar.style.color=''; }
+  }
+
+  if (_catChartType === 'bar') {
+    _renderCatChartBar();
+    return;
+  }
+
+  _renderCatChartDoughnut();
 }
 
 function openCatDetail(idx) {
@@ -544,17 +604,26 @@ function openCatDetail(idx) {
   const titleEl    = document.getElementById('catChartDetailTitle');
   const listEl     = document.getElementById('catChartDetailList');
   const backBtn    = document.getElementById('catDetailBackBtn');
-  const canvas     = document.getElementById('categoryChart');
+  const wrap       = document.getElementById('catChartWrap');
+  const chartControls = document.getElementById('dashCatControls');
+  const typeToggle    = document.querySelector('#catChartCard > div:last-child');
 
   if (!detailEl || !titleEl || !listEl) return;
 
-  // Shrink chart, show detail
-  if (canvas) canvas.height = 140;
-  if (backBtn) backBtn.style.display = 'flex';
+  // Hide chart + mode controls, show back button + transaction list
+  if (wrap)          wrap.style.display = 'none';
+  if (chartControls) chartControls.style.display = 'none';
+  if (typeToggle && typeToggle.querySelector('.dash-cat-toggle')) typeToggle.style.display = 'none';
+  if (backBtn)       backBtn.style.display = 'flex';
   detailEl.style.display = '';
 
   const dot = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${entry.color};flex-shrink:0"></span>`;
   titleEl.innerHTML = `${dot}<strong>${esc(entry.name)}</strong><span style="color:var(--muted);font-weight:400;font-size:.72rem;margin-left:4px">${fmt(entry.total)}</span><span style="color:var(--muted);font-weight:400;font-size:.72rem;margin-left:4px">· ${entry.txs.length} lançamento${entry.txs.length!==1?'s':''}`;
+
+  // "Ver transações" button — navigates to transactions page with category pre-filtered
+  const now2 = new Date();
+  const ym = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
+  titleEl.innerHTML += `&nbsp;<button onclick="_dashDrillToTx('${entry.rootId||''}','${ym}')" style="font-size:.68rem;padding:2px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--accent);cursor:pointer;font-weight:600;margin-left:6px">${t('dash.view_all')}</button>`;
 
   const MON=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   listEl.innerHTML = entry.txs.map(t => {
@@ -583,12 +652,17 @@ function openCatDetail(idx) {
 }
 
 function closeCatDetail() {
-  const detailEl = document.getElementById('catChartDetail');
-  const backBtn  = document.getElementById('catDetailBackBtn');
-  const canvas   = document.getElementById('categoryChart');
-  if (detailEl) detailEl.style.display = 'none';
-  if (backBtn)  backBtn.style.display  = 'none';
-  if (canvas)   canvas.height = 200;
+  const detailEl    = document.getElementById('catChartDetail');
+  const backBtn     = document.getElementById('catDetailBackBtn');
+  const wrap        = document.getElementById('catChartWrap');
+  const chartControls = document.getElementById('dashCatControls');
+  const typeToggle    = document.querySelector('#catChartCard > div:last-child');
+
+  if (detailEl)       detailEl.style.display = 'none';
+  if (backBtn)        backBtn.style.display  = 'none';
+  if (wrap)           wrap.style.display = '';
+  if (chartControls)  chartControls.style.display = '';
+  if (typeToggle && typeToggle.querySelector('.dash-cat-toggle')) typeToggle.style.display = '';
 
   // Restore chart colors
   const chart = state.chartInstances['categoryChart'];
@@ -637,11 +711,12 @@ const _DASH_PREFS_KEY = () =>
   `dash_prefs_${typeof currentUser !== 'undefined' && currentUser?.id ? currentUser.id : 'default'}`;
 
 const _DASH_CARDS = [
-  { id: 'accounts', label: 'Saldo por Conta',           icon: '🏦', sub: 'Saldo atual de cada conta',                 el: 'dashCardAccounts' },
-  { id: 'charts',   label: 'Fluxo de Caixa e Gráficos', icon: '📊', sub: 'Cashflow 6 meses + gráfico de despesas',    el: 'dashCardCharts'   },
-  { id: 'favcats',  label: 'Categorias Favoritas',      icon: '⭐', sub: 'Evolução das categorias marcadas',          el: 'dashCardFavCats'  },
-  { id: 'upcoming', label: 'Próximas Transações',       icon: '📆', sub: 'Programadas para os próximos 10 dias',      el: 'dashCardUpcoming' },
-  { id: 'recent',   label: 'Últimas Transações',        icon: '🧾', sub: 'Histórico recente de lançamentos',          el: 'dashCardRecent'   },
+  { id: 'accounts',   label: 'Saldo por Conta',           icon: '🏦', sub: 'Saldo atual de cada conta',                 el: 'dashCardAccounts'   },
+  { id: 'charts',     label: 'Fluxo de Caixa e Gráficos', icon: '📊', sub: 'Cashflow 6 meses + gráfico de despesas',    el: 'dashCardCharts'     },
+  { id: 'favcats',    label: 'Categorias Favoritas',      icon: '⭐', sub: 'Evolução das categorias marcadas',          el: 'dashCardFavCats'    },
+  { id: 'upcoming',   label: 'Próximas Transações',       icon: '📆', sub: 'Programadas para os próximos 10 dias',      el: 'dashCardUpcoming'   },
+  { id: 'forecast90', label: 'Previsão 90 dias',          icon: '📈', sub: 'Projeção de saldo para os próximos 90 dias',el: 'dashCardForecast90' },
+  { id: 'recent',     label: 'Últimas Transações',        icon: '🧾', sub: 'Histórico recente de lançamentos',          el: 'dashCardRecent'     },
 ];
 
 function _dashGetPrefs() {
@@ -681,29 +756,81 @@ async function _syncDashPrefsFromServer() {
 }
 
 function _dashApplyPrefs(prefs) {
-  _DASH_CARDS.forEach(c => {
+  const order = _getDashCardOrder(prefs);
+  // Apply visibility
+  order.forEach(c => {
     const el = document.getElementById(c.el);
     if (!el) return;
-    const visible = prefs[c.id] !== false;
-    el.style.display = visible ? '' : 'none';
+    el.style.display = prefs[c.id] !== false ? '' : 'none';
   });
+  // Apply order in DOM on all screen sizes
+  try {
+    const parent = document.getElementById(order[0]?.el)?.parentElement;
+    if (parent) {
+      order.forEach(c => {
+        const el = document.getElementById(c.el);
+        if (el && el.parentElement === parent) parent.appendChild(el);
+      });
+    }
+  } catch(_) {}
 }
 
 function openDashCustomModal() {
   const prefs = _dashGetPrefs();
+  const order = _getDashCardOrder(prefs);
   const list  = document.getElementById('dashCustomList');
   if (!list) return;
-  list.innerHTML = _DASH_CARDS.map(c => `
-    <div class="dash-custom-toggle" onclick="_dashToggleCard('${c.id}',this)">
+  _renderDashCustomList(order, prefs);
+  openModal('dashCustomModal');
+}
+
+function _getDashCardOrder(prefs) {
+  // Use saved order from prefs, fallback to _DASH_CARDS default order
+  const savedOrder = prefs._order;
+  if (savedOrder && Array.isArray(savedOrder)) {
+    const ordered = savedOrder
+      .map(id => _DASH_CARDS.find(c => c.id === id))
+      .filter(Boolean);
+    // Append any new cards not in saved order
+    _DASH_CARDS.forEach(c => { if (!ordered.find(x => x.id === c.id)) ordered.push(c); });
+    return ordered;
+  }
+  return [..._DASH_CARDS];
+}
+
+function _renderDashCustomList(order, prefs) {
+  const list = document.getElementById('dashCustomList');
+  if (!list) return;
+  list.innerHTML = order.map((c, idx) => `
+    <div class="dash-custom-toggle" data-card-id="${c.id}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px">
       <span class="dash-custom-toggle-icon">${c.icon}</span>
       <div style="flex:1;min-width:0">
         <div class="dash-custom-toggle-label">${c.label}</div>
-        <div class="dash-custom-toggle-sub">${c.sub}</div>
+        <div class="dash-custom-toggle-sub" style="font-size:.72rem;color:var(--muted)">${c.sub}</div>
       </div>
-      <button class="dash-toggle-switch ${prefs[c.id]!==false?'on':''}" data-card="${c.id}" onclick="event.stopPropagation();_dashToggleCard('${c.id}',this.closest('.dash-custom-toggle'))"></button>
+      <div class="dash-reorder-btns">
+        <button class="dash-reorder-btn" onclick="_dashMoveCard('${c.id}',-1)" title="Mover para cima" ${idx===0?'disabled style="opacity:.3"':''}>▲</button>
+        <button class="dash-reorder-btn" onclick="_dashMoveCard('${c.id}',+1)" title="Mover para baixo" ${idx===order.length-1?'disabled style="opacity:.3"':''}>▼</button>
+      </div>
+      <button class="dash-toggle-switch ${prefs[c.id]!==false?'on':''}" data-card="${c.id}"
+        onclick="event.stopPropagation();_dashToggleCard('${c.id}',this.closest('.dash-custom-toggle'))"></button>
     </div>`).join('');
-  openModal('dashCustomModal');
 }
+
+function _dashMoveCard(id, dir) {
+  const prefs = _dashGetPrefs();
+  const order = _getDashCardOrder(prefs);
+  const idx   = order.findIndex(c => c.id === id);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= order.length) return;
+  [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+  // Temporarily store new order and re-render the list
+  _dashCustomPendingOrder = order.map(c => c.id);
+  const updPrefs = {...prefs, _order: _dashCustomPendingOrder};
+  _renderDashCustomList(order, updPrefs);
+}
+let _dashCustomPendingOrder = null;
 
 function _dashToggleCard(id, row) {
   const btn = row?.querySelector('.dash-toggle-switch');
@@ -713,14 +840,20 @@ function _dashToggleCard(id, row) {
 }
 
 function _dashCustomSave() {
-  const prefs = {};
+  // Start from existing prefs so we don't lose catChartType, dashForecastAccounts, etc.
+  const existingPrefs = _dashGetPrefs();
+  const prefs = { ...existingPrefs };
   _DASH_CARDS.forEach(c => {
     const btn = document.querySelector(`.dash-toggle-switch[data-card="${c.id}"]`);
     prefs[c.id] = btn ? btn.classList.contains('on') : true;
   });
+  // Save card order if user reordered
+  if (_dashCustomPendingOrder) {
+    prefs._order = _dashCustomPendingOrder;
+    _dashCustomPendingOrder = null;
+  }
   _dashSavePrefs(prefs);
   _dashApplyPrefs(prefs);
-  // Re-renderizar favoritos se voltou a ser visível
   if (prefs.favcats !== false) _renderDashFavCategories(_lastDashIncome, _lastDashExpense);
   closeModal('dashCustomModal');
   toast('Preferências do dashboard salvas!', 'success');
@@ -772,7 +905,7 @@ async function _renderDashFavCategories(totalIncome, totalExpense) {
   const allCats = state.categories || [];
   const favCats = allCats.filter(c => ids.includes(c.id));
   if (!favCats.length) {
-    el.innerHTML = `<div class="dfav-card"><div class="dfav-header"><span class="dfav-title">⭐ Categorias Favoritas</span><button class="dfav-manage" onclick="navigate('categories')">Gerenciar</button></div><div class="dfav-empty"><div>Categorias favoritas não encontradas.<br><span style="font-size:.75rem">Elas podem ter sido excluídas.</span></div></div></div>`;
+    el.innerHTML = `<div class="dfav-card"><div class="dfav-header"><span class="dfav-title">⭐ Categorias Favoritas</span><button class="dfav-manage" onclick="navigate('categories')">${t('dash.manage')}</button></div><div class="dfav-empty"><div>Categorias favoritas não encontradas.<br><span style="font-size:.75rem">Elas podem ter sido excluídas.</span></div></div></div>`;
     return;
   }
 
@@ -828,7 +961,8 @@ async function _renderDashFavCategories(totalIncome, totalExpense) {
     const valClr = ownVal === 0 ? 'var(--muted)' : (cType === 'expense' ? 'var(--red,#dc2626)' : 'var(--green,#16a34a)');
     const valStr = ownVal === 0 ? '—' : (ownVal > 0 ? '+' : '') + fmt(ownVal, 'BRL');
     const pctStr = pct >= 0.1 ? pct.toFixed(1) + '%' : (pct > 0 ? '<0.1%' : '—');
-    const navAction = `onclick="_openDashMonthTx('${cType==='expense'?'expense':'income'}',null)"`;
+    // Drill to exact transactions by category + current month
+    const navAction = `onclick="_dashDrillToTx('${c.id}','${y}-${mo}')"`;  
 
     // Linha de contexto (pai não-favorito, só para hierarquia)
     if (isCtxOnly) {
@@ -844,7 +978,7 @@ async function _renderDashFavCategories(totalIncome, totalExpense) {
     const connector = isChild
       ? `<span class="dfav-conn${isLast?' dfav-conn--last':''}"></span>` : '';
 
-    return `<div class="${rowClass}" ${navAction} title="Ver transações">
+    return `<div class="${rowClass}" style="cursor:pointer" ${navAction} title="Ver transações">
         ${connector}
         <span class="dfav-icon${isChild?' dfav-icon--sm':''}">${c.icon||'📦'}</span>
         <div class="dfav-body">
@@ -924,7 +1058,7 @@ async function _renderDashFavCategories(totalIncome, totalExpense) {
   const incSec = buildSection('Receitas', 'income',  'var(--green,#16a34a)');
 
   if (!expSec && !incSec) {
-    el.innerHTML = `<div class="dfav-card"><div class="dfav-header"><span class="dfav-title">⭐ Categorias Favoritas</span><button class="dfav-manage" onclick="navigate('categories')">Gerenciar</button></div><div class="dfav-empty">Sem movimentações no mês para as categorias favoritas.</div></div>`;
+    el.innerHTML = `<div class="dfav-card"><div class="dfav-header"><span class="dfav-title">⭐ Categorias Favoritas</span><button class="dfav-manage" onclick="navigate('categories')">${t('dash.manage')}</button></div><div class="dfav-empty">Sem movimentações no mês para as categorias favoritas.</div></div>`;
     return;
   }
 
@@ -1072,4 +1206,340 @@ async function renderDashboardUpcoming(memberIds = null) {
       <div class="sup-rows">${rows}</div>
     </div>`;
   }).join('');
+}
+
+// Navigate to transactions page with category + month pre-filtered
+// ── Dashboard Forecast 90d ─────────────────────────────────────────────────
+let _dashForecastChart = null;
+let _dashForecastTimer = null;
+
+function _initDashForecastAccountSelect() {
+  if (typeof _fcPickerBuild !== 'function') return;
+  const prefs    = _dashGetPrefs();
+  const savedIds = Array.isArray(prefs.dashForecastAccounts) ? prefs.dashForecastAccounts : [];
+  _fcPickerBuild('dashForecastAcctPicker', savedIds, ids => {
+    _dashSavePrefs({ ..._dashGetPrefs(), dashForecastAccounts: ids }).catch(()=>{});
+    _renderDashForecast();
+  });
+}
+
+async function _renderDashForecast() {
+  const card = document.getElementById('dashCardForecast90');
+  if (!card || card.style.display === 'none') return;
+
+  _initDashForecastAccountSelect();
+
+  const accIds = typeof _fcPickerGetSelected === 'function'
+    ? _fcPickerGetSelected('dashForecastAcctPicker')
+    : [];
+  const includeScheduled = document.getElementById('dashForecastScheduled')?.checked !== false;
+  const canvas = document.getElementById('dashForecastChart');
+  if (!canvas) return;
+
+  // Destroy previous chart
+  if (_dashForecastChart) { try { _dashForecastChart.destroy(); } catch(_) {} _dashForecastChart = null; }
+
+  // Date range: today → today + 90 days
+  const fromDate = new Date();
+  const toDate   = new Date();
+  toDate.setDate(toDate.getDate() + 90);
+  const fromStr = fromDate.toISOString().slice(0, 10);
+  const toStr   = toDate.toISOString().slice(0, 10);
+
+  // Fetch real transactions in period
+  let q = famQ(sb.from('transactions')
+    .select('id,date,amount,currency,brl_amount,account_id,is_transfer')
+    .gte('date', fromStr).lte('date', toStr).order('date'));
+  if (accIds.length === 1) q = q.eq('account_id', accIds[0]);
+  else if (accIds.length > 1) q = q.in('account_id', accIds);
+  const { data: txData } = await q;
+
+  // Build scheduled items using same logic as forecast.js
+  let scheduledItems = [];
+  if (includeScheduled && state.scheduled?.length) {
+    const schToProcess = accIds.length
+      ? state.scheduled.filter(s => accIds.includes(s.account_id) || accIds.includes(s.transfer_to_account_id))
+      : state.scheduled;
+    schToProcess.forEach(sc => {
+      if (sc.status === 'paused') return;
+      const registered = new Set((sc.occurrences||[]).map(o => o.scheduled_date));
+      const occ = typeof generateOccurrences === 'function' ? generateOccurrences(sc, 200) : [];
+      const isTransfer = sc.type === 'transfer' || sc.type === 'card_payment';
+      occ.forEach(date => {
+        if (date < fromStr || date > toStr || registered.has(date)) return;
+        const baseAmt = Math.abs(parseFloat(sc.amount) || 0);
+        if (!accIds.length || accIds.includes(sc.account_id)) {
+          const originAmount = sc.type === 'income' ? baseAmt : -baseAmt;
+          if (originAmount !== 0) scheduledItems.push({ date, amount: originAmount, account_id: sc.account_id, isScheduled: true });
+        }
+        if (isTransfer && sc.transfer_to_account_id && (!accIds.length || accIds.includes(sc.transfer_to_account_id))) {
+          scheduledItems.push({ date, amount: Math.abs(parseFloat(sc.amount)||0), account_id: sc.transfer_to_account_id, isScheduled: true });
+        }
+      });
+    });
+  }
+
+  const allItems = [...(txData||[]), ...scheduledItems].sort((a,b)=>a.date.localeCompare(b.date));
+
+  const accountIds = [...new Set(allItems.map(t=>t.account_id))].filter(Boolean);
+  const accounts = accIds.length
+    ? (state.accounts||[]).filter(a=>accIds.includes(a.id))
+    : (state.accounts||[]).filter(a=>accountIds.includes(a.id));
+
+  if (!accounts.length) {
+    const summary = document.getElementById('dashForecastSummary');
+    if (summary) summary.innerHTML = '<span style="color:var(--muted)">Sem dados de previsão para o período</span>';
+    return;
+  }
+
+  // Build daily dates (sampled weekly for display clarity)
+  const dates = [];
+  let cur = new Date(fromStr+'T12:00');
+  const end = new Date(toStr+'T12:00');
+  while (cur <= end) { dates.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+  const step = 7; // weekly samples for 90d
+  const sampled = dates.filter((_,i)=>i%step===0);
+  if (!sampled.includes(toStr)) sampled.push(toStr);
+
+  const COLORS = ['#2a6049','#1d4ed8','#b45309','#7c3aed','#dc2626','#059669'];
+  const datasets = accounts.slice(0,6).map((a,idx)=>{
+    const txAcc = allItems.filter(t=>t.account_id===a.id);
+    const realSum = txAcc.filter(t=>!t.isScheduled).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const baseBal = (parseFloat(a.balance)||0) - realSum;
+    const color = a.color || COLORS[idx%COLORS.length];
+    return {
+      label: a.name,
+      data: sampled.map(d=>({
+        x: d,
+        y: +(baseBal + txAcc.filter(t=>t.date<=d).reduce((s,t)=>s+(parseFloat(t.amount)||0),0)).toFixed(2)
+      })),
+      borderColor: color,
+      backgroundColor: color+'18',
+      fill: false,
+      tension: 0.35,
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+    };
+  });
+
+  // Find global min/max for annotations
+  const allVals = datasets.flatMap(ds=>ds.data.map(p=>p.y));
+  const minVal = allVals.length ? Math.min(...allVals) : 0;
+  const maxVal = allVals.length ? Math.max(...allVals) : 0;
+  const minPt  = datasets[0]?.data.find(p=>p.y===minVal);
+  const maxPt  = datasets[0]?.data.find(p=>p.y===maxVal);
+
+  const annotations = {
+    zeroLine: {
+      type: 'line', yMin: 0, yMax: 0,
+      borderColor: 'rgba(220,38,38,0.5)', borderWidth: 1.5, borderDash: [4,3],
+    },
+  };
+  if (minPt) annotations.minPt = { type:'point', xValue:minPt.x, yValue:minVal, radius:5, backgroundColor:'#dc2626', borderColor:'#fff', borderWidth:2 };
+  if (maxPt) annotations.maxPt = { type:'point', xValue:maxPt.x, yValue:maxVal, radius:5, backgroundColor:'#16a34a', borderColor:'#fff', borderWidth:2 };
+
+  _dashForecastChart = new Chart(canvas, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'bottom', labels:{ boxWidth:10, font:{ size:10 } } },
+        tooltip: { callbacks: { label: ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
+        annotation: { annotations },
+      },
+      scales: {
+        x: { type:'category', ticks:{ maxTicksLimit:8, color:'#8c8278', font:{size:10} }, grid:{ color:'#e8e4de33' } },
+        y: { ticks:{ callback:v=>fmt(v), color:'#8c8278', font:{size:10} }, grid:{ color: ctx=>ctx.tick.value===0?'rgba(220,38,38,0.2)':'#e8e4de33' } },
+      },
+    },
+  });
+
+  // Summary row: final balance per account
+  const summary = document.getElementById('dashForecastSummary');
+  if (summary) {
+    const today = new Date().toISOString().slice(0,10);
+    summary.innerHTML = accounts.slice(0,6).map((a,idx)=>{
+      const ds = datasets[idx];
+      const finalY = ds?.data[ds.data.length-1]?.y ?? 0;
+      const isNeg = finalY < 0;
+      const color = a.color || COLORS[idx%COLORS.length];
+      return `<span style="display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
+        <span style="color:var(--text2)">${esc(a.name)}:</span>
+        <strong style="color:${isNeg?'var(--red)':'var(--accent)'}">${fmt(finalY,a.currency)}</strong>
+      </span>`;
+    }).join('');
+  }
+}
+
+
+function _dashDrillToTx(categoryId, month) {
+  state.txFilter = state.txFilter || {};
+  state.txFilter.month      = month || '';
+  state.txFilter.categoryId = categoryId || '';
+  state.txFilter.type       = '';
+  state.txFilter.search     = '';
+  state.txFilter.status     = '';
+  state.txPage = 0;
+  navigate('transactions');
+  // Sync filter UI after navigation
+  requestAnimationFrame(() => {
+    const mEl = document.getElementById('txMonth');
+    const cEl = document.getElementById('txCategoryFilter');
+    if (mEl) mEl.value = state.txFilter.month;
+    if (cEl) cEl.value = state.txFilter.categoryId;
+    loadTransactions();
+  });
+}
+
+// ── Category chart type toggle ────────────────────────────────────────────
+let _catChartType = 'bar';     // default: bar chart
+let _dashCatMode  = 'expense'; // 'expense' | 'income'
+
+// Dashboard category mode toggle (expense/income)
+function _setDashCatMode(mode) {
+  _dashCatMode = mode;
+  const expBtn = document.getElementById('dashCatModeExp');
+  const incBtn = document.getElementById('dashCatModeInc');
+  if (expBtn) expBtn.classList.toggle('active', mode === 'expense');
+  if (incBtn) incBtn.classList.toggle('active', mode === 'income');
+  const titleEl = document.getElementById('dashCatChartTitle');
+  if (titleEl) titleEl.textContent = 'Distribuição por Categoria';
+  // Re-render using cached data
+  _renderDashCatWithMode();
+}
+window._setDashCatMode = _setDashCatMode;
+
+function _renderDashCatWithMode() {
+  // Switch _catChartEntries to whichever mode is active, then re-render
+  if (_dashCatMode === 'income') {
+    _catChartEntries = window._catChartIncEntriesRaw || [];
+  } else {
+    _catChartEntries = window._catChartExpEntriesRaw || [];
+  }
+  if (!_catChartEntries.length) return;
+  // Destroy existing chart cleanly
+  const existing = state.chartInstances?.['categoryChart'];
+  if (existing) { try { existing.destroy(); } catch(_){} delete state.chartInstances['categoryChart']; }
+  closeCatDetail();
+  if (_catChartType === 'bar') _renderCatChartBar();
+  else _renderCatChartDoughnut();
+}
+
+function _setCatChartType(type) {
+  _catChartType = type;
+  // Sync toggle button visuals
+  const pie  = document.getElementById('catChartTypePie');
+  const bar2 = document.getElementById('catChartTypeBar');
+  if (pie)  { pie.classList.toggle('active',  type === 'doughnut'); pie.style.background=''; pie.style.color=''; }
+  if (bar2) { bar2.classList.toggle('active', type === 'bar');      bar2.style.background=''; bar2.style.color=''; }
+
+  // Persist preference
+  try { _dashSavePrefs({ ..._dashGetPrefs(), catChartType: type }).catch(() => {}); } catch(_) {}
+
+  // Guard: no data yet — nothing to render
+  if (!_catChartEntries.length) return;
+
+  // Destroy current chart cleanly before switching type
+  const existing = state.chartInstances?.['categoryChart'];
+  if (existing) { try { existing.destroy(); } catch(_) {} delete state.chartInstances['categoryChart']; }
+
+  // Reset detail panel
+  const detailEl = document.getElementById('catChartDetail');
+  const backBtn  = document.getElementById('catDetailBackBtn');
+  if (detailEl) detailEl.style.display = 'none';
+  if (backBtn)  backBtn.style.display  = 'none';
+
+  if (type === 'bar') {
+    _renderCatChartBar();
+  } else {
+    _renderCatChartDoughnut();
+  }
+}
+
+function _renderCatChartDoughnut() {
+  const canvas = document.getElementById('categoryChart');
+  if (!canvas) return;
+  // Reset wrapper so doughnut uses its natural aspect ratio
+  const wrap = document.getElementById('catChartWrap');
+  if (wrap) { wrap.style.height = ''; }
+  canvas.setAttribute('height', '200');
+  canvas.style.height = '';
+  renderChart('categoryChart', 'doughnut',
+    _catChartEntries.map(e => e.name),
+    [{ data: _catChartEntries.map(e => e.total), backgroundColor: _catChartEntries.map(e => e.color), borderWidth: 2, borderColor: '#fff', hoverOffset: 8, hoverBorderWidth: 3 }],
+    {
+      onClick(event, elements) { if (elements.length) openCatDetail(elements[0].index); },
+      onHover(event, elements) { const c = event.native?.target; if (c) c.style.cursor = elements.length ? 'pointer' : 'default'; },
+    }
+  );
+}
+
+function _renderCatChartBar() {
+  const canvas = document.getElementById('categoryChart');
+  if (!canvas || !_catChartEntries.length) return;
+  // Destroy existing
+  const existing = state.chartInstances['categoryChart'];
+  if (existing) { try { existing.destroy(); } catch(e) {} delete state.chartInstances['categoryChart']; }
+  // Set explicit height on the wrapper — required for maintainAspectRatio:false
+  const barH = Math.max(200, _catChartEntries.length * 36 + 48);
+  const wrap = document.getElementById('catChartWrap');
+  if (wrap) { wrap.style.height = barH + 'px'; wrap.style.overflowX = 'hidden'; }
+  canvas.removeAttribute('height');
+  canvas.style.height = barH + 'px';
+  canvas.style.maxWidth = '100%';
+  const chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: _catChartEntries.map(e => e.name),
+      datasets: [{
+        data: _catChartEntries.map(e => e.total),
+        backgroundColor: _catChartEntries.map(e => e.color + 'cc'),
+        borderColor:     _catChartEntries.map(e => e.color),
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ticks: { callback: v => fmt(v), color: '#8c8278', font: { size: 10 } }, grid: { color: '#e8e4de44' } },
+        y: { ticks: { color: '#8c8278', font: { size: 11 } }, grid: { display: false } }
+      },
+      onClick(event, elements) { if (elements.length) openCatDetail(elements[0].index); },
+      onHover(event, elements) { const c = event.native?.target; if (c) c.style.cursor = elements.length ? 'pointer' : 'default'; },
+    }
+  });
+  state.chartInstances['categoryChart'] = chart;
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}
+
+
+// === Navigate to forecast report on chart click ===
+function attachForecastNavigation(chartInstance) {
+  if (!chartInstance) return;
+  chartInstance.options.onClick = function(evt, elements) {
+    // navigate regardless of specific point clicked
+    const url = '#/reports?tab=forecast&range=90d&source=dashboard';
+    window.location.href = url;
+  };
 }

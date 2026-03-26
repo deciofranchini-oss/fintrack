@@ -80,32 +80,10 @@ function _applyCurrentUserAvatar() {
   _updateSidebarUserCard();
 }
 
-// ── Sidebar: populate user card ──────────────────────────────────────────────
+// ── Sidebar: populate user card — removed from sidebar UI ──────────────────
 function _updateSidebarUserCard() {
-  const card    = document.getElementById('sbUserCard');
-  const avatarEl = document.getElementById('sbUserAvatar');
-  const nameEl  = document.getElementById('sbUserName');
-  const roleEl  = document.getElementById('sbUserRole');
-  if (!card || !currentUser) return;
-  card.style.display = 'none';
-  // Name
-  if (nameEl) nameEl.textContent = currentUser.name || currentUser.email?.split('@')[0] || '—';
-  // Role label
-  const roleLabel =
-    currentUser.role === 'owner' ? '👑 Owner' :
-    currentUser.role === 'admin' ? '🛡️ Admin' :
-    currentUser.role === 'viewer' ? '👁 Visualizador' : '👤 Usuário';
-  if (roleEl) roleEl.textContent = roleLabel;
-  // Avatar: photo or initials
-  if (avatarEl) {
-    if (currentUser.avatar_url) {
-      avatarEl.innerHTML = `<img src="${esc(currentUser.avatar_url)}" alt="">`;
-    } else {
-      const initials = (currentUser.name || currentUser.email || '?')
-        .split(/\s+/).slice(0,2).map(w => w[0]?.toUpperCase() || '').join('');
-      avatarEl.textContent = initials || '?';
-    }
-  }
+  // User name and family name removed from sidebar to maximize nav space.
+  // Function kept as no-op to avoid errors from existing callers.
 }
 
 // Returns a Supabase query with family_id filter applied.
@@ -134,18 +112,43 @@ function famId() {
 // Supabase Auth helpers
 // ─────────────────────────────────────────────
 
-async function _loadCurrentUserContext() {
+async function _loadCurrentUserContext(authCtx = null) {
   if (!sb) throw new Error('Supabase client não inicializado.');
 
-  const { data: uRes, error: uErr } = await sb.auth.getUser();
-  if (uErr) throw uErr;
-  const user = uRes?.user;
+  let user = authCtx?.user || authCtx?.session?.user || null;
+  let session = authCtx?.session || null;
+
+  if (!user) {
+    try {
+      const { data: sRes, error: sErr } = await sb.auth.getSession();
+      if (sErr) throw sErr;
+      session = sRes?.session || null;
+      user = session?.user || null;
+    } catch (_) {}
+  }
+
+  if (!user) {
+    try {
+      const { data: uRes, error: uErr } = await sb.auth.getUser();
+      if (uErr) {
+        const msg = String(uErr?.message || '');
+        if (/auth session missing/i.test(msg)) return null;
+        throw uErr;
+      }
+      user = uRes?.user || null;
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      if (/auth session missing/i.test(msg)) return null;
+      throw err;
+    }
+  }
+
   if (!user) return null;
 
   // app_users: fonte de verdade para dados pessoais e role global
   const { data: appUserRow } = await sb
     .from('app_users')
-    .select('id, family_id, avatar_url, role, name, preferred_family_id')
+    .select('id, family_id, avatar_url, role, name, preferred_family_id, preferred_language')
     .eq('email', user.email)
     .maybeSingle();
 
@@ -173,7 +176,15 @@ async function _loadCurrentUserContext() {
   const roleRank = { owner: 4, admin: 3, user: 2, editor: 2, viewer: 1 };
   const byFamily = new Map();
   (fm || []).filter(r => r.family_id).forEach(r => {
-    const item = { id: r.family_id, name: r.families?.name || null, role: r.role || 'user' };
+    // Se family_members.role é NULL e o usuário é owner/admin global na família primária,
+    // herda o appRole (evita que owner fique com role='user' por dado inconsistente no banco)
+    let memberRole = r.role;
+    if (!memberRole && r.family_id === appUserRow?.family_id &&
+        (appRole === 'owner' || appRole === 'admin')) {
+      memberRole = appRole;
+    }
+    memberRole = memberRole || 'user';
+    const item = { id: r.family_id, name: r.families?.name || null, role: memberRole };
     const prev = byFamily.get(item.id);
     if (!prev || (roleRank[item.role] || 0) > (roleRank[prev.role] || 0)) byFamily.set(item.id, item);
   });
@@ -262,12 +273,24 @@ async function _loadCurrentUserContext() {
     email:                user.email || '',
     name:                 appUserRow?.name || user.email || 'Usuário',
     role:                 activeRole,
+    app_role:             appRole,        // role global em app_users (não sofre override por família ativa)
     family_id:            activeFamId,
     families:             userFamilies,
     avatar_url:           appUserRow?.avatar_url || null,
     preferred_family_id:  appUserRow?.preferred_family_id || null,
+    preferred_language:   appUserRow?.preferred_language  || 'pt',
     ...caps
   };
+
+  // Apply user language preference from DB (preferred_language column)
+  // DB is authoritative — it was saved by saveMyProfile() / quickSetLang()
+  const _langToApply = currentUser.preferred_language || 'pt';
+  // Sync localStorage immediately so i18n.js reads correct lang on next load
+  localStorage.setItem('fintrack_i18n_lang', _langToApply);
+  // Apply to DOM now — await so everything renders in the correct language
+  if (typeof i18nSetLanguage === 'function') {
+    await i18nSetLanguage(_langToApply).catch(() => {});
+  }
 
   return currentUser;
 }
@@ -472,7 +495,7 @@ async function doLogin() {
   try {
     if (!sb && typeof ensureSupabaseClient === 'function') sb = ensureSupabaseClient();
     if (!sb) { showLoginErr('Sem conexão com o servidor. Verifique a configuração.'); btn.disabled = false; btn.textContent = 'Entrar'; return; }
-    const { error } = await sb.auth.signInWithPassword({ email, password });
+    const { data: authData, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
       const msg = (error.message || '').toLowerCase().includes('confirm')
         ? 'Confirme seu e-mail antes de entrar.'
@@ -508,7 +531,7 @@ async function doLogin() {
       return;
     }
 
-    await _loadCurrentUserContext();
+    await _loadCurrentUserContext(authData);
 
     await onLoginSuccess();
   } catch(e) {
@@ -680,7 +703,7 @@ async function doChangeMyPwd() {
     await sb.from('app_users')
       .update({ password_hash: newHash, must_change_pwd: false })
       .eq('email', currentUser?.email);
-    toast('✓ Senha alterada com sucesso!', 'success');
+    toast(t('toast.pwd_changed'), 'success');
     closeModal('changeMyPwdModal');
   } catch(e) { errEl.textContent = 'Erro: ' + (e?.message || e); errEl.style.display = ''; }
 }
@@ -763,7 +786,7 @@ function _registerMagicLinkGate() {
       }
 
       // All good — proceed into the app
-      await _loadCurrentUserContext();
+      await _loadCurrentUserContext({ session, user: session.user });
       await onLoginSuccess();
     } catch(e) {
       console.error('Magic link gate error:', e);
@@ -803,19 +826,34 @@ function updateUserUI() {
       : 'Gerenciar minha família · Owner';
   }
 
-  // Configurações e Auditoria: APENAS admin (sidebar + topbar via data-nav)
-  const adminShow = currentUser.can_admin ? '' : 'none';
-  document.querySelectorAll('[data-nav="audit"]').forEach(el    => el.style.display = adminShow);
-  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display = adminShow);
+  // Configurações e Telemetria: APENAS admin (sidebar + topbar via data-nav)
+  // Auditoria: visível para TODOS os usuários autenticados
+  const isAdmin = !!currentUser.can_admin;
+  ['settings', 'telemetry'].forEach(key => {
+    document.querySelectorAll('[data-nav="' + key + '"]').forEach(el => {
+      if (el.tagName === 'BUTTON' && el.id && el.id.includes('Topbar')) {
+        el.classList.toggle('admin-visible', isAdmin);
+      } else {
+        el.style.display = isAdmin ? '' : 'none';
+      }
+    });
+  });
+  // Audit: sempre visível — apenas garante que não esteja escondido
+  document.querySelectorAll('[data-nav="audit"]').forEach(el => {
+    el.style.display = '';
+  });
   const adminSec = document.getElementById('adminNavSection');
-  if (adminSec) adminSec.style.display = currentUser.can_admin ? '' : 'none';
-  if (currentUser.can_admin) _checkPendingApprovals();
+  if (adminSec) adminSec.style.display = isAdmin ? '' : 'none';
+  if (isAdmin) _checkPendingApprovals();
 
   // Family switcher (only when user has 2+ families)
   _renderFamilySwitcher();
 
   // Avatar in topbar, settings and sidebar
   setTimeout(_applyCurrentUserAvatar, 50);
+
+  // Sync topbar language badge with user's actual preference
+  if (typeof _i18nUpdateTopbarLabel === 'function') _i18nUpdateTopbarLabel();
 
   // Apply permission restrictions
   applyPermissions();
@@ -840,21 +878,30 @@ function applyPermissions() {
     document.querySelectorAll('[data-nav="import"]').forEach(el => el.style.display='none');
   }
 
-// Hide admin-only screens for non-admin (sidebar + topbar via data-nav)
+// Configurações e Telemetria: admin-only. Auditoria: todos os usuários.
+['settings', 'telemetry'].forEach(key => {
+  document.querySelectorAll('[data-nav="' + key + '"]').forEach(el => {
+    if (el.tagName === 'BUTTON' && el.id && el.id.includes('Topbar')) {
+      el.classList.toggle('admin-visible', !!p.can_admin);
+    } else {
+      el.style.display = p.can_admin ? '' : 'none';
+    }
+  });
+});
+// Audit sempre visível para todos os usuários autenticados
+document.querySelectorAll('[data-nav="audit"]').forEach(el => { el.style.display = ''; });
 if (!p.can_admin) {
-  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display='none');
-  document.querySelectorAll('[data-nav="audit"]').forEach(el => el.style.display='none');
   const adminSec = document.getElementById('adminNavSection');
-  if (adminSec) adminSec.style.display='none';
+  if (adminSec) adminSec.style.display = 'none';
 } else {
-  // Admin: restore visibility (menu_visibility preference may override later)
-  document.querySelectorAll('[data-nav="audit"]').forEach(el => el.style.display='');
-  document.querySelectorAll('[data-nav="settings"]').forEach(el => el.style.display='');
+  const adminSec = document.getElementById('adminNavSection');
+  if (adminSec) adminSec.style.display = '';
 }
 
   // Módulos por família: visibilidade depende de feature flag
   if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
   if (typeof applyGroceryFeature === 'function') applyGroceryFeature().catch(() => {});
+  if (typeof applyAiInsightsFeature === 'function') applyAiInsightsFeature().catch(() => {});
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -886,7 +933,35 @@ function toggleUserMenu(e) {
   // ── Family switcher inside menu ──
   _renderUserMenuFamilies();
 
-  dd.style.display = '';
+  // ── Position dropdown relative to avatar button, safe for mobile ──
+  const btn   = document.getElementById('topbarUserBtn');
+  const rect  = btn ? btn.getBoundingClientRect() : { bottom: 56, right: window.innerWidth - 8 };
+  const gap   = 8;
+  const menuW = 240;
+  const vw    = window.innerWidth;
+  const vh    = window.innerHeight;
+
+  // Show first (hidden) so we can read its height
+  dd.style.display    = '';
+  dd.style.visibility = 'hidden';
+  const menuH = dd.offsetHeight;
+  dd.style.visibility = '';
+
+  // Prefer aligning right edge of menu to right edge of button
+  let left = rect.right - menuW;
+  // Clamp: don't go off left or right edge, keep 8px margin
+  left = Math.max(8, Math.min(left, vw - menuW - 8));
+
+  // Prefer opening downward; if not enough room, open upward
+  let top = rect.bottom + gap;
+  if (top + menuH > vh - 8) {
+    top = rect.top - menuH - gap;
+  }
+  // Last resort: pin to top of viewport with margin
+  if (top < 8) top = 8;
+
+  dd.style.top  = top  + 'px';
+  dd.style.left = left + 'px';
 
   // Close on outside click
   setTimeout(() => document.addEventListener('click', _closeUserMenuOutside), 10);
@@ -895,7 +970,8 @@ function toggleUserMenu(e) {
 function _closeUserMenuOutside(e) {
   const dd  = document.getElementById('userMenuDropdown');
   const btn = document.getElementById('topbarUserBtn');
-  if (dd && btn && !btn.contains(e.target)) {
+  // Dropdown is now in <body>; check both the avatar btn AND the dropdown itself
+  if (dd && !dd.contains(e.target) && btn && !btn.contains(e.target)) {
     closeUserMenu();
   }
 }
@@ -968,11 +1044,22 @@ function openMyProfile() {
     document.getElementById('myProfileFamilyRow')?.style.setProperty('display', 'none');
   }
 
-  // Gerenciar Família — visível só para owners (e não para admins globais que já têm o painel completo)
-  // Family mgmt btn: owner role only (admin has full panel)
-  const isFamOwnerOnly = currentUser?.role === 'owner' && _currentUserIsFamilyOwner();
-  const famMgmtBtn = document.getElementById('myProfileFamilyMgmtBtn');
-  if (famMgmtBtn) famMgmtBtn.style.display = isFamOwnerOnly ? '' : 'none';
+  // --- Language preference ---
+  const langSel = document.getElementById('myProfileLanguage');
+  if (langSel && typeof i18nGetAvailableLanguages === 'function') {
+    const langs = i18nGetAvailableLanguages();
+    langSel.innerHTML = langs.map(l =>
+      `<option value="${l.code}">${l.flag} ${l.label}</option>`
+    ).join('');
+    langSel.value = currentUser.preferred_language || 'pt';
+  }
+
+  // Gerenciar Família: acessível via user menu (umManageFamilyBtn) — não mais no perfil modal
+
+  // Language selector
+  const savedLang = currentUser?.preferred_language ||
+    (typeof i18nGetLanguage === 'function' ? i18nGetLanguage() : 'pt');
+  if (typeof profileSelectLang === 'function') profileSelectLang(savedLang, true);
 
   openModal('myProfileModal');
   setTimeout(() => document.getElementById('myProfilePwd1')?.focus(), 200);
@@ -1063,8 +1150,10 @@ async function saveMyProfile() {
   }
   const prefFamId = document.getElementById('myProfilePreferredFamily')?.value || null;
   const prefFamChanged = prefFamId !== (currentUser.preferred_family_id || null);
+  const newLang = document.getElementById('myProfileLanguage')?.value || 'pt';
+  const langChanged = newLang !== (currentUser.preferred_language || 'pt');
 
-  if (!avatarFile && !avatarRemove && !pwd1 && !prefFamChanged) {
+  if (!avatarFile && !avatarRemove && !pwd1 && !prefFamChanged && !langChanged) {
     closeModal('myProfileModal');
     return;
   }
@@ -1087,6 +1176,7 @@ async function saveMyProfile() {
     const updatePayload = {};
     if (newAvatarUrl !== currentUser.avatar_url) updatePayload.avatar_url = newAvatarUrl;
     if (prefFamChanged) updatePayload.preferred_family_id = prefFamId || null;
+    if (langChanged)    updatePayload.preferred_language  = newLang;
 
     if (Object.keys(updatePayload).length > 0) {
       const { error: avErr } = await sb.from('app_users').update(updatePayload).eq('id', appRow.id);
@@ -1102,6 +1192,11 @@ async function saveMyProfile() {
           await switchFamily(prefFamId);
         }
       }
+      if ('preferred_language' in updatePayload) {
+        currentUser.preferred_language = newLang;
+        if (typeof i18nSetLanguage === 'function') await i18nSetLanguage(newLang);
+        if (typeof _i18nUpdateTopbarLabel === 'function') _i18nUpdateTopbarLabel();
+      }
     }
 
     // 2. Password
@@ -1113,7 +1208,7 @@ async function saveMyProfile() {
       await sb.from('app_users').update({ password_hash: hash, must_change_pwd: false }).eq('id', appRow.id);
     }
 
-    toast('✓ Perfil atualizado!', 'success');
+    toast(t('profile.updated'), 'success');
     closeModal('myProfileModal');
   } catch(e) {
     if (errEl) { errEl.textContent = 'Erro: ' + (e.message || e); errEl.style.display = ''; }
@@ -1171,7 +1266,7 @@ async function clearAppCache() {
     }
     // Clear sessionStorage
     sessionStorage.clear();
-    toast('✓ Cache limpo com sucesso! Recarregando...', 'success');
+    toast(t('toast.cache_cleared'), 'success');
     setTimeout(() => window.location.reload(), 1200);
   } catch(e) {
     toast('Erro ao limpar cache: ' + e.message, 'error');
@@ -1185,7 +1280,7 @@ async function tryRestoreSession() {
     const { data, error } = await sb.auth.getSession();
     if (error) throw error;
     if (!data?.session) return false;
-    await _loadCurrentUserContext();
+    await _loadCurrentUserContext(data);
     return !!currentUser;
   } catch {
     return false;
@@ -1296,22 +1391,26 @@ async function doRegister() {
     // Hash the password — stored in app_users for later Supabase Auth creation at approval time
     const pwdHash = await sha256(pwd);
 
+    // Capture preferred language from register form (if present)
+    const regLang = document.getElementById('regLanguage')?.value || 'pt';
+
     // Insert pending record — NOT approved, NOT active, no Supabase Auth account yet
     const { error: insErr } = await sb.from('app_users').insert({
       name,
       email,
-      password_hash: pwdHash,
-      role:          'viewer',
-      approved:      false,
-      active:        false,
-      can_view:      true,
-      can_create:    false,
-      can_edit:      false,
-      can_delete:    false,
-      can_export:    false,
-      can_import:    false,
-      can_admin:     false,
-      must_change_pwd: false,
+      password_hash:      pwdHash,
+      role:               'viewer',
+      approved:           false,
+      active:             false,
+      can_view:           true,
+      can_create:         false,
+      can_edit:           false,
+      can_delete:         false,
+      can_export:         false,
+      can_import:         false,
+      can_admin:          false,
+      must_change_pwd:    false,
+      preferred_language: regLang,
     });
     if (insErr) throw insErr;
 
@@ -1459,8 +1558,9 @@ async function _renderPendingTab() {
   }
 
   // Montar opções de família para o select inline
-  const famOptions = '<option value="">— Nenhuma (admin global) —</option>'
-    + (_families || []).map(f => '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>').join('');
+  const famOptions = '<option value="" disabled selected style="color:var(--muted)">— Selecione uma família —</option>'
+    + (_families || []).map(f => '<option value="' + esc(f.id) + '">' + esc(f.name) + '</option>').join('')
+    + '<option value="__new_family__">➕ Criar nova família (será Owner)</option>';
 
   let html = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">'
     + pendingUsers.length + ' solicitação(ões) aguardando aprovação</div>'
@@ -1479,7 +1579,7 @@ async function _renderPendingTab() {
       // — Linha superior: avatar + nome + idade
       + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
       + '<div style="width:40px;height:40px;border-radius:50%;background:#fef3c7;border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;color:#92400e;flex-shrink:0">' + initials + '</div>'
-      + '<div style="flex:1;min-width:0">'
+      + '<div class="mfm-member-info">'
       + '<div style="font-size:.9rem;font-weight:700;color:var(--text)">' + esc(u.name || '—') + '</div>'
       + '<div style="font-size:.76rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(u.email) + '</div>'
       + '</div>'
@@ -1503,8 +1603,16 @@ async function _renderPendingTab() {
 // Aprovação direta da aba Pendentes (sem abrir approvalModal)
 async function _inlineApprove(userId, userName) {
   const famSel = document.getElementById('pendingFam_' + userId);
-  const familyId   = famSel?.value || null;
+  const rawVal = famSel?.value || '';
+  // Special value: user will create their own family after first login
+  const createNewFamily = rawVal === '__new_family__';
+  const familyId   = (rawVal && !createNewFamily) ? rawVal : null;
   const familyName = _families?.find(f => f.id === familyId)?.name || null;
+  // Validate selection
+  if (!rawVal) {
+    toast('Selecione uma família ou escolha "Criar nova família".', 'warning');
+    return;
+  }
 
     document.querySelectorAll('[data-uid="' + userId + '"]').forEach(b => { b.disabled = true; });
 
@@ -1518,13 +1626,19 @@ async function _inlineApprove(userId, userName) {
     const displayName = userRow.name || userName;
 
     // Aprovar no app_users
-    const { error: updErr } = await sb.from('app_users').update({
-      active: true, approved: true, family_id: familyId, must_change_pwd: true,
-    }).eq('id', userId);
+    // createNewFamily=true: aprovar sem family_id, wizard cria família no primeiro login
+    const updatePayload = {
+      active: true, approved: true, must_change_pwd: true,
+      family_id: createNewFamily ? null : familyId,
+      role: createNewFamily ? 'user' : undefined,
+    };
+    // Remove undefined keys
+    Object.keys(updatePayload).forEach(k => updatePayload[k] === undefined && delete updatePayload[k]);
+    const { error: updErr } = await sb.from('app_users').update(updatePayload).eq('id', userId);
     if (updErr) throw new Error('Erro ao aprovar: ' + updErr.message);
 
-    // family_members
-    if (familyId) {
+    // family_members — skip if user will create their own family
+    if (familyId && !createNewFamily) {
       const { error: fmErr } = await sb.from('family_members').upsert(
         { user_id: userId, family_id: familyId, role: 'user' },
         { onConflict: 'user_id,family_id' }
@@ -1533,7 +1647,7 @@ async function _inlineApprove(userId, userName) {
     }
 
     // RPC confirma email no Supabase Auth
-    const { error: rpcApproveErr } = await sb.rpc('approve_user', { p_user_id: userId, p_family_id: familyId || null });
+    const { error: rpcApproveErr } = await sb.rpc('approve_user', { p_user_id: userId, p_family_id: createNewFamily ? null : (familyId || null) });
     if (rpcApproveErr) console.warn('[approve] RPC:', rpcApproveErr.message);
 
     // signUp se não existe no Auth
@@ -1545,7 +1659,7 @@ async function _inlineApprove(userId, userName) {
     // Email de boas-vindas
     await _sendApprovalEmail(userEmail, displayName, familyName);
 
-    toast('✓ ' + displayName + ' aprovado!' + (familyName ? ' Família: ' + familyName : ''), 'success');
+    toast('✓ ' + displayName + ' aprovado!' + (createNewFamily ? ' Criará família no primeiro login.' : familyName ? ' Família: ' + familyName : ''), 'success');
     await _checkPendingApprovals();
     await _renderPendingTab();
 
@@ -1958,7 +2072,7 @@ async function loadFamiliesList() {
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
   try {
     const flagKeys = visibleFamilies.flatMap(f =>
-      ['grocery_enabled_','prices_enabled_','investments_enabled_','ai_analysis_enabled_','ai_chat_enabled_'].map(p => p + f.id));
+      ['grocery_enabled_','prices_enabled_','investments_enabled_'].map(p => p + f.id));
     const { data: flagRows } = await sb.from('app_settings')
       .select('key,value').in('key', flagKeys);
     (flagRows||[]).forEach(r => {
@@ -2022,6 +2136,7 @@ async function loadFamiliesList() {
     const _groceryOn     = !!(_fc['grocery_enabled_'     + fid]);
     const _pricesOn      = !!(_fc['prices_enabled_'      + fid]);
     const _investmentsOn = !!(_fc['investments_enabled_' + fid]);
+    const _aiInsightsOn  = !!(_fc['ai_insights_enabled_' + fid]);
     const isOwner    = isGlobalAdmin || members.some(m => m.user_id === currentUser?.id && m.member_role === 'owner');
 
     const membersHtml = members.length
@@ -2037,10 +2152,10 @@ async function loadFamiliesList() {
             ${available.map(u => `<option value="${u.id}">${esc(u.name||u.email)}</option>`).join('')}
           </select>
           <select id="addMemberRole-${fid}" class="fam-select fam-select-role">
-            <option value="user">👤 Usuário</option>
-            <option value="admin">🔧 Admin</option>
-            <option value="viewer">👁 Visualizador</option>
-            <option value="owner">👑 Owner</option>
+            <option value="user">Usuário</option>
+            <option value="admin">Admin</option>
+            <option value="viewer">Visualizador</option>
+            <option value="owner">Owner</option>
           </select>
           <button class="btn btn-primary fam-btn-full" onclick="addUserToFamily('${fid}')">+ Adicionar</button>
         </div>
@@ -2082,15 +2197,10 @@ async function loadFamiliesList() {
             onclick="_famToggleModule('${fid}','investments_enabled_','famInvestBtn-${fid}','applyInvestmentsFeature')">
             📈 Investimentos <span class="fam-mod-dot">${_investmentsOn?'●':'○'}</span>
           </button>
-          <button id="famAiAnalysisBtn-${fid}"
-            class="fam-mod-chip${!!(_fc['ai_analysis_enabled_' + fid])?' active':''}"
-            onclick="_famToggleModule('${fid}','ai_analysis_enabled_','famAiAnalysisBtn-${fid}','applyAIInsightsFeature')">
-            ✨ AI Analysis <span class="fam-mod-dot">${!!(_fc['ai_analysis_enabled_' + fid])?'●':'○'}</span>
-          </button>
-          <button id="famAiChatBtn-${fid}"
-            class="fam-mod-chip${!!(_fc['ai_chat_enabled_' + fid])?' active':''}"
-            onclick="_famToggleModule('${fid}','ai_chat_enabled_','famAiChatBtn-${fid}','applyAIInsightsFeature')">
-            💬 AI Chat <span class="fam-mod-dot">${!!(_fc['ai_chat_enabled_' + fid])?'●':'○'}</span>
+          <button id="famAiInsightsBtn-${fid}"
+            class="fam-mod-chip${_aiInsightsOn?' active':''}"
+            onclick="_famToggleModule('${fid}','ai_insights_enabled_','famAiInsightsBtn-${fid}','applyAiInsightsFeature')">
+            🤖 AI Insights <span class="fam-mod-dot">${_aiInsightsOn?'●':'○'}</span>
           </button>
         </div>
       </div>`;
@@ -2188,19 +2298,20 @@ async function loadFamiliesList() {
   setTimeout(() => {
     const fc = window._familyFeaturesCache || {};
     for (const f of visibleFamilies) {
-      const syncBtn = (prefix, keyPrefix) => {
-        const el = document.getElementById(prefix + f.id);
-        if (!el) return;
-        const on = !!fc[keyPrefix + f.id];
-        el.classList.toggle('active', on);
-        const dot = el.querySelector('.fam-mod-dot');
+      const gBtn = document.getElementById('famGroceryBtn-' + f.id);
+      const pBtn = document.getElementById('famPricesBtn-'  + f.id);
+      if (gBtn) {
+        const on = !!fc['grocery_enabled_' + f.id];
+        gBtn.classList.toggle('active', on);
+        const dot = gBtn.querySelector('.fam-mod-dot');
         if (dot) dot.textContent = on ? '●' : '○';
-      };
-      syncBtn('famGroceryBtn-', 'grocery_enabled_');
-      syncBtn('famPricesBtn-', 'prices_enabled_');
-      syncBtn('famInvestBtn-', 'investments_enabled_');
-      syncBtn('famAiAnalysisBtn-', 'ai_analysis_enabled_');
-      syncBtn('famAiChatBtn-', 'ai_chat_enabled_');
+      }
+      if (pBtn) {
+        const on = !!fc['prices_enabled_' + f.id];
+        pBtn.classList.toggle('active', on);
+        const dot = pBtn.querySelector('.fam-mod-dot');
+        if (dot) dot.textContent = on ? '●' : '○';
+      }
     }
   }, 100);
 }
@@ -3102,7 +3213,7 @@ async function doApproveUser() {
           <div style="font-size:.78rem;color:var(--muted);margin-top:10px">📧 E-mail de boas-vindas enviado.</div>
         </div>`;
     }
-    toast('✓ ' + displayName + ' aprovado!' + (familyName ? ' Família: ' + familyName : ''), 'success');
+    toast('✓ ' + displayName + ' aprovado!' + (createNewFamily ? ' Criará família no primeiro login.' : familyName ? ' Família: ' + familyName : ''), 'success');
     await loadUsersList();
     await _checkPendingApprovals();
     if (document.getElementById('uaPending')?.style.display !== 'none') _renderPendingTab();
@@ -3699,45 +3810,67 @@ async function switchFamily(familyId) {
 
   const targetPage = state.currentPage || 'dashboard';
 
-  // Limpa imediatamente qualquer resíduo visual/estado da família anterior
+  // ── 1. Limpar UI da família anterior ─────────────────────────────────────
   try { clearFamilyScopedUI?.(); } catch(e) {}
 
+  // ── 2. Limpar caches de módulos específicos ───────────────────────────────
+  try { DB.bustAll?.(); } catch(e) {}
+  try { if (typeof fmcBust === 'function') fmcBust(); } catch(e) {}           // family_members_composition
+  try { if (typeof _inv !== 'undefined') { _inv.loaded = false; _inv.positions = []; _inv.transactions = []; } } catch(e) {}  // investments
+  try { if (typeof _catChartEntries !== 'undefined') _catChartEntries.length = 0; } catch(e) {}  // dashboard chart
+  try { if (typeof rptState !== 'undefined') rptState.txData = []; } catch(e) {}  // reports
+  try { if (typeof _destroyForecastChart === 'function') _destroyForecastChart(); } catch(e) {}
+
+  // ── 3. Atualizar currentUser para nova família ────────────────────────────
   currentUser.family_id = familyId;
-  // Atualiza role para o perfil do usuário NESSA família
   if (currentUser.role !== 'admin' && currentUser.role !== 'owner') {
     currentUser.role = fam.role || 'user';
     const r = currentUser.role;
-    currentUser.can_create = r !== 'viewer';
-    currentUser.can_edit   = r !== 'viewer';
-    currentUser.can_delete = r === 'admin' || r === 'owner';
-    currentUser.can_import = r === 'admin' || r === 'owner';
+    currentUser.can_create        = r !== 'viewer';
+    currentUser.can_edit          = r !== 'viewer';
+    currentUser.can_delete        = r === 'admin' || r === 'owner';
+    currentUser.can_import        = r === 'admin' || r === 'owner';
     currentUser.can_admin         = r === 'admin';
     currentUser.can_manage_family = r === 'admin' || r === 'owner';
   }
-
   localStorage.setItem('ft_active_family_' + currentUser.id, familyId);
+  try { _renderFxBadge?.(); } catch(_) {}
 
+  // ── 4. Recarregar dados essenciais (force=true para ignorar cache) ─────────
   try {
     await Promise.all([
-      loadAccounts().catch(()=>{}),
-      loadCategories().catch(()=>{}),
-      loadPayees().catch(()=>{}),
+      DB.accounts.load(true).catch(()=>{}),
+      DB.categories.load(true).catch(()=>{}),
+      DB.payees.load(true).catch(()=>{}),
       loadScheduled().catch(()=>{}),
-      loadAppSettings().catch(()=>{})
+      loadAppSettings().catch(()=>{}),
     ]);
-    populateSelects();
-    try { if (typeof applyPricesFeature === 'function') await applyPricesFeature(); } catch(e) {}
-    try { if (typeof applyGroceryFeature === 'function') await applyGroceryFeature(); } catch(e) {}
-    try { if (typeof applyAIInsightsFeature === 'function') await applyAIInsightsFeature(); } catch(e) {}
-    navigate(targetPage);
-  } finally {
-    // nothing to restore
-  }
+  } catch(e) {}
+
+  // ── 5. Recarregar módulos secundários em background ───────────────────────
+  try { if (typeof loadFamilyComposition === 'function') loadFamilyComposition(true).catch(()=>{}); } catch(e) {}
+  try { initFxRates().catch(()=>{}); } catch(e) {}
+
+  // ── 6. Atualizar permissões e UI ──────────────────────────────────────────
+  updateUserUI();           // atualiza sidebar (nome da família) e topbar
+  _renderFamilySwitcher();
+  applyPermissions?.();
+
+  // ── 7. Atualizar módulos opcionais (feature flags da nova família) ─────────
+  try { if (typeof applyPricesFeature === 'function')      await applyPricesFeature();      } catch(e) {}
+  try { if (typeof applyGroceryFeature === 'function')     await applyGroceryFeature();     } catch(e) {}
+  try { if (typeof applyInvestmentsFeature === 'function') await applyInvestmentsFeature(); } catch(e) {}
+  try { if (typeof applyAiInsightsFeature === 'function')  await applyAiInsightsFeature();  } catch(e) {}
+
+  // ── 8. Repopular todos os selects com dados da nova família ───────────────
+  try { populateSelects(); } catch(e) {}
+
+  // ── 9. Navegar para a página atual, forçando reload dos dados ─────────────
+  // Usa navigate() diretamente — cada página tem seu próprio loader
+  navigate(targetPage);
 
   const roleIcon = { owner:'👑', admin:'🔧', user:'👤', viewer:'👁' }[currentUser.role] || '👤';
   toast(roleIcon + ' ' + fam.name, 'success');
-  updateUserUI();
-  _renderFamilySwitcher();
 }
 
 function _roleLabel(role) {
@@ -3820,8 +3953,28 @@ async function _checkPendingApprovals() {
 let _mfmActiveFamilyId = null;
 
 async function openMyFamilyMgmt() {
-  // Famílias onde o usuário é owner (pega do cache _families ou busca do banco)
-  let ownedFams = (currentUser?.families || []).filter(f => f.role === 'owner');
+  const _isGlobalAdmin = currentUser?.role === 'admin' || currentUser?.can_admin;
+
+  // Famílias onde o usuário é owner ou admin global
+  let ownedFams = (currentUser?.families || []).filter(f =>
+    f.role === 'owner' || f.role === 'admin' || _isGlobalAdmin
+  );
+
+  // Fallback: se currentUser.families está vazio mas o usuário tem family_id e role owner/admin,
+  // cria uma entrada sintética para não bloquear desnecessariamente
+  if (!ownedFams.length && currentUser?.family_id) {
+    const isOwnerRole = currentUser?.role === 'owner' || currentUser?.role === 'admin' || _isGlobalAdmin;
+    if (isOwnerRole) {
+      ownedFams = [{ id: currentUser.family_id, name: '', role: currentUser.role }];
+    }
+  }
+
+  // Fallback final: se ainda vazio mas currentUser.role indica owner/admin, confia
+  if (!ownedFams.length && (currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.can_manage_family)) {
+    const fid = currentUser.family_id;
+    if (fid) ownedFams = [{ id: fid, name: '', role: currentUser.role }];
+  }
+
   if (!ownedFams.length) { toast('Você não é owner de nenhuma família','warning'); return; }
 
   // Garantir que _families está populado (pode estar vazio se veio direto do perfil)
@@ -3876,14 +4029,8 @@ function mfmSwitchAddTab(tab) {
   paneExist.style.display  = isExist ? '' : 'none';
   paneInvite.style.display = isExist ? 'none' : '';
 
-  if (tabExist) {
-    tabExist.style.background = isExist ? 'var(--accent)' : 'var(--surface2)';
-    tabExist.style.color      = isExist ? '#fff' : 'var(--muted)';
-  }
-  if (tabInvite) {
-    tabInvite.style.background = isExist ? 'var(--surface2)' : 'var(--accent)';
-    tabInvite.style.color      = isExist ? 'var(--muted)' : '#fff';
-  }
+  tabExist?.classList.toggle('active', isExist);
+  tabInvite?.classList.toggle('active', !isExist);
 }
 
 // ── Toggle add-member panel ─────────────────────────────────────────────────
@@ -3891,9 +4038,7 @@ function mfmToggleAddPanel() {
   const panel = document.getElementById('mfmAddPanel');
   const arrow = document.getElementById('mfmAddArr');
   if (!panel) return;
-  const open = panel.style.display === 'none' || panel.style.display === '';
-  panel.style.display = open ? 'block' : 'none';
-  if (arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
+  panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? '' : 'none';
 }
 
 async function _mfmRender() {
@@ -3946,21 +4091,19 @@ async function _mfmRender() {
       listEl.innerHTML = '<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:16px">Nenhum membro ainda.</div>';
     } else {
       listEl.innerHTML = members.map(m => `
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
-          <div style="flex-shrink:0">${_userAvatarHtml({ avatar_url: m.user_avatar, role: m.user_role, name: m.user_name }, 32)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:.83rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.user_name)}</div>
-            <div style="font-size:.71rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.user_email)}</div>
+        <div class="mfm2-member">
+          <div class="mfm2-member-av">${_userAvatarHtml({ avatar_url: m.user_avatar, role: m.user_role, name: m.user_name }, 36)}</div>
+          <div class="mfm2-member-info">
+            <div class="mfm2-member-name">${esc(m.user_name)}</div>
+            <div class="mfm2-member-email">${esc(m.user_email)}</div>
           </div>
-          <select style="font-size:.78rem;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);width:118px"
-                  onchange="mfmChangeRole(this,'${m.user_id}','${famId}')">
+          <select class="mfm2-role-sel" onchange="mfmChangeRole(this,'${m.user_id}','${famId}')">
             <option value="owner"  ${m.member_role==='owner'  ?'selected':''}>👑 Owner</option>
             <option value="admin"  ${m.member_role==='admin'  ?'selected':''}>🔧 Admin</option>
             <option value="user"   ${m.member_role==='user'   ?'selected':''}>👤 Usuário</option>
             <option value="viewer" ${m.member_role==='viewer' ?'selected':''}>👁 Visualizador</option>
           </select>
-          <button class="btn-icon" title="Remover da família" style="color:var(--red);flex-shrink:0"
-                  onclick="mfmRemoveMember('${m.user_id}','${esc(m.user_name)}','${famId}')">✕</button>
+          <button class="mfm2-remove-btn" title="Remover" onclick="mfmRemoveMember('${m.user_id}','${esc(m.user_name)}','${famId}')">✕</button>
         </div>`).join('');
     }
   }
@@ -4009,72 +4152,232 @@ async function _mfmRender() {
 
   // Render feature toggle cards
   _mfmRenderFeatures(_mfmActiveFamilyId);
+
+  // ── Integrantes (family_composition) ──────────────────────────────────────
+  // Carrega pais, filhos, etc. da família ativa no painel
+  const fmcListEl = document.getElementById('mfmFmcList');
+  if (fmcListEl && famId) {
+    if (typeof _loadAndRenderFmcForFamily === 'function') {
+      _loadAndRenderFmcForFamily(famId, 'mfmFmcList').catch(() => {
+        if (fmcListEl) fmcListEl.innerHTML =
+          '<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:12px 0">Nenhum integrante cadastrado.</div>';
+      });
+    } else {
+      fmcListEl.innerHTML =
+        '<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:12px 0">Módulo não disponível.</div>';
+    }
+  }
+
+  // ── Gestão de Dados: backup, snapshot, cópia, exclusão ──────────────────
+  _mfmRenderDataSection(famId);
+
+  // ── Nova Família: sempre visível (acesso já validado em openMyFamilyMgmt) ──
+  const newFamSec = document.getElementById('mfmNewFamilySection');
+  if (newFamSec) newFamSec.style.display = '';
 }
+
+// ── Data management section: backup, snapshot, copy, delete ─────────────────
+function _mfmRenderDataSection(famId) {
+  const el = document.getElementById('mfmDataActions');
+  if (!el || !famId) return;
+
+  const fam = _families.find(f => f.id === famId) ||
+              (currentUser?.families || []).find(f => f.id === famId);
+  const famName = fam?.name || _familyDisplayName?.(famId, '') || '';
+
+  const isOwner = currentUser?.role === 'admin' || currentUser?.role === 'owner' ||
+    currentUser?.can_admin ||
+    (currentUser?.families || []).some(f => String(f.id) === String(famId) &&
+      (f.role === 'owner' || f.role === 'admin'));
+
+  // Backup/Snapshot card — always available if module active
+  const snapshotBtn = `
+    <button class="mfm2-data-btn" onclick="closeModal('myFamilyMgmtModal');setTimeout(()=>openFamilyBackupManager('${famId}','${famName.replace(/'/g,"\'")}'),120)">
+      <div class="mfm2-data-icon" style="background:#eff6ff;color:#2563eb">📸</div>
+      <div class="mfm2-data-info">
+        <span class="mfm2-data-label">Snapshots</span>
+        <span class="mfm2-data-sub">Criar e restaurar backups</span>
+      </div>
+    </button>`;
+
+  // Export JSON backup
+  const exportBtn = `
+    <button class="mfm2-data-btn" onclick="closeModal('myFamilyMgmtModal');setTimeout(exportBackup,120)">
+      <div class="mfm2-data-icon" style="background:#f0fdf4;color:#16a34a">⬇️</div>
+      <div class="mfm2-data-info">
+        <span class="mfm2-data-label">Exportar JSON</span>
+        <span class="mfm2-data-sub">Baixar backup completo</span>
+      </div>
+    </button>`;
+
+  // Copy family — owners only
+  const copyBtn = isOwner ? `
+    <button class="mfm2-data-btn" onclick="closeModal('myFamilyMgmtModal');setTimeout(()=>openCopyFamilyModal('${famId}','${famName.replace(/'/g,"\'")}'),120)">
+      <div class="mfm2-data-icon" style="background:#fef3c7;color:#d97706">📋</div>
+      <div class="mfm2-data-info">
+        <span class="mfm2-data-label">Copiar família</span>
+        <span class="mfm2-data-sub">Duplicar dados para outra família</span>
+      </div>
+    </button>` : '';
+
+  // Wipe data — owners only, dangerous
+  const wipeBtn = isOwner ? `
+    <button class="mfm2-data-btn warn" onclick="closeModal('myFamilyMgmtModal');setTimeout(()=>wipeFamilyData('${famId}','${famName.replace(/'/g,"\'")}'),200)">
+      <div class="mfm2-data-icon" style="background:#fef3c7;color:#d97706">🗑️</div>
+      <div class="mfm2-data-info">
+        <span class="mfm2-data-label">Limpar dados</span>
+        <span class="mfm2-data-sub">Remove transações e histórico</span>
+      </div>
+    </button>` : '';
+
+  // Delete family — owners only, very dangerous
+  const deleteBtn = isOwner ? `
+    <button class="mfm2-data-btn danger" onclick="closeModal('myFamilyMgmtModal');setTimeout(()=>deleteFamily('${famId}','${famName.replace(/'/g,"\'")}'),200)">
+      <div class="mfm2-data-icon" style="background:#fef2f2;color:#dc2626">⛔</div>
+      <div class="mfm2-data-info">
+        <span class="mfm2-data-label">Excluir família</span>
+        <span class="mfm2-data-sub">Remove a família permanentemente</span>
+      </div>
+    </button>` : '';
+
+  el.innerHTML = snapshotBtn + exportBtn + copyBtn + wipeBtn + deleteBtn;
+}
+window._mfmRenderDataSection = _mfmRenderDataSection;
 
 function _mfmRenderFeatures(famId) {
   const container = document.getElementById('mfmFeatCards');
   if (!container || !famId) return;
 
   const MODULES = [
-    { key: 'prices_enabled_'      + famId, label: 'Preços',       emoji: '🏷️', applyFn: 'applyPricesFeature' },
-    { key: 'grocery_enabled_'     + famId, label: 'Mercado',      emoji: '🛒', applyFn: 'applyGroceryFeature' },
-    { key: 'investments_enabled_' + famId, label: 'Investimentos',emoji: '📈', applyFn: 'applyInvestmentsFeature' },
-    { key: 'backup_enabled_'      + famId, label: 'Backup',       emoji: '☁️', applyFn: null },
-    { key: 'snapshot_enabled_'    + famId, label: 'Snapshot',     emoji: '📸', applyFn: null },
+    { key: 'prices_enabled_'      + famId, label: 'Preços',       emoji: '🏷️', desc: 'Catálogo de preços',    applyFn: 'applyPricesFeature' },
+    { key: 'grocery_enabled_'     + famId, label: 'Mercado',      emoji: '🛒', desc: 'Lista de compras',      applyFn: 'applyGroceryFeature' },
+    { key: 'investments_enabled_' + famId, label: 'Investimentos',emoji: '📈', desc: 'Carteira de ativos',    applyFn: 'applyInvestmentsFeature' },
+    { key: 'ai_insights_enabled_' + famId, label: 'AI Insights',  emoji: '🤖', desc: 'Análise com IA',        applyFn: 'applyAiInsightsFeature' },
+    { key: 'debts_enabled_'       + famId, label: 'Dívidas',      emoji: '💳', desc: 'Controle de dívidas',   applyFn: 'applyDebtsFeature' },
+    { key: 'backup_enabled_'      + famId, label: 'Backup',       emoji: '☁️', desc: 'Backup automático',     applyFn: null },
+    { key: 'snapshot_enabled_'    + famId, label: 'Snapshot',     emoji: '📸', desc: 'Snapshots periódicos',  applyFn: null },
   ];
 
-  const fc = window._familyFeaturesCache || {};
-
   function render() {
-    container.innerHTML = MODULES.map(({ key, label, emoji, applyFn }) => {
+    const fc = window._familyFeaturesCache || {}; // always read live reference
+    container.innerHTML = MODULES.map(({ key, label, emoji, applyFn, desc }) => {
       const on = fc[key] !== undefined ? !!fc[key] : (key.includes('backup') || key.includes('snapshot'));
-      return `<button
-        onclick="_mfmToggleFeature('${key}','${famId}','${label}','${applyFn||''}')"
-        style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;
-          padding:10px 12px;border-radius:var(--r-sm);cursor:pointer;text-align:left;
-          border:1.5px solid ${on ? 'var(--accent)' : 'var(--border)'};
-          background:${on ? 'var(--accent-lt)' : 'var(--surface2)'};
-          transition:all .15s">
-        <span style="font-size:1.1rem">${emoji}</span>
-        <span style="font-size:.78rem;font-weight:600;color:var(--text)">${label}</span>
-        <span style="font-size:.68rem;font-weight:700;color:${on ? 'var(--accent)' : 'var(--muted)'}">
-          ${on ? '● Ativo' : '○ Inativo'}
-        </span>
+      return `<button class="mfm2-module${on ? ' on' : ''}"
+        onclick="_mfmToggleFeature('${key}','${famId}','${label}','${applyFn||''}')">
+        <div class="mfm2-module-emoji">${emoji}</div>
+        <div class="mfm2-module-label">${label}</div>
+        ${desc ? `<div class="mfm2-module-desc">${desc}</div>` : ''}
+        <div class="mfm2-module-toggle">
+          <span class="mfm2-toggle-dot${on ? ' on' : ''}"></span>
+        </div>
       </button>`;
     }).join('');
   }
 
-  // Load cache if empty, then render
+  // Always re-fetch ALL module keys fresh (handles new modules added post-deploy)
   (async () => {
-    if (!window._familyFeaturesCache || !Object.keys(window._familyFeaturesCache).length) {
-      try {
-        const { data } = await sb.from('app_settings')
-          .select('key,value')
-          .in('key', MODULES.map(m => m.key));
-        if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
-        (data || []).forEach(r => {
-          window._familyFeaturesCache[r.key] = (r.value === true || r.value === 'true');
-        });
-      } catch(_) {}
-    }
+    if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
+    const allKeys = MODULES.map(m => m.key);
+    try {
+      const { data } = await sb.from('app_settings')
+        .select('key,value')
+        .in('key', allKeys);
+      allKeys.forEach(k => {
+        const row = (data || []).find(r => r.key === k);
+        if (row) {
+          window._familyFeaturesCache[k] = (row.value === true || row.value === 'true');
+        } else {
+          // Not in DB: check localStorage (user may have toggled but DB save failed)
+          const local = localStorage.getItem(k);
+          window._familyFeaturesCache[k] = local === 'true'
+            ? true
+            : (k.includes('backup') || k.includes('snapshot'));
+        }
+      });
+    } catch(_) {}
     render();
   })();
 }
 
+/**
+ * Verifica se o usuário atual pode gerenciar a família especificada.
+ * Retorna true para: owner da família, admin global, ou owner global.
+ * Usa currentUser.families[] (role por família) em vez de currentUser.role (role ativo global).
+ */
+function _canManageFamily(famId) {
+  if (!window.currentUser) return false;
+  const u = window.currentUser;
+
+  // Nível 1: admin global ou can_admin — acesso irrestrito
+  if (u.role === 'admin' || u.can_admin) return true;
+
+  // Nível 2: role efetivo 'owner' — o usuário é owner da família ativa
+  // currentUser.role já é o role efetivo calculado em _loadCurrentUserContext
+  // Se chegou até aqui com role='owner', o acesso é legítimo
+  if (u.role === 'owner') return true;
+
+  // Nível 3: can_manage_family flag (derivado de role owner/admin na família ativa)
+  if (u.can_manage_family) return true;
+
+  // Nível 4: role global em app_users (owner/admin global independente de família ativa)
+  // Cobre o caso onde app_users.role='owner' mas activeRole ficou 'user' por family_members.role=NULL
+  if (u.app_role === 'owner' || u.app_role === 'admin') return true;
+
+  // Nível 5: verifica explicitamente o role nessa família específica
+  // (cobre multi-família onde o usuário pode ter roles diferentes por família)
+  const fid = String(famId || '').trim();
+  const familyEntry = (u.families || []).find(f => String(f.id).trim() === fid);
+  if (familyEntry?.role === 'owner' || familyEntry?.role === 'admin') return true;
+
+  return false;
+}
+
 async function _mfmToggleFeature(key, famId, label, applyFn) {
+  // Nota de segurança: o acesso já foi validado em openMyFamilyMgmt().
+  // Não repetimos o check aqui para evitar falsos negativos por dessincronia
+  // entre currentUser (carregado no login) e o estado real da família.
+
   if (!window._familyFeaturesCache) window._familyFeaturesCache = {};
-  const wasOn = !!window._familyFeaturesCache[key];
-  const nowOn = !wasOn;
+  const nowOn = !window._familyFeaturesCache[key];
+
+  // ── Atualização síncrona de todos os caches antes de qualquer await ──────
   window._familyFeaturesCache[key] = nowOn;
-  try {
-    await saveAppSetting(key, nowOn);
-    if (applyFn && typeof window[applyFn] === 'function') await window[applyFn]();
-    toast(nowOn ? `✓ ${label} ativado` : `${label} desativado`, 'success');
-  } catch(e) {
-    window._familyFeaturesCache[key] = wasOn;
-    toast('Erro: ' + e.message, 'error');
+  if (window._appSettingsCache) window._appSettingsCache[key] = nowOn;
+  try { localStorage.setItem(key, String(nowOn)); } catch(_) {}
+
+  // Aplica feature imediatamente (UI responsiva, sem aguardar DB)
+  if (applyFn && typeof window[applyFn] === 'function') {
+    window[applyFn]().catch(() => {});
   }
+  toast(nowOn ? `✓ ${label} ativado` : `${label} desativado`, 'success');
   _mfmRenderFeatures(famId);
+
+  // ── Persistência best-effort — 3 caminhos em cascata ────────────────────
+  (async () => {
+    const modKey = key.replace(/_enabled_.*$/, '');
+
+    // 1. family_preferences (RLS owner-safe, tabela dedicada)
+    if (typeof updateFamilyPreferences === 'function') {
+      try { await updateFamilyPreferences({ modules: { [modKey]: nowOn } }); return; } catch(_) {}
+    }
+
+    // 2. families.settings JSONB (owner sempre pode escrever na própria família)
+    if (famId && window.sb) {
+      try {
+        const { data: fRow } = await sb.from('families')
+          .select('settings').eq('id', famId).maybeSingle();
+        const cur  = (typeof fRow?.settings === 'object' && fRow?.settings) ? fRow.settings : {};
+        const next = { ...cur, modules: { ...(cur.modules || {}), [modKey]: nowOn } };
+        const { error } = await sb.from('families').update({ settings: next }).eq('id', famId);
+        if (!error) return;
+      } catch(_) {}
+    }
+
+    // 3. app_settings legado (pode falhar por RLS para owner — localStorage já garantiu)
+    if (typeof saveAppSetting === 'function') {
+      saveAppSetting(key, nowOn).catch(() => {});
+    }
+  })();
 }
 
 async function mfmChangeRole(sel, userId, famId) {
@@ -4082,7 +4385,7 @@ async function mfmChangeRole(sel, userId, famId) {
   const { error } = await sb.from('family_members')
     .update({ role: newRole }).eq('user_id', userId).eq('family_id', famId);
   if (error) { toast('Erro: ' + error.message, 'error'); return; }
-  toast('✓ Perfil atualizado', 'success');
+  toast(t('profile.updated'), 'success');
 }
 
 async function mfmRemoveMember(userId, userName, famId) {
@@ -4090,8 +4393,109 @@ async function mfmRemoveMember(userId, userName, famId) {
   const { error } = await sb.from('family_members')
     .delete().eq('user_id', userId).eq('family_id', famId);
   if (error) { toast('Erro: ' + error.message, 'error'); return; }
-  toast('✓ Membro removido', 'success');
+  toast(t('toast.member_removed'), 'success');
   await _mfmRender();
+}
+
+// ── Nova família a partir do painel de gerenciamento ─────────────────────────
+
+function mfmScrollToNewFamily() {
+  // Abre o accordion de nova família e faz scroll até ele
+  const panel = document.getElementById('mfmNewFamPanel');
+  const sec   = document.getElementById('mfmNewFamilySection');
+  if (!panel || !sec) return;
+  // Garantir que a seção está visível
+  sec.style.display = '';
+  // Abrir o accordion se fechado
+  if (panel.style.display === 'none' || !panel.style.display) {
+    mfmToggleNewFamPanel();
+  }
+  // Scroll suave até a seção
+  setTimeout(() => {
+    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
+function mfmToggleNewFamPanel() {
+  const panel   = document.getElementById('mfmNewFamPanel');
+  const trigger = document.getElementById('mfmNewFamTrigger');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : '';
+  if (!isOpen) {
+    // Abre: foca o input e limpa estado anterior
+    const inp = document.getElementById('mfmNewFamName');
+    const err = document.getElementById('mfmNewFamError');
+    const btn = document.getElementById('mfmNewFamBtn');
+    if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 80); }
+    if (err) err.style.display = 'none';
+    if (btn) { btn.disabled = false; btn.textContent = '🏠 Criar família'; }
+    if (trigger) { trigger.style.borderColor = 'var(--accent)'; trigger.style.color = 'var(--accent)'; }
+  } else {
+    if (trigger) { trigger.style.borderColor = ''; trigger.style.color = ''; }
+  }
+}
+
+async function mfmCreateNewFamily() {
+  const inp    = document.getElementById('mfmNewFamName');
+  const err    = document.getElementById('mfmNewFamError');
+  const btn    = document.getElementById('mfmNewFamBtn');
+  const name   = (inp?.value || '').trim();
+
+  const showErr = (msg) => {
+    if (err) { err.textContent = msg; err.style.display = ''; }
+    if (btn) { btn.disabled = false; btn.textContent = '🏠 Criar família'; }
+  };
+
+  if (!name) { showErr('Informe o nome da família.'); inp?.focus(); return; }
+  if (name.length < 2) { showErr('Nome deve ter pelo menos 2 caracteres.'); return; }
+
+  if (err) err.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Criando...'; }
+
+  try {
+    // 1. Criar a família no banco
+    const { data: newFam, error: famErr } = await sb
+      .from('families')
+      .insert({ name })
+      .select('id, name')
+      .single();
+    if (famErr) throw new Error('Erro ao criar família: ' + famErr.message);
+
+    const newFamId = newFam.id;
+
+    // 2. Associar o usuário atual como owner
+    const userId = currentUser?.id;
+    if (userId) {
+      const { error: memErr } = await sb
+        .from('family_members')
+        .upsert({ user_id: userId, family_id: newFamId, role: 'owner' },
+                { onConflict: 'user_id,family_id' });
+      if (memErr) console.warn('[mfmCreateNewFamily] family_members upsert:', memErr.message);
+    }
+
+    // 3. Atualizar currentUser.families localmente (evita reload completo)
+    if (!currentUser.families) currentUser.families = [];
+    currentUser.families.push({ id: newFamId, name, role: 'owner' });
+
+    // 4. Atualizar cache global de famílias
+    if (!window._families) window._families = [];
+    window._families.push({ id: newFamId, name });
+
+    // 5. Fechar painel de criação
+    mfmToggleNewFamPanel();
+    toast(`✓ Família "${esc(name)}" criada!`, 'success');
+
+    // 6. Mudar para nova família automaticamente
+    await switchFamily(newFamId);
+
+    // 7. Reabrir o painel para mostrar a nova família
+    // (pequeno delay para switchFamily terminar suas animações)
+    setTimeout(() => openMyFamilyMgmt(), 600);
+
+  } catch(e) {
+    showErr(e.message || 'Erro ao criar família.');
+  }
 }
 
 async function mfmAddExisting() {
@@ -4176,4 +4580,16 @@ function _mfmMsg(text, type) {
   el.style.background = type === 'error' ? '#fef2f2' : type === 'success' ? '#f0fdf4' : '#fffbeb';
   el.style.color      = type === 'error' ? '#991b1b' : type === 'success' ? '#166534' : '#92400e';
   el.style.border     = '1px solid ' + (type === 'error' ? '#fecaca' : type === 'success' ? '#bbf7d0' : '#fde68a');
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

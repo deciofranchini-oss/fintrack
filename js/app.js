@@ -14,11 +14,23 @@ function initBottomNav(){
     const saved = localStorage.getItem('bottomNavCollapsed') === '1';
     nav.classList.toggle('is-collapsed', saved);
   }catch(e){}
+
+  // Toggle button: always open/close
   toggle.addEventListener('click', (ev)=>{
     ev.stopPropagation();
     setBottomNavCollapsed(!nav.classList.contains('is-collapsed'));
   });
 
+  // Tap anywhere on the nav while collapsed → expand (no drag needed)
+  nav.addEventListener('click', (ev)=>{
+    if(!nav.classList.contains('is-collapsed')) return;
+    // Don't double-fire when the toggle button itself was clicked
+    if(toggle.contains(ev.target)) return;
+    ev.stopPropagation();
+    setBottomNavCollapsed(false);
+  });
+
+  // Swipe: right = collapse, left = expand
   let startX = 0;
   let startY = 0;
   let tracking = false;
@@ -34,8 +46,6 @@ function initBottomNav(){
   };
   nav.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; start(t.clientX, t.clientY); }, {passive:true});
   nav.addEventListener('touchend', e=>{ const t=e.changedTouches[0]; end(t.clientX, t.clientY); }, {passive:true});
-  nav.addEventListener('pointerdown', e=>{ start(e.clientX, e.clientY); });
-  nav.addEventListener('pointerup', e=>{ end(e.clientX, e.clientY); });
 }
 
 function openSidebar(){
@@ -146,16 +156,23 @@ function scheduleDailyAutoRegister(){
 async function initSupabase(){
   const url=document.getElementById('supabaseUrl').value.trim();
   const key=document.getElementById('supabaseKey').value.trim();
-  if(!url||!key){toast('Preencha URL e Key do Supabase','error');return;}
+  if(!url||!key){toast(t('error.supabase_config'),'error');return;}
   try{
-    sb=supabase.createClient(url,key);
+    sb=supabase.createClient(url,key,{
+      auth:{
+        persistSession:true,
+        autoRefreshToken:true,
+        detectSessionInUrl:true,
+        storageKey:'family-fintrack-auth'
+      }
+    });
     const{error}=await sb.from('accounts').select('id').limit(1);
     if(error)throw error;
     localStorage.setItem('sb_url',url);localStorage.setItem('sb_key',key);
     document.getElementById('setupScreen').style.display='none';
     document.getElementById('pinScreen').style.display='none';
     _pinUnlocked=true;
-    toast('Conectado ao Supabase!','success');
+    toast(t('toast.supabase_ok'),'success');
     await bootApp();
     resetAutoLockTimer();
   }catch(e){toast('Erro: '+e.message,'error');}
@@ -357,7 +374,14 @@ async function tryAutoConnect(){
 
     // Create client FIRST — Supabase JS v2 PKCE needs ?code in
     // window.location.search at this point to exchange it for a session.
-    sb = supabase.createClient(url, key);
+    sb = supabase.createClient(url, key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: 'family-fintrack-auth'
+      }
+    });
 
     // Strip ?code from URL AFTER client creation so a page-refresh
     // doesn't attempt to reuse the (now spent) code.
@@ -459,7 +483,7 @@ function getAppBaseUrl() {
   return origin + base;
 }
 
-const DEFAULT_LOGO_URL='logo_transparent.png';
+const DEFAULT_LOGO_URL='logo.jpg';
 let APP_LOGO_URL=DEFAULT_LOGO_URL;
 function setAppLogo(url){
   // Defensive: avoid accidentally assigning a Promise/thenable to img.src
@@ -475,16 +499,13 @@ function setAppLogo(url){
   const clean = (typeof url === 'string') ? url.trim() : '';
   APP_LOGO_URL = clean || DEFAULT_LOGO_URL;
 
-  // For wizard header use logo2 variant (dark background, no filter CSS)
-  const DARK_LOGO_URL = APP_LOGO_URL.replace(/\.png$/i, '2.png');
-
   ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','loginLogoImg','authLogoImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.src = APP_LOGO_URL;
   });
-  // Wizard header uses logo2 (dark green background, no CSS filter)
+  // Wizard usa logo_wizard.png (versão para fundo escuro/verde)
   const wzEl = document.getElementById('wzLogoImg');
-  if(wzEl) wzEl.src = DARK_LOGO_URL;
+  if(wzEl) wzEl.src = 'logo_wizard.png';
 }
 
 // NOTE: txFilter is part of the app's internal contract (used across modules).
@@ -505,7 +526,22 @@ function _scrollTopAndHighlight(selector, ms) {
   };
   setTimeout(()=>seek(6),100);
 }
-let state={accounts:[],groups:[],categories:[],payees:[],transactions:[],budgets:[],txPage:0,txPageSize:50,txTotal:0,txSortField:'date',txSortAsc:false,txFilter:{search:'',month:'',account:'',type:'',status:''},txView:'flat',currentPage:'dashboard',chartInstances:{},privacyMode:false};
+// state é inicializado em js/state.js (carregado antes deste arquivo).
+// Garantir campos de paginação/UI caso state.js não tenha sido carregado
+// (proteção contra ordem de carga incorreta).
+if (typeof state === 'undefined') {
+  console.error('[app.js] state não definido — state.js deve ser carregado primeiro.');
+}
+// Campos específicos de paginação que state.js já declara; garantia extra:
+state.txPage       = state.txPage       ?? 0;
+state.txPageSize   = state.txPageSize   ?? 50;
+state.txTotal      = state.txTotal      ?? 0;
+state.txSortField  = state.txSortField  ?? 'date';
+state.txSortAsc    = state.txSortAsc    ?? false;
+state.txFilter     = state.txFilter     || { search: '', month: '', account: '', type: '', status: '' };
+state.txView       = state.txView       ?? 'flat';
+state.currentPage  = state.currentPage  ?? 'dashboard';
+state.privacyMode  = state.privacyMode  ?? false;
 
 async function bootApp(){
   registerServiceWorkerSafe();
@@ -518,9 +554,14 @@ async function bootApp(){
     await Promise.all([
       DB.preload(),
       loadAppSettings().catch(e => console.warn('[boot] loadAppSettings (não fatal):', e?.message)),
+      (typeof i18nInit === 'function' ? i18nInit() : Promise.resolve()),
+      // Carrega preferências e módulos da família (new centralized service)
+      (typeof getFamilyPreferences === 'function'
+        ? getFamilyPreferences().catch(e => console.warn('[boot] getFamilyPreferences (não fatal):', e?.message))
+        : Promise.resolve()),
     ]);
   } catch(e) {
-    toast('Erro ao carregar dados: '+e.message,'error');
+    toast(t('error.load_data')+' '+e.message,'error');
     return;
   }
   // Dados secundários em background — não bloqueiam o dashboard
@@ -558,16 +599,24 @@ async function bootApp(){
   }
   initEmailJSStatus();
   updateUserUI();
+  if (typeof _i18nUpdateTopbarLabel === 'function') _i18nUpdateTopbarLabel();
   // Aplica visibilidade do módulo de preços conforme feature flag da família
   if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
   if (typeof applyGroceryFeature === 'function') applyGroceryFeature().catch(() => {});
   if (typeof applyInvestmentsFeature === 'function') applyInvestmentsFeature().catch(() => {});
+  if (typeof applyAiInsightsFeature === 'function') applyAiInsightsFeature().catch(() => {});
+  if (typeof applyDebtsFeature === 'function') applyDebtsFeature().catch(() => {});
   // Setup wizard — shows for new users until accounts + categories + transactions exist
   if (typeof initWizard === 'function') setTimeout(() => initWizard().catch(()=>{}), 800);
 }
 
-const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios','ai-insights':'AI Insights',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações',investments:'Carteira de Investimentos',prices:'Gestão de Preços',
-  grocery:'🛒 Lista de Mercado'};
+const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Contas',reports:'Relatórios',budgets:'Orçamentos',categories:'Categorias',payees:'Beneficiários',scheduled:'Programados',import:'Importar / Backup',settings:'Configurações',investments:'Carteira de Investimentos',prices:'Gestão de Preços',
+  grocery:'Lista de Mercado',
+  ai_insights:'AI Insights',
+  debts:'Dívidas',
+  help:'Ajuda',
+  audit:'Auditoria de Programadas',
+  telemetry:'Telemetria'};
 
 // SVG icons used in the mobile topbar (replaces text title on small screens)
 const _pageIconsSVG = {
@@ -583,8 +632,10 @@ const _pageIconsSVG = {
   settings:     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   prices:       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/></svg>',
   grocery:      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
-  'ai-insights':'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.2 4.8L19 9l-4.8 2.2L12 16l-2.2-4.8L5 9l4.8-2.2L12 2z"/><path d="M5 19l1.2-2.8L9 15l-2.8-1.2L5 11l-1.2 2.8L1 15l2.8 1.2L5 19z"/></svg>',
+  ai_insights:  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><circle cx="19" cy="5" r="3" fill="currentColor" stroke="none" opacity=".7"/></svg>',
+  help:         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   audit:        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  telemetry:    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><polyline points="22 20 2 20"/></svg>',
 };
 async function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
@@ -751,6 +802,27 @@ function clearFamilyScopedUI() {
   _clearFamilySwitchNode('scheduledList', '');
   _clearFamilySwitchNode('budgetList', '');
   _clearFamilySwitchNode('reportResult', '');
+  _clearFamilySwitchNode('dashForecastSummary', '');
+
+  // Dashboard containers
+  _clearFamilySwitchNode('statTotal', '—');
+  _clearFamilySwitchNode('statIncome', '—');
+  _clearFamilySwitchNode('statExpenses', '—');
+  _clearFamilySwitchNode('statBalance', '—');
+  _clearFamilySwitchNode('accountBalancesList', '');
+  _clearFamilySwitchNode('dashRecentTxBody', '');
+  _clearFamilySwitchNode('catChartDetail', '');
+  _clearFamilySwitchNode('dashFavCategories', '');
+  _clearFamilySwitchNode('upcomingList', '');
+
+  // Reports
+  _clearFamilySwitchNode('reportKpis', '');
+  _clearFamilySwitchNode('reportDataInfo', '');
+  _clearFamilySwitchNode('reportCatSection', '');
+
+  // Investments
+  _clearFamilySwitchNode('investmentsContent', '');
+  _clearFamilySwitchNode('investmentsList', '');
 
   ['groceryDetailPanel','txBestCardSuggestion','txCurrencyPanel','txFxPanel','txCardPaymentBadge','pricesReceiptZone'].forEach(id => {
     try {
@@ -789,7 +861,7 @@ function clearFamilyScopedUI() {
     } catch(e) {}
   });
 
-  ['txMonth','txAccount','txType','txStatusFilter','forecastAccountFilter','pricesCatFilter','pricesStoreFilter'].forEach(id => {
+  ['txMonth','txAccount','txType','txStatusFilter','txCategoryFilter','forecastAccountFilter','dashForecastAccount','pricesCatFilter','pricesStoreFilter'].forEach(id => {
     try {
       const el = document.getElementById(id);
       if (el) el.value = '';
@@ -808,9 +880,10 @@ function clearFamilyScopedUI() {
 }
 
 function navigate(page){
-  // Guard: settings/audit são admin-only
-  if((page==='settings'||page==='audit') && currentUser?.role !== 'admin'){
-    toast('Acesso restrito: apenas Administradores globais podem acessar as Configurações.','warning');
+  // Guard: settings/audit/telemetry são admin-only
+  // Guard: settings/telemetry são admin-only; audit é acessível a todos
+  if((page==='settings'||page==='telemetry') && currentUser?.role !== 'admin'){
+    toast(t('error.admin_only'),'warning');
     return;
   }
 
@@ -830,12 +903,62 @@ function navigate(page){
   document.getElementById('pageTitle').textContent=pageTitles[page]||page;
   const _iconEl=document.getElementById('pageIcon');
   if(_iconEl) _iconEl.innerHTML=_pageIconsSVG[page]||_pageIconsSVG['dashboard'];
+  // ── Page Header Bar (Opção A) ──────────────────────────────────────────────
+  (function _injectPageHeader(pg) {
+    const pageEl = document.getElementById('page-' + pg);
+    if (!pageEl) return;
+    // Remove header anterior se existir
+    const old = pageEl.querySelector('.page-header-bar');
+    if (old) old.remove();
+    const icon = _pageIconsSVG[pg] || _pageIconsSVG['dashboard'];
+    const title = pageTitles[pg] || pg;
+    // Ações opcionais por página
+    const actions = {
+      dashboard:    `<button class="page-header-action" onclick="openDashCustomModal()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/></svg>Personalizar</button>`,
+      transactions: `<button class="page-header-action" onclick="openTransactionModal()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova</button>`,
+      accounts:     `<button class="page-header-action" onclick="openAccountModal()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova Conta</button>`,
+      budgets:      `<button class="page-header-action" onclick="openBudgetModal()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo</button>`,
+      scheduled:    `<button class="page-header-action" onclick="openScheduledModal()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo</button>`,
+      audit:        `<button class="page-header-action" onclick="loadAuditLogs()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Atualizar</button>`,
+      telemetry:    `<button class="page-header-action" onclick="loadTelemetryDashboard?.()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Atualizar</button>`,
+      reports:      '',
+      categories:   '',
+      payees:       '',
+      import:       '',
+      settings:     '',
+      investments:  '',
+      debts:        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
+      prices:       '',
+      grocery:      '',
+      ai_insights:  '',
+      help:         '',
+    };
+    const bar = document.createElement('div');
+    bar.className = 'page-header-bar';
+    bar.innerHTML = `<div class="page-header-bar-left"><div class="page-header-bar-icon">${icon}</div><span class="page-header-bar-title">${title}</span></div><div class="page-header-bar-right">${actions[pg]||''}</div>`;
+    pageEl.insertBefore(bar, pageEl.firstChild);
+
+    // Keep FX bar directly below the page title bar
+    let fxBar = document.getElementById('fxRatesBadge');
+    if (!fxBar && typeof _renderFxBadge === 'function') {
+      try { _renderFxBadge(); } catch (_) {}
+      fxBar = document.getElementById('fxRatesBadge');
+    }
+    if (fxBar) {
+      pageEl.insertBefore(fxBar, bar.nextSibling);
+      fxBar.style.display = '';
+      if (typeof _renderFxBadge === 'function') {
+        try { _renderFxBadge(); } catch (_) {}
+      }
+    }
+  })(page);
   state.currentPage=page;closeSidebar();
+  if (typeof i18nApplyToDOM === 'function') i18nApplyToDOM(document.getElementById('page-'+page));
   _scrollActivePageToTop(page);
   if(page==='dashboard' && sb) loadDashboard();
-  else if(page==='transactions'){populateTxMonthFilter();loadTransactions();}
+  else if(page==='transactions'){if(state.reconcileMode && typeof exitReconcileMode==='function')exitReconcileMode(false);populateTxMonthFilter();if(typeof populateSelects==='function')populateSelects();loadTransactions();}
   else if(page==='accounts'){ if(typeof initAccountsPage==='function') initAccountsPage(); else renderAccounts(); }
-  else if(page==='reports'){populateReportFilters();loadCurrentReport();}
+  else if(page==='reports'){if(typeof populateSelects==='function')populateSelects();if(typeof populateReportFilters==='function')populateReportFilters();loadCurrentReport();}
   else if(page==='budgets')initBudgetsPage();
   else if(page==='categories')initCategoriesPage();
   else if(page==='payees'){_loadPayeeTxCounts().then(()=>renderPayees());}
@@ -843,10 +966,13 @@ function navigate(page){
   else if(page==='import')initImportPage();
   else if(page==='settings')loadSettings();
   else if(page==='audit')loadAuditLogs();
+  else if(page==='telemetry')loadTelemetryDashboard?.();
   else if(page==='investments')loadInvestmentsPage?.();
+  else if(page==='debts')loadDebtsPage?.();
   else if(page==='prices')initPricesPage();
   else if(page==='grocery')initGroceryPage();
-  else if(page==='ai-insights') loadAIInsightsPage?.();
+  else if(page==='ai_insights')initAiInsightsPage();
+  else if(page==='help'){if(typeof initHelpPage==='function')initHelpPage();}
 
   setTimeout(() => _scrollActivePageToTop(page), 0);
   setTimeout(() => _scrollActivePageToTop(page), 120);
@@ -870,3 +996,231 @@ if('serviceWorker' in navigator){
 
 
 document.addEventListener('DOMContentLoaded', initBottomNav);
+
+// ── i18n: re-render UI when language changes ─────────────────────────────────
+document.addEventListener('i18n:changed', () => {
+  // 1. Update pageTitles from translation dict
+  const pageKeyMap = {
+    dashboard:'page.dashboard', transactions:'page.transactions',
+    accounts:'page.accounts',   reports:'page.reports',
+    budgets:'page.budgets',     categories:'page.categories',
+    payees:'page.payees',       scheduled:'page.scheduled',
+    import:'page.import',       settings:'page.settings',
+    investments:'page.investments', prices:'page.prices',
+    ai_insights:'page.ai_insights', grocery:'page.grocery',
+    translations:'page.translations',
+  };
+  if (typeof t === 'function') {
+    Object.entries(pageKeyMap).forEach(([page, key]) => {
+      const tr = t(key);
+      if (tr && tr !== key) pageTitles[page] = tr;
+    });
+  }
+
+  // 2. Update topbar page title
+  const titleEl = document.getElementById('pageTitle');
+  if (titleEl && state.currentPage && pageTitles[state.currentPage]) {
+    titleEl.textContent = pageTitles[state.currentPage];
+  }
+
+  // 3. Update topbar language badge to reflect current language
+  if (typeof _i18nUpdateTopbarLabel === 'function') _i18nUpdateTopbarLabel();
+
+  // 4. Apply data-i18n to all static HTML elements + text-node engine
+  if (typeof i18nApplyToDOM === 'function') i18nApplyToDOM(document);
+
+  // 4. Re-render current page content (JS-rendered strings).
+  //    Cobre TODAS as páginas para garantia 100% de consistência de idioma.
+  const page = state.currentPage;
+  try {
+    if (page === 'transactions') {
+      if (typeof populateTxMonthFilter === 'function') populateTxMonthFilter();
+      if (typeof populateSelects === 'function') populateSelects();
+      if (typeof renderTxTable === 'function') renderTxTable(state.transactions);
+      if (typeof renderTransactions === 'function') renderTransactions();
+    } else if (page === 'accounts') {
+      if (typeof renderAccounts === 'function') renderAccounts();
+    } else if (page === 'categories') {
+      if (typeof renderCategories === 'function') renderCategories();
+    } else if (page === 'payees') {
+      if (typeof renderPayees === 'function') renderPayees();
+    } else if (page === 'budgets') {
+      if (typeof renderBudgets === 'function') renderBudgets();
+    } else if (page === 'reports') {
+      if (typeof populateSelects === 'function') populateSelects();
+      if (typeof populateReportFilters === 'function') populateReportFilters();
+      if (typeof loadCurrentReport === 'function') loadCurrentReport();
+    } else if (page === 'dashboard') {
+      if (typeof loadDashboard === 'function') loadDashboard();
+    } else if (page === 'scheduled') {
+      if (typeof renderScheduled === 'function') renderScheduled();
+    } else if (page === 'prices') {
+      if (typeof _renderPricesPage === 'function') _renderPricesPage();
+    } else if (page === 'investments') {
+      if (typeof renderInvestments === 'function') renderInvestments();
+    } else if (page === 'settings') {
+      if (typeof loadSettings === 'function') loadSettings();
+    } else if (page === 'grocery') {
+      // Grocery re-renders lists + items in current language
+      if (typeof _renderGroceryLists === 'function') _renderGroceryLists();
+      if (typeof _renderGroceryItems === 'function') _renderGroceryItems();
+    } else if (page === 'debts') {
+      if (typeof renderDebtsPage === 'function') renderDebtsPage();
+    } else if (page === 'ai_insights') {
+      // AI Insights: re-apply DOM labels (heavy re-fetch not needed)
+      if (typeof i18nApplyToDOM === 'function') {
+        const pg = document.getElementById('page-ai_insights');
+        if (pg) i18nApplyToDOM(pg);
+      }
+    } else if (page === 'import') {
+      if (typeof i18nApplyToDOM === 'function') {
+        const pg = document.getElementById('page-import');
+        if (pg) i18nApplyToDOM(pg);
+      }
+    }
+  } catch(_) {}
+
+  // 5. Sempre re-aplica nav sidebar e bottom-nav para labels traduzidos
+  try {
+    if (typeof renderSidebarNav === 'function') renderSidebarNav();
+    if (typeof initBottomNav === 'function') initBottomNav();
+    // Re-aplica data-i18n no sidebar explicitamente
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && typeof i18nApplyToDOM === 'function') i18nApplyToDOM(sidebar);
+  } catch(_) {}
+});
+
+
+// Strong zoom lock for mobile/webview double-tap, pinch and ctrl+wheel
+(function(){
+  if (window.__ftZoomLockInit) return;
+  window.__ftZoomLockInit = true;
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function(e){
+    const now = Date.now();
+    if (now - lastTouchEnd <= 350) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive:false });
+  ['gesturestart','gesturechange','gestureend'].forEach(function(evt){
+    document.addEventListener(evt, function(e){ e.preventDefault(); }, { passive:false });
+  });
+  document.addEventListener('wheel', function(e){
+    if (e.ctrlKey) e.preventDefault();
+  }, { passive:false });
+})();
+
+
+// ── Language picker (topbar) ─────────────────────────────────────────────────
+function toggleLangPicker() {
+  const dd = document.getElementById('topbarLangDropdown');
+  if (!dd) return;
+  const isOpen = dd.style.display !== 'none';
+  dd.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    // Mark active language
+    const lang = typeof i18nGetLanguage === 'function' ? i18nGetLanguage() : 'pt';
+    dd.querySelectorAll('.i18n-dd-item').forEach(btn => {
+      btn.classList.toggle('i18n-dd-active', btn.dataset.lang === lang);
+    });
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', _closeLangPicker, { once: true });
+    }, 50);
+  }
+}
+function _closeLangPicker(e) {
+  const picker = document.getElementById('topbarLangPicker');
+  const dd     = document.getElementById('topbarLangDropdown');
+  // Don't close if click was on the picker itself or inside the dropdown
+  if (!picker || picker.contains(e.target) || (dd && dd.contains(e.target))) return;
+  if (dd) dd.style.display = 'none';
+}
+async function quickSetLang(lang) {
+  const dd = document.getElementById('topbarLangDropdown');
+  if (dd) dd.style.display = 'none';
+
+  if (typeof i18nSetLanguage !== 'function') return;
+
+  // Apply language immediately via i18nSetLanguage (sets _i18nLang, localStorage, applies DOM)
+  await i18nSetLanguage(lang);
+
+  // Update topbar badge
+  _i18nUpdateTopbarLabel();
+
+  // Update pageTitles and current page title
+  const pageKeyMap = {
+    dashboard:'page.dashboard', transactions:'page.transactions',
+    accounts:'page.accounts',   reports:'page.reports',
+    budgets:'page.budgets',     categories:'page.categories',
+    payees:'page.payees',       scheduled:'page.scheduled',
+    import:'page.import',       settings:'page.settings',
+    investments:'page.investments', prices:'page.prices',
+    ai_insights:'page.ai_insights', grocery:'page.grocery',
+    translations:'page.translations',
+  };
+  Object.entries(pageKeyMap).forEach(([page, key]) => {
+    const tr = typeof t === 'function' ? t(key) : null;
+    if (tr && tr !== key) pageTitles[page] = tr;
+  });
+  const page = state.currentPage;
+  const titleEl = document.getElementById('pageTitle');
+  if (titleEl && pageTitles[page]) titleEl.textContent = pageTitles[page];
+
+  // Save preference to Supabase (best-effort, non-blocking)
+  if (window.sb && window.currentUser?.id) {
+    sb.from('app_users')
+      .update({ preferred_language: lang })
+      .eq('id', currentUser.id)
+      .then(() => { if (window.currentUser) currentUser.preferred_language = lang; })
+      .catch(() => {});
+  }
+
+  toast('🌐 ' + ({ pt:'Português', en:'English', es:'Español', fr:'Français' }[lang] || lang), 'success');
+}
+// ── Profile language button strip selector ───────────────────────────────────
+function profileSelectLang(lang, silent) {
+  // Update hidden input — saveMyProfile() reads this value when user clicks Save
+  const hidden = document.getElementById('myProfileLanguage');
+  if (hidden) hidden.value = lang;
+
+  // Highlight active button
+  const btns = document.querySelectorAll('#profileLangSelector .i18n-lang-btn');
+  btns.forEach(btn => btn.classList.toggle('active', btn.dataset.lang === lang));
+
+  // NOTE: NO reload here. Language is saved and applied by saveMyProfile()
+  // when the user clicks the Save button. This allows the user to change
+  // other profile fields at the same time without losing their work.
+  // saveMyProfile() calls i18nSetLanguage(newLang) which updates the DOM,
+  // localStorage and Supabase — no page reload required.
+}
+window.profileSelectLang = profileSelectLang;
+
+function _i18nUpdateTopbarLabel() {
+  const lang = typeof i18nGetLanguage === 'function' ? i18nGetLanguage() : 'pt';
+  // Update badge (new globe-icon button)
+  const badge = document.getElementById('topbarLangBadge');
+  if (badge) badge.textContent = lang.toUpperCase();
+  // Fallback: old text-only label (kept for safety)
+  const el = document.getElementById('topbarLangLabel');
+  if (el) el.textContent = lang.toUpperCase();
+  // Highlight active item in dropdown
+  document.querySelectorAll('#topbarLangDropdown .i18n-dd-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+  // Also update profile selector if open
+  if (typeof profileSelectLang === 'function') profileSelectLang(lang, true);
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}

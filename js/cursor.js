@@ -34,16 +34,43 @@ const Cursor = (() => {
   let _mode    = 'load';
   let _timer   = null;
 
-  const LOGO_SRC = 'logocursor.png';
+  let _LOGO_SRC  = 'logocursor.png'; // default; overridden by app_settings
   let _img = null, _imgReady = false;
+
+  // Allow settings to update the cursor logo at runtime
+  window._setCursorLogoSrc = function(url) {
+    const newSrc = (url || 'logocursor.png').trim();
+    if (newSrc === _LOGO_SRC) return;
+    _LOGO_SRC = newSrc;
+    // Reset image so it's re-preloaded with the new URL
+    _img = null;
+    _imgReady = false;
+    _preload();
+  };
 
   function _preload() {
     if (_img) return;
     _img = new Image();
     _img.onload  = () => { _imgReady = true; };
     _img.onerror = () => { _imgReady = false; };
-    _img.src = LOGO_SRC;
+    _img.src = _LOGO_SRC;
   }
+
+  // Load cursor image URL from app_settings once auth is ready
+  async function _loadCursorSrcFromSettings() {
+    try {
+      if (typeof getAppSetting !== 'function') return;
+      const saved = await getAppSetting('cursor_img_url', 'logocursor.png');
+      if (saved && saved !== _LOGO_SRC) {
+        window._setCursorLogoSrc(saved);
+      }
+    } catch (_) {}
+  }
+
+  // Defer until app is ready (getAppSetting requires Supabase + auth)
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(_loadCursorSrcFromSettings, 2000);
+  });
 
   function _init() {
     if (_el) return;

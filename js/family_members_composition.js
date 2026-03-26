@@ -814,8 +814,12 @@ async function createFirstFamily() {
  * Load family composition for a specific family_id and render into
  * the #fmcList-{familyId} and #fmcBadge-{familyId} elements inside the family card.
  */
-async function _loadAndRenderFmcForFamily(familyId) {
-  const listEl  = document.getElementById(`fmcList-${familyId}`);
+async function _loadAndRenderFmcForFamily(familyId, containerId = null) {
+  // containerId: optional override (e.g. 'mfmFmcList' for the family mgmt modal)
+  // Falls back to the admin panel element pattern fmcList-{familyId}
+  const listEl  = containerId
+    ? document.getElementById(containerId)
+    : document.getElementById(`fmcList-${familyId}`);
   const badgeEl = document.getElementById(`fmcBadge-${familyId}`);
   if (!listEl) return;
 
@@ -969,8 +973,14 @@ async function saveFamilyMemberForFamily(familyId) {
     toast(memberId ? '✓ Membro atualizado!' : '✓ Membro adicionado!', 'success');
     closeModal('fmcMemberModal');
 
-    // Refresh the specific family card section
+    // Refresh: admin panel card section
     await _loadAndRenderFmcForFamily(familyId);
+
+    // Refresh: myFamilyMgmtModal section (if open)
+    const mfmList = document.getElementById('mfmFmcList');
+    if (mfmList && document.getElementById('myFamilyMgmtModal')?.classList.contains('open')) {
+      await _loadAndRenderFmcForFamily(familyId, 'mfmFmcList');
+    }
 
     // If active family, also bust global cache and refresh selects
     if (familyId === currentUser?.family_id) {
@@ -988,8 +998,25 @@ async function deleteFamilyMemberFromFamily(familyId, memberId, name) {
   if (error) { toast('Erro: ' + error.message, 'error'); return; }
   toast(`✓ ${name} removido`, 'success');
   await _loadAndRenderFmcForFamily(familyId);
+  // Refresh modal section too
+  const _mfmL = document.getElementById('mfmFmcList');
+  if (_mfmL && document.getElementById('myFamilyMgmtModal')?.classList.contains('open')) {
+    await _loadAndRenderFmcForFamily(familyId, 'mfmFmcList');
+  }
   if (familyId === currentUser?.family_id) {
     await loadFamilyComposition(true);
     refreshAllFamilyMemberSelects();
+  }
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
   }
 }

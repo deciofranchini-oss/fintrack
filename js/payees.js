@@ -139,7 +139,7 @@ async function applyNormalizePayees() {
 
   closeModal('normalizePayeesModal');
   DB.payees.bust(); await loadPayees(true);
-  populateSelects();
+  if(typeof populateSelects==='function') populateSelects();
   renderPayees();
 
   toast(
@@ -209,9 +209,9 @@ function payeeRow(p) {
     <td style="font-size:.82rem;color:var(--text2)">${p.categories?.name||'<span style="color:var(--muted)">—</span>'}</td>
     <td style="text-align:center">${txBadge}</td>
     <td>
-      <div style="display:flex;gap:5px;justify-content:flex-end">
-        <button class="btn-icon" onclick="event.stopPropagation();openPayeeModal('${p.id}')" title="Editar">✏️</button>
-        <button class="btn-icon" onclick="event.stopPropagation();deletePayee('${p.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
+      <div class="payee-row-actions" style="display:flex;gap:5px;justify-content:flex-end">
+        <button class="btn-icon payee-edit-btn" onclick="event.stopPropagation();openPayeeModal('${p.id}')" title="Editar" aria-label="Editar beneficiário">✏️</button>
+        <button class="btn-icon payee-delete-btn" onclick="event.stopPropagation();deletePayee('${p.id}')" title="Excluir" style="color:var(--red)" aria-label="Excluir beneficiário">🗑️</button>
       </div>
     </td>
   </tr>`;
@@ -493,9 +493,9 @@ async function savePayee(){
     website:           document.getElementById('payeeWebsite').value.trim()  || null,
     cnpj_cpf:          document.getElementById('payeeCnpj').value.trim()     || null,
   };
-  if(!data.name){toast('Informe o nome','error');return;}
+  if(!data.name){toast(t('toast.err_name'),'error');return;}
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('payees').update(data).eq('id',id));}else{({error:err}=await sb.from('payees').insert(data));}
-  if(err){toast(err.message,'error');return;}const _pyNew=!document.getElementById('payeeId').value;toast('Salvo!','success');closeModal('payeeModal');DB.payees.bust();await loadPayees(true);populateSelects();if(_pyNew)_scrollTopAndHighlight('.payee-card:first-child,.payee-row:first-child');renderPayees();
+  if(err){toast(err.message,'error');return;}const _pyNew=!document.getElementById('payeeId').value;toast('Salvo!','success');closeModal('payeeModal');DB.payees.bust();await loadPayees(true);if(typeof populateSelects==='function') populateSelects();if(_pyNew)_scrollTopAndHighlight('.payee-card:first-child,.payee-row:first-child');renderPayees();
 }
 async function deletePayee(id) {
   const payee = state.payees.find(p => p.id === id);
@@ -606,7 +606,7 @@ async function confirmPayeeReassign() {
 async function _doDeletePayee(id) {
   const { error } = await sb.from('payees').delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
-  toast('Beneficiário excluído', 'success');
+  toast(t('payee.deleted'), 'success');
   DB.payees.bust(); await loadPayees(true);
   await _loadPayeeTxCounts();
   renderPayees();
@@ -767,7 +767,7 @@ async function confirmPayeeClipboardImport() {
     }
 
     DB.payees.bust(); await loadPayees(true);
-    populateSelects();
+    if(typeof populateSelects==='function') populateSelects();
     renderPayees();
     closeModal('payeeClipboardModal');
     toast(`✓ ${created} beneficiário${created !== 1 ? 's' : ''} importado${created !== 1 ? 's' : ''}${errors ? ` · ${errors} erro(s)` : ''}`, errors ? 'warning' : 'success');
@@ -784,3 +784,15 @@ async function confirmPayeeClipboardImport() {
    Format per line: date, amount, description, account, category, payee, memo
 ══════════════════════════════════════════════════════ */
 let _txClipItems = []; // parsed rows ready for preview
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
+}

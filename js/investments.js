@@ -150,32 +150,73 @@ function _renderInvestmentsPage() {
   const totalCost   = _inv.positions.reduce((s,p)=>(+(p.quantity)>0 ? s+_invCost(p) : s), 0);
   const totalReturn = totalCost ? (totalMV - totalCost) / totalCost * 100 : 0;
   const totalPnL    = totalMV - totalCost;
+  const isPnLPos    = totalPnL >= 0;
+
+  // Asset type distribution for mini bar
+  const byType = {};
+  _inv.positions.filter(p=>+(p.quantity)>0).forEach(p=>{
+    const k = p.asset_type || 'outro';
+    byType[k] = (byType[k]||0) + _invMarketValue(p);
+  });
+  const typeBar = totalMV > 0 ? Object.entries(byType)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>{
+      const t = _invAssetType(k);
+      const pct = (v/totalMV*100).toFixed(1);
+      const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',outro:'#94a3b8'};
+      const col = colors[k]||'#94a3b8';
+      return `<div title="${t.emoji} ${t.label}: ${pct}% (${fmt(v)})" style="flex:${pct};background:${col};min-width:3px"></div>`;
+    }).join('') : '';
 
   container.innerHTML = `
-    <!-- Summary header -->
-    <div class="inv-summary-cards">
-      <div class="inv-kpi-card">
-        <div class="inv-kpi-label">Valor de Mercado</div>
-        <div class="inv-kpi-value">${fmt(totalMV)}</div>
-      </div>
-      <div class="inv-kpi-card">
-        <div class="inv-kpi-label">Custo Total</div>
-        <div class="inv-kpi-value">${fmt(totalCost)}</div>
-      </div>
-      <div class="inv-kpi-card">
-        <div class="inv-kpi-label">Resultado</div>
-        <div class="inv-kpi-value ${totalPnL >= 0 ? 'amount-pos' : 'amount-neg'}">
-          ${totalPnL >= 0 ? '+' : ''}${fmt(totalPnL)}
-          <span style="font-size:.75rem;font-weight:500">(${totalReturn.toFixed(2)}%)</span>
+    <!-- Portfolio hero header -->
+    <div class="inv-hero">
+      <div class="inv-hero-main">
+        <div class="inv-hero-label">Valor de Mercado Total</div>
+        <div class="inv-hero-value">${fmt(totalMV)}</div>
+        <div class="inv-hero-pnl ${isPnLPos ? 'pos' : 'neg'}">
+          ${isPnLPos ? '▲' : '▼'} ${isPnLPos ? '+' : ''}${fmt(totalPnL)}
+          <span class="inv-hero-pct">(${isPnLPos?'+':''}${totalReturn.toFixed(2)}%)</span>
+          <span class="inv-hero-cost">vs custo ${fmt(totalCost)}</span>
         </div>
       </div>
+      <div class="inv-hero-kpis">
+        <div class="inv-kpi-card">
+          <div class="inv-kpi-label">Posições abertas</div>
+          <div class="inv-kpi-value">${_inv.positions.filter(p=>+(p.quantity)>0).length}</div>
+        </div>
+        <div class="inv-kpi-card">
+          <div class="inv-kpi-label">Contas</div>
+          <div class="inv-kpi-value">${invAccs.length}</div>
+        </div>
+        <div class="inv-kpi-card">
+          <div class="inv-kpi-label">Custo médio</div>
+          <div class="inv-kpi-value">${fmt(totalCost)}</div>
+        </div>
+      </div>
+      ${typeBar ? `
+      <div class="inv-type-bar-wrap">
+        <div class="inv-type-bar">${typeBar}</div>
+        <div class="inv-type-bar-legend">
+          ${Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{
+            const t = _invAssetType(k);
+            const pct = (v/totalMV*100).toFixed(1);
+            const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',outro:'#94a3b8'};
+            return `<span class="inv-legend-item"><span style="background:${colors[k]||'#94a3b8'}"></span>${t.emoji} ${t.label} ${pct}%</span>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
     </div>
 
     <!-- Actions bar -->
     <div class="inv-actions-bar">
-      <button class="btn btn-primary" onclick="openInvTransactionModal()">+ Registrar Movimentação</button>
-      <button class="btn btn-ghost" id="invUpdatePricesBtn" onclick="updateAllPrices()">🔄 Atualizar Cotações</button>
-      <span id="invPriceUpdateStatus" style="font-size:.75rem;color:var(--muted)"></span>
+      <div class="inv-actions-left">
+        <button class="btn btn-primary" onclick="openInvTransactionModal()">+ Movimentação</button>
+      </div>
+      <div class="inv-actions-right">
+        <button class="btn btn-ghost" id="invUpdatePricesBtn" onclick="updateAllPrices()">🔄 Cotações</button>
+        <span id="invPriceUpdateStatus" class="inv-price-update-status"></span>
+      </div>
     </div>
 
     <!-- Per-account portfolios -->
@@ -212,18 +253,17 @@ function _renderPortfolioCard(acc) {
 
   return `
     <div class="card inv-portfolio-card">
-      <div class="card-header">
-        <span class="card-title">${esc(acc.name)}</span>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:.78rem;color:var(--muted)">
-            Caixa: <strong>${fmt(cash, acc.currency)}</strong>
-          </span>
-          <span style="font-size:.78rem;color:var(--muted)">
-            Mercado: <strong>${fmt(mv)}</strong>
-          </span>
-          <span style="font-size:.82rem;font-weight:700;color:${pnl>=0?'var(--green,#16a34a)':'var(--red)'}">
-            ${pnl>=0?'+':''}${fmt(pnl)} (${ret.toFixed(2)}%)
-          </span>
+      <div class="inv-portfolio-header">
+        <div class="inv-portfolio-header-left">
+          <div class="inv-portfolio-account-name">${esc(acc.name)}</div>
+          <div class="inv-portfolio-meta">
+            <span class="inv-portfolio-meta-item">💵 Caixa: <strong>${fmt(cash, acc.currency)}</strong></span>
+            <span class="inv-portfolio-meta-item">📊 Mercado: <strong>${fmt(mv)}</strong></span>
+          </div>
+        </div>
+        <div class="inv-portfolio-pnl ${pnl>=0?'pos':'neg'}">
+          <div class="inv-portfolio-pnl-amt">${pnl>=0?'+':''}${fmt(pnl)}</div>
+          <div class="inv-portfolio-pnl-pct">${ret>=0?'+':''}${ret.toFixed(2)}%</div>
         </div>
       </div>
       ${positions.length === 0
@@ -257,22 +297,21 @@ function _renderPositionRow(p, totalMV) {
     <div class="inv-pos-row" id="invPos-${p.id}">
       <div class="inv-pos-name">
         <span class="inv-pos-ticker">${esc(p.ticker)}</span>
-        <span class="inv-pos-desc">${esc(p.name || '')} <span class="badge" style="font-size:.65rem">${t.emoji} ${t.label}</span></span>
+        <span class="inv-pos-desc">${esc(p.name || '')} <span class="inv-pos-type-badge">${t.emoji} ${t.label}</span></span>
       </div>
-      <span>${(+(p.quantity)).toFixed(4).replace(/\.?0+$/, '') || '0'}</span>
-      <span>${fmt(cost)}</span>
-      <span class="${stale ? 'inv-price-stale' : ''}">
-        ${cur ? fmt(cur, p.currency) : '—'}
-        ${stale ? ' <span title="Cotação desatualizada">⚠️</span>' : ''}
+      <span class="inv-pos-cell">${(+(p.quantity)).toFixed(4).replace(/\.?0+$/, '') || '0'}</span>
+      <span class="inv-pos-cell">${fmt(cost)}</span>
+      <span class="inv-pos-cell ${stale ? 'inv-price-stale' : ''}">
+        ${cur ? fmt(cur, p.currency) : '—'}${stale ? ' <span title="Cotação desatualizada" style="font-size:.8rem">⚠️</span>' : ''}
       </span>
-      <span>
-        <div style="font-weight:600">${fmt(mv)}</div>
-        <div style="font-size:.7rem;color:var(--muted)">${pct.toFixed(1)}%</div>
+      <span class="inv-pos-cell">
+        <div style="font-weight:700">${fmt(mv)}</div>
+        <div class="inv-pos-alloc-wrap"><div class="inv-pos-alloc-bar" style="width:${Math.min(pct,100).toFixed(1)}%"></div><span class="inv-pos-alloc-pct">${pct.toFixed(1)}%</span></div>
       </span>
-      <span class="${ret >= 0 ? 'amount-pos' : 'amount-neg'}">
+      <span class="inv-pos-return ${ret >= 0 ? 'pos' : 'neg'}">
         ${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%
       </span>
-      <span>
+      <span class="inv-pos-actions">
         <button class="btn-icon" onclick="openInvPositionDetail('${p.id}')" title="Histórico">📋</button>
         <button class="btn-icon" onclick="openInvTransactionModal(null,'${p.id}')" title="Nova movimentação">+</button>
       </span>

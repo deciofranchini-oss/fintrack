@@ -416,8 +416,10 @@ function _scCardHtml(sc) {
   const occList  = generateOccurrences(sc, 8);
   const registered = (sc.occurrences||[]).reduce((m,o)=>{m[o.scheduled_date]=o;return m;},{});
 
-  // Compact meta: freq · account · payee
-  const metaParts = [scFreqLabel(sc)];
+  // Compact meta: frequency pill + account/payee
+  const freqKey = (sc.frequency || 'once').toLowerCase();
+  const freqPill = `<span class="sc-freq-pill sc-freq-${freqKey}">${esc(scFreqLabel(sc))}</span>`;
+  const metaParts = [];
   if (acct) metaParts.push(esc(acct.name));
   if (sc.payees) metaParts.push(esc(sc.payees.name));
   const meta = metaParts.join(' · ');
@@ -453,13 +455,13 @@ function _scCardHtml(sc) {
       }).filter(Boolean).join('')
     : '';
 
-  return `<div class="sc-card" id="scCard-${sc.id}">
+  return `<div class="sc-card" id="scCard-${sc.id}" data-id="${sc.id}">
     <!-- Header row: icon · title+meta · amount+status · actions -->
     <div class="sc-card-row" onclick="toggleScCard('${sc.id}')">
       <div class="sc-card-icon" style="background:${iconBg}">${icon}</div>
       <div class="sc-card-mid">
         <div class="sc-card-title2">${esc(sc.description)}</div>
-        <div class="sc-card-meta">${meta}${catChip ? ' · ' + catChip : ''}${memberChips ? '<div class="sc-member-chips">' + memberChips + '</div>' : ''}</div>
+        <div class="sc-card-meta">${freqPill}${meta ? `<span class="sc-card-meta-text">${meta}</span>` : ''}${catChip}${memberChips ? '<div class="sc-member-chips">' + memberChips + '</div>' : ''}</div>
       </div>
       <div class="sc-card-end">
         <div class="sc-card-amt ${isExpense?'amount-neg':'amount-pos'}">${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}</div>
@@ -479,6 +481,9 @@ function _scCardHtml(sc) {
             ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
             : '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>'
           }
+        </button>
+        <button class="sc-icon-btn" onclick="duplicateScheduled('${sc.id}')" title="Copiar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
         <button class="sc-icon-btn" onclick="openScheduledModal('${sc.id}')" title="Editar">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -570,8 +575,8 @@ function renderUpcoming() {
     totalEl.textContent = (tot>=0?'+':'') + fmt(tot);
     totalEl.className = 'badge ' + (tot>=0?'badge-green':'badge-red');
   }
-  // Feature 1: list starts collapsed; user can expand
-  if(listEl && listEl.style.display === undefined) listEl.style.display = 'none';
+  // Card starts expanded by default (display is '' from HTML)
+  // toggleUpcomingCard() handles collapse/expand on click
 
   // Agrupar por data
   const byDate = {};
@@ -650,9 +655,10 @@ function toggleUpcomingCard() {
   const listEl = document.getElementById('scheduledUpcomingList');
   const arrow  = document.getElementById('upcomingCardArrow');
   if (!listEl) return;
-  const open = listEl.style.display !== 'none';
-  listEl.style.display = open ? 'none' : '';
-  if (arrow) arrow.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+  // Treat missing/empty display as 'open' (default expanded state)
+  const isOpen = listEl.style.display !== 'none';
+  listEl.style.display = isOpen ? 'none' : '';
+  if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
 function toggleScCard(id) {
@@ -670,15 +676,20 @@ function openScheduledModal(id='') {
   document.getElementById('scTags').value = (sc?.tags||[]).join(', ');
   document.getElementById('scStatus').value = sc?.status||'active';
 
-  // Populate account select
+  // Populate account select (favorites first)
   const aEl = document.getElementById('scAccountId');
-  aEl.innerHTML = state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+  aEl.innerHTML = (typeof _accountOptions === 'function')
+    ? _accountOptions(state.accounts, 'Selecione a conta')
+    : state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
   if(sc?.account_id) aEl.value = sc.account_id;
 
-  // Populate transfer-to account select
+  // Populate transfer-to account select (favorites first)
   const trEl = document.getElementById('scTransferToAccountId');
   if(trEl) {
-    trEl.innerHTML = '<option value="">— Selecionar conta destino —</option>' + state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+    const trOpts = (typeof _accountOptions === 'function')
+      ? _accountOptions(state.accounts, '— Selecionar conta destino —')
+      : '<option value="">— Selecionar conta destino —</option>' + state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+    trEl.innerHTML = trOpts;
     if(sc?.transfer_to_account_id) trEl.value = sc.transfer_to_account_id;
   }
 
@@ -692,6 +703,32 @@ function openScheduledModal(id='') {
   // Type — sets FX panel visibility
   setScType(sc?.type||'expense');
   setTimeout(()=>_updateScCurrencyPanel(),30);
+
+  // Ensure the currency selector is always editable for any source account
+  const currentAccount = (state.accounts||[]).find(a => a.id === document.getElementById('scAccountId')?.value);
+  _rebuildScCurrencySelect(currentAccount?.currency || 'BRL', sc?.currency || currentAccount?.currency || 'BRL');
+
+  // Restore currency select and conversion mode
+  requestAnimationFrame(() => {
+    const accId      = document.getElementById('scAccountId')?.value;
+    const acc        = (state.accounts||[]).find(a => a.id === accId);
+    const accountCur = acc?.currency || 'BRL';
+    // Build the select with the right currency pre-selected
+    const savedCur = sc?.currency || _getScSelectedCurrency() || accountCur;
+    _rebuildScCurrencySelect(accountCur, savedCur);
+    // Restore conversion mode and rate for non-transfer types
+    if (sc && sc.type !== 'transfer' && sc.type !== 'card_payment') {
+      _updateScCurrencyPanel();
+      const cPanel = document.getElementById('scCurrencyPanel');
+      if (cPanel && cPanel.style.display !== 'none' && sc.fx_mode) {
+        setScCurrencyMode(sc.fx_mode);
+        if (sc.fx_mode === 'fixed' && sc.fx_rate) {
+          const inp = document.getElementById('scCurrencyRate');
+          if (inp) { inp.value = Number(sc.fx_rate).toFixed(6); updateScCurrencyPreview(); }
+        }
+      }
+    }
+  });
 
   // Restore FX settings for cross-currency transfers
   setTimeout(() => {
@@ -753,7 +790,11 @@ function openScheduledModal(id='') {
     neEl.checked = sc?.notify_email || false;
     if(ndDiv) ndDiv.style.display = neEl.checked ? '' : 'none';
   }
-  if(naEl) naEl.value = sc?.notify_email_addr || '';
+  if(naEl) {
+    // Pre-fill: saved addr → emailDefault config → currentUser email
+    const _cfg = typeof getAutoCheckConfig === 'function' ? getAutoCheckConfig() : {};
+    naEl.value = sc?.notify_email_addr || _cfg.emailDefault || currentUser?.email || '';
+  }
   if(ndEl) ndEl.value = sc?.notify_days_before ?? 1;
 
   // Render family member multi-picker
@@ -769,6 +810,11 @@ function openScheduledModal(id='') {
 
   updateScPreview();
   openModal('scheduledModal');
+  // Scroll modal body to top on every open
+  requestAnimationFrame(() => {
+    const body = document.querySelector('#scheduledModal .modal-body');
+    if (body) body.scrollTop = 0;
+  });
 }
 
 function setScType(type) {
@@ -863,7 +909,7 @@ async function fetchScSuggestedFxRate() {
   if (sugg) sugg.style.display = 'none';
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const res = await fetch(`https://api.frankfurter.app/${today}?base=${src}&to=${dst}`);
+    const res = await fetch(`${window.FX_API_BASE || 'https://api.frankfurter.dev/v1'}/${today}?base=${src}&to=${dst}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const rate = json?.rates?.[dst];
@@ -908,9 +954,12 @@ function _filterScAccountOrigin(excludeCreditCards) {
   const accounts = excludeCreditCards
     ? state.accounts.filter(a => a.type !== 'cartao_credito')
     : state.accounts;
-  sel.innerHTML = accounts.map(a =>
-    `<option value="${a.id}"${a.id===currentVal?' selected':''}>${esc(a.name)} (${a.currency})</option>`
-  ).join('');
+  sel.innerHTML = (typeof _accountOptions === 'function')
+    ? _accountOptions(accounts, 'Selecione a conta')
+    : accounts.map(a =>
+        `<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`
+      ).join('');
+  sel.value = currentVal || '';
   if (excludeCreditCards && currentVal) {
     const acct = state.accounts.find(a => a.id === currentVal);
     if (acct && acct.type === 'cartao_credito') sel.value = '';
@@ -973,18 +1022,35 @@ async function saveScheduled() {
   const isScTransfer = type==='transfer' || type==='card_payment';
   const isScCardPayment = type==='card_payment';
 
-  // FX settings for cross-currency transfers
-  const fxPanel   = document.getElementById('scFxPanel');
-  const fxVisible = fxPanel && fxPanel.style.display !== 'none';
-  const fxMode    = fxVisible ? (fxPanel.getAttribute('data-fx-mode') || 'fixed') : null;
-  const fxRateRaw = parseFloat(document.getElementById('scFxRate')?.value?.replace(',', '.'));
-  const fxRate    = (fxMode === 'fixed' && fxRateRaw > 0) ? fxRateRaw : null;
+  // FX settings — from the transfer FX panel OR from the currency conversion panel
+  const fxPanel     = document.getElementById('scFxPanel');
+  const fxVisible   = fxPanel && fxPanel.style.display !== 'none';
+  const currPanel   = document.getElementById('scCurrencyPanel');
+  const currVisible = currPanel && currPanel.style.display !== 'none';
+  let fxMode = null, fxRate = null;
+  if (fxVisible) {
+    // Transfer between accounts with different currencies
+    fxMode = fxPanel.getAttribute('data-fx-mode') || 'fixed';
+    const raw = parseFloat(document.getElementById('scFxRate')?.value?.replace(',', '.'));
+    fxRate = (fxMode === 'fixed' && raw > 0) ? raw : null;
+  } else if (currVisible) {
+    // Expense/income in a currency different from the account or BRL
+    fxMode = currPanel.getAttribute('data-curr-mode') || 'fixed';
+    const raw = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',', '.'));
+    fxRate = (fxMode === 'fixed' && raw > 0) ? raw : null;
+  }
+
+  const scDescEl = document.getElementById('scDesc');
+  let autoScDesc = scDescEl?.value?.trim() || '';
+  if (!autoScDesc && typeof ensureTransactionDescription === 'function') {
+    autoScDesc = (await ensureTransactionDescription(scDescEl)).trim();
+  }
 
   const data = {
-    description: document.getElementById('scDesc').value.trim(),
+    description: autoScDesc,
     type,
     amount: (type==='expense'||isScTransfer) ? -Math.abs(amount) : Math.abs(amount),
-    currency:(()=>{const _a=(state.accounts||[]).find(a=>a.id===document.getElementById('scAccountId').value);return _a?.currency||'BRL';})(),
+    currency: _getScSelectedCurrency() || (()=>{const _a=(state.accounts||[]).find(a=>a.id===document.getElementById('scAccountId').value);return _a?.currency||'BRL';})(),
     account_id: document.getElementById('scAccountId').value || null,
     transfer_to_account_id: isScTransfer ? (document.getElementById('scTransferToAccountId')?.value || null) : null,
     payee_id: isScTransfer ? null : (document.getElementById('scPayeeId').value || null),
@@ -1024,16 +1090,23 @@ async function saveScheduled() {
   if(isScTransfer && data.account_id === data.transfer_to_account_id) { toast('Conta origem e destino não podem ser iguais', 'error'); return; }
   if(!data.start_date) { toast('Informe a data de início', 'error'); return; }
 
-  let err;
+  let err, newId = id;
   if(!id) data.family_id = famId();
   if(id) { ({error:err} = await sb.from('scheduled_transactions').update(data).eq('id',id)); }
-  else    { ({error:err} = await sb.from('scheduled_transactions').insert(data)); }
+  else {
+    const {data: inserted, error: insErr} = await sb.from('scheduled_transactions').insert(data).select('id').single();
+    err = insErr;
+    if (inserted?.id) newId = inserted.id;
+  }
   if(err) { toast(err.message,'error'); return; }
   const _scNew=!id;
   toast(id?'Programação atualizada!':'Transação programada!','success');
   closeModal('scheduledModal');
   await loadScheduled();
-  if(_scNew) _scrollTopAndHighlight('.sc-card:first-child,.sc-item:first-child');
+  if(_scNew) {
+    const sel = newId ? `.sc-card[data-id="${newId}"],.sc-item[data-id="${newId}"]` : '.sc-card:first-child,.sc-item:first-child';
+    _scrollTopAndHighlight(sel, 2500);
+  }
 }
 
 async function deleteScheduled(id) {
@@ -1349,30 +1422,37 @@ const SC_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 function setScView(view) {
   _scView = view;
 
-  const listBtn = document.getElementById('scViewList');
-  const calBtn  = document.getElementById('scViewCal');
-  if (listBtn) listBtn.classList.toggle('active', view === 'list');
-  if (calBtn)  calBtn.classList.toggle('active',  view === 'calendar');
+  const listBtn  = document.getElementById('scViewList');
+  const calBtn   = document.getElementById('scViewCal');
+  const catsBtn  = document.getElementById('scViewCats');
+  if (listBtn)  listBtn.classList.toggle('active',  view === 'list');
+  if (calBtn)   calBtn.classList.toggle('active',   view === 'calendar');
+  if (catsBtn)  catsBtn.classList.toggle('active',  view === 'categories');
 
   // Toggle section visibility
-  const filterBar   = document.querySelector('.sc-filter-bar');
-  const summaryBar  = document.getElementById('scheduledSummaryBar');
+  const filterBar    = document.querySelector('.sc-filter-bar');
+  const summaryBar   = document.getElementById('scheduledSummaryBar');
   const upcomingCard = document.getElementById('scheduledUpcomingCard');
-  const listEl      = document.getElementById('scheduledList');
-  const calView     = document.getElementById('scCalendarView');
+  const listEl       = document.getElementById('scheduledList');
+  const calView      = document.getElementById('scCalendarView');
+  const catsView     = document.getElementById('scCategoriesView');
+
+  // Hide all
+  [filterBar, summaryBar, upcomingCard, listEl, calView, catsView].forEach(el => {
+    if (el) el.style.display = 'none';
+  });
 
   if (view === 'calendar') {
-    if (filterBar)    filterBar.style.display    = 'none';
-    if (summaryBar)   summaryBar.style.display   = 'none';
-    if (upcomingCard) upcomingCard.style.display = 'none';
-    if (listEl)       listEl.style.display       = 'none';
-    if (calView)      calView.style.display      = '';
+    if (calView) calView.style.display = '';
     renderScCalendar();
+  } else if (view === 'categories') {
+    if (catsView) catsView.style.display = '';
+    renderScCategories();
   } else {
     if (filterBar)    filterBar.style.display    = '';
     if (summaryBar)   summaryBar.style.display   = '';
+    if (upcomingCard) upcomingCard.style.display = '';
     if (listEl)       listEl.style.display       = '';
-    if (calView)      calView.style.display      = 'none';
     filterScheduled();
   }
 }
@@ -1633,53 +1713,346 @@ function _scCalRenderDetail(dateStr, data) {
     ${itemsHtml}`;
 }
 
-function onScAccountChange(){
+// ── Currency helpers ────────────────────────────────────────────────────────
+function _getScSelectedCurrency() {
+  const sel = document.getElementById('scCurrencySelect');
+  return sel?.value || 'BRL';
+}
+
+function _rebuildScCurrencySelect(accountCur, selectedCur) {
+  const sel = document.getElementById('scCurrencySelect');
+  if (!sel) return;
+  const CURRENCIES = ['BRL','USD','EUR','GBP','AED','ARS','CAD','CHF','JPY','MXN','CLP','COP','PEN','UYU'];
+  const list = [...new Set([accountCur || 'BRL', ...CURRENCIES])];
+  const targetCur = selectedCur || accountCur || 'BRL';
+  sel.innerHTML = list.map(c =>
+    `<option value="${c}"${c === targetCur ? ' selected' : ''}>${c}</option>`
+  ).join('');
+}
+
+function onScCurrencyChange() {
   _updateScCurrencyPanel();
-  if(typeof onScTransferAccountChange==='function') onScTransferAccountChange();
 }
-function _updateScCurrencyPanel(){
-  const accId=document.getElementById('scAccountId')?.value;
-  const acc=(state.accounts||[]).find(a=>a.id===accId);
-  const cur=acc?.currency||'BRL';
-  const badge=document.getElementById('scCurrencyBadge');
-  if(badge) badge.textContent=cur;
-  const panel=document.getElementById('scCurrencyPanel');
-  if(!panel) return;
-  const tv=document.getElementById('scTypeField')?.value||'';
-  if(cur==='BRL'||tv==='transfer'||tv==='card_payment'){panel.style.display='none';return;}
-  panel.style.display='';
-  const fl=document.getElementById('scCurrencyRateFromLabel');
-  const tl=document.getElementById('scCurrencyPanelTitle');
-  if(fl) fl.textContent=cur;
-  if(tl) tl.textContent=`Conversão: ${cur} → BRL`;
+
+function onScAccountChange() {
+  const accId = document.getElementById('scAccountId')?.value;
+  const acc   = (state.accounts||[]).find(a => a.id === accId);
+  const accountCur = acc?.currency || 'BRL';
+  // Keep user-chosen currency if already set; default to account currency
+  const currentSel = _getScSelectedCurrency();
+  _rebuildScCurrencySelect(accountCur, currentSel || accountCur);
+  _updateScCurrencyPanel();
+  if (typeof onScTransferAccountChange === 'function') onScTransferAccountChange();
+}
+
+function setScCurrencyMode(mode) {
+  const panel    = document.getElementById('scCurrencyPanel');
+  const fixedBtn = document.getElementById('scCurrModeFixed');
+  const apiBtn   = document.getElementById('scCurrModeApi');
+  const fixedPan = document.getElementById('scCurrFixedPanel');
+  const apiPan   = document.getElementById('scCurrApiPanel');
+  if (fixedBtn) {
+    fixedBtn.style.background  = mode === 'fixed' ? 'var(--accent)' : 'transparent';
+    fixedBtn.style.color       = mode === 'fixed' ? '#fff' : 'var(--text2)';
+    fixedBtn.style.borderColor = mode === 'fixed' ? 'var(--accent)' : 'var(--border)';
+  }
+  if (apiBtn) {
+    apiBtn.style.background  = mode === 'api' ? 'var(--accent)' : 'transparent';
+    apiBtn.style.color       = mode === 'api' ? '#fff' : 'var(--text2)';
+    apiBtn.style.borderColor = mode === 'api' ? 'var(--accent)' : 'var(--border)';
+  }
+  if (fixedPan) fixedPan.style.display = mode === 'fixed' ? '' : 'none';
+  if (apiPan)   apiPan.style.display   = mode === 'api'   ? '' : 'none';
+  if (panel)    panel.setAttribute('data-curr-mode', mode);
+}
+
+function _updateScCurrencyPanel() {
+  const accId      = document.getElementById('scAccountId')?.value;
+  const acc        = (state.accounts||[]).find(a => a.id === accId);
+  const accountCur = acc?.currency || 'BRL';
+  const txCur      = _getScSelectedCurrency();
+  const tv         = document.getElementById('scTypeField')?.value || '';
+
+  // Panel shows whenever tx currency ≠ BRL OR account is non-BRL
+  // (always hidden for transfers — they use scFxPanel instead)
+  const needsConversion = tv !== 'transfer' && tv !== 'card_payment' &&
+    (txCur !== 'BRL' || accountCur !== 'BRL');
+
+  const panel = document.getElementById('scCurrencyPanel');
+  if (!panel) return;
+  if (!needsConversion) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  // Determine display labels: what we're converting from and to
+  // If txCur ≠ accountCur: show txCur → accountCur (e.g. USD → BRL)
+  // If txCur === accountCur (both non-BRL): show accountCur → BRL
+  const dispFrom = txCur !== accountCur ? txCur : accountCur;
+  const dispTo   = txCur !== accountCur ? accountCur : 'BRL';
+
+  const fl = document.getElementById('scCurrencyRateFromLabel');
+  const tl = document.getElementById('scCurrencyPanelTitle');
+  if (fl) fl.textContent = dispFrom;
+  if (tl) tl.textContent = `Conversão: ${dispFrom} → ${dispTo}`;
+
+  // Default to fixed mode if not yet set
+  const currMode = panel.getAttribute('data-curr-mode') || 'fixed';
+  setScCurrencyMode(currMode);
+
   updateScCurrencyPreview();
+  // Auto-fetch rate for the current currency pair
+  fetchScCurrencyRate();
 }
-function updateScCurrencyPreview(){
-  const accId=document.getElementById('scAccountId')?.value;
-  const acc=(state.accounts||[]).find(a=>a.id===accId);
-  const cur=acc?.currency||'BRL';
-  const rate=parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',','.'))||0;
-  const amt=Math.abs(getAmtField('scAmount')||0);
-  const prev=document.getElementById('scCurrencyPreview');
-  if(!prev) return;
-  prev.textContent=rate&&amt?`≈ ${fmt(amt*rate,'BRL')} (1 ${cur} = ${rate.toFixed(4)} BRL)`:'';
+
+function updateScCurrencyPreview() {
+  const txCur  = _getScSelectedCurrency();
+  const accId  = document.getElementById('scAccountId')?.value;
+  const acc    = (state.accounts||[]).find(a => a.id === accId);
+  const accCur = acc?.currency || 'BRL';
+  const dispFrom = txCur !== accCur ? txCur : accCur;
+  const rate   = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',','.')) || 0;
+  const amt    = Math.abs(getAmtField('scAmount') || 0);
+  const prev   = document.getElementById('scCurrencyPreview');
+  const hint   = document.getElementById('scCurrencyBrlHint');
+  if (!prev) return;
+  if (rate && amt) {
+    const converted = amt * rate;
+    const toCur = txCur !== accCur ? accCur : 'BRL';
+    prev.textContent = `≈ ${fmt(converted, toCur)} (1 ${dispFrom} = ${rate.toFixed(4)} ${toCur})`;
+    if (hint) hint.textContent = fmt(converted, toCur);
+  } else {
+    prev.textContent = '';
+    if (hint) hint.textContent = '—';
+  }
 }
-async function fetchScCurrencyRate(){
-  const accId=document.getElementById('scAccountId')?.value;
-  const acc=(state.accounts||[]).find(a=>a.id===accId);
-  const cur=acc?.currency||'BRL';
-  if(cur==='BRL') return;
-  const btn=document.getElementById('scCurrencyFetchBtn');
-  const ico=document.getElementById('scCurrencyFetchIcon');
-  if(btn) btn.disabled=true; if(ico) ico.textContent='⏳';
-  try{
-    const rate=typeof getFxRate==='function'?getFxRate(cur):0;
-    if(rate&&rate!==1){
-      const inp=document.getElementById('scCurrencyRate');
-      if(inp){inp.value=rate.toFixed(6);updateScCurrencyPreview();}
-      const sg=document.getElementById('scCurrencySuggestion');
-      if(sg){sg.style.display='';sg.textContent=`1 ${cur} = ${rate.toFixed(4)} BRL`;}
-    } else toast('Cotação não disponível. Insira manualmente.','warning');
-  }catch(e){toast('Erro: '+e.message,'error');}
-  finally{if(btn) btn.disabled=false; if(ico) ico.textContent='🔄';}
+
+async function fetchScCurrencyRate() {
+  const txCur  = _getScSelectedCurrency();
+  const accId  = document.getElementById('scAccountId')?.value;
+  const acc    = (state.accounts||[]).find(a => a.id === accId);
+  const accCur = acc?.currency || 'BRL';
+  const fromCur = txCur !== accCur ? txCur : accCur;
+  const toCur   = txCur !== accCur ? accCur : 'BRL';
+  if (fromCur === toCur) return;
+  const btn = document.getElementById('scCurrencyFetchBtn');
+  const ico = document.getElementById('scCurrencyFetchIcon');
+  if (btn) btn.disabled = true;
+  if (ico) ico.textContent = '⏳';
+  try {
+    const rate = typeof getFxRate === 'function' ? getFxRate(fromCur) : 0;
+    if (rate && rate !== 1) {
+      const inp = document.getElementById('scCurrencyRate');
+      if (inp) { inp.value = rate.toFixed(6); updateScCurrencyPreview(); }
+      const sg = document.getElementById('scCurrencySuggestion');
+      if (sg) { sg.style.display = ''; sg.textContent = `1 ${fromCur} = ${rate.toFixed(4)} ${toCur}`; }
+    } else {
+      toast('Cotação não disponível. Insira manualmente.', 'warning');
+    }
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  finally {
+    if (btn) btn.disabled = false;
+    if (ico) ico.textContent = '🔄';
+  }
+}
+
+function duplicateScheduled(id) {
+  const sc = state.scheduled.find(s => s.id === id);
+  if (!sc) { toast('Programação não encontrada', 'error'); return; }
+  // Open modal pre-filled as a NEW record (no id) — user edits then saves
+  openScheduledModal('');
+  // Overwrite fields with original values after modal opens
+  requestAnimationFrame(() => {
+    document.getElementById('scDesc').value = (sc.description || '') + ' (cópia)';
+    setAmtField('scAmount', sc.amount || 0);
+    document.getElementById('scMemo').value = sc.memo || '';
+    document.getElementById('scTags').value = (sc.tags || []).join(', ');
+    const aEl = document.getElementById('scAccountId');
+    if (aEl && sc.account_id) aEl.value = sc.account_id;
+    const trEl = document.getElementById('scTransferToAccountId');
+    if (trEl && sc.transfer_to_account_id) trEl.value = sc.transfer_to_account_id;
+    setCatPickerValue(sc.category_id || null, 'sc');
+    setPayeeField(sc.payee_id || null, 'sc');
+    setScType(sc.type || 'expense');
+    const freq = sc.frequency || 'once';
+    document.querySelectorAll('input[name=scFreq]').forEach(r => r.checked = r.value === freq);
+    document.getElementById('scCustomIntervalGroup').style.display = freq === 'custom' ? '' : 'none';
+    document.getElementById('scEndGroup').style.display = freq === 'once' ? 'none' : '';
+    document.getElementById('scCustomInterval').value = sc.custom_interval || 1;
+    document.getElementById('scCustomUnit').value = sc.custom_unit || 'months';
+    document.getElementById('scStatus').value = 'active';
+    document.getElementById('scheduledModalTitle').textContent = 'Nova Programação (cópia)';
+    updateScPreview();
+  });
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SCHEDULED CATEGORIES CHART  (scCats*)
+// ══════════════════════════════════════════════════════════════════════════
+
+let _scCatsFilter = 'all'; // 'all' | 'expense' | 'income'
+
+function scCatsFilter(type) {
+  _scCatsFilter = type;
+  ['all','expense','income'].forEach(t => {
+    const id = 'scCatsBtn' + t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById(id)?.classList.toggle('active', t === type);
+  });
+  renderScCategories();
+}
+window.scCatsFilter = scCatsFilter;
+
+function renderScCategories() {
+  const sched = state.scheduled || [];
+  if (!sched.length) {
+    _scCatsSetEmpty('Nenhum programado cadastrado.');
+    return;
+  }
+
+  // Filter by type
+  const filtered = sched.filter(s => {
+    if (s.status === 'finished') return false;
+    if (_scCatsFilter === 'expense') return s.type === 'expense';
+    if (_scCatsFilter === 'income')  return s.type === 'income';
+    return s.type === 'expense' || s.type === 'income';
+  });
+
+  if (!filtered.length) {
+    _scCatsSetEmpty('Nenhum programado para o filtro selecionado.');
+    return;
+  }
+
+  // Aggregate by category
+  const catMap  = Object.fromEntries((state.categories||[]).map(c => [c.id, c]));
+  const bycat   = {};
+
+  filtered.forEach(s => {
+    const cat = catMap[s.category_id];
+    const key = cat?.name || 'Sem categoria';
+    const color = cat?.color || '#94a3b8';
+    const amt = Math.abs(parseFloat(s.brl_amount || s.amount || 0));
+    if (!bycat[key]) bycat[key] = { total: 0, color, count: 0, items: [] };
+    bycat[key].total += amt;
+    bycat[key].count++;
+    bycat[key].items.push(s);
+  });
+
+  const entries = Object.entries(bycat)
+    .sort((a,b) => b[1].total - a[1].total);
+
+  const totalAmt = entries.reduce((s,[,v]) => s + v.total, 0);
+
+  // ── KPI strip ─────────────────────────────────────────────────────────
+  const kpiEl = document.getElementById('scCatsKpis');
+  if (kpiEl) {
+    const totalCount = filtered.length;
+    const catCount   = entries.length;
+    kpiEl.innerHTML = `
+      <div class="sc-cats-kpi">
+        <span class="sc-cats-kpi-lbl">Total mensal est.</span>
+        <span class="sc-cats-kpi-val">${fmt(totalAmt)}</span>
+      </div>
+      <div class="sc-cats-kpi">
+        <span class="sc-cats-kpi-lbl">Programados</span>
+        <span class="sc-cats-kpi-val">${totalCount}</span>
+      </div>
+      <div class="sc-cats-kpi">
+        <span class="sc-cats-kpi-lbl">Categorias</span>
+        <span class="sc-cats-kpi-val">${catCount}</span>
+      </div>`;
+  }
+
+  // ── Title ─────────────────────────────────────────────────────────────
+  const titleEl = document.getElementById('scCatsChartTitle');
+  if (titleEl) {
+    const typeLabel = { all:'Todos os Programados', expense:'Despesas', income:'Receitas' }[_scCatsFilter];
+    titleEl.textContent = `Distribuição por Categoria — ${typeLabel}`;
+  }
+
+  // ── Bar chart ─────────────────────────────────────────────────────────
+  const canvas = document.getElementById('scCatsChart');
+  if (!canvas) return;
+
+  // Destroy existing
+  if (state.chartInstances?.['scCatsChart']) {
+    try { state.chartInstances['scCatsChart'].destroy(); } catch(_) {}
+    delete state.chartInstances['scCatsChart'];
+  }
+
+  const top = entries.slice(0, 15);
+  const labels = top.map(([k]) => k);
+  const vals   = top.map(([,v]) => +v.total.toFixed(2));
+  const colors = top.map(([,v]) => v.color || '#94a3b8');
+
+  if (typeof Chart === 'undefined' || typeof renderChart !== 'function') {
+    canvas.style.display = 'none';
+  } else {
+    canvas.style.display = '';
+    const chart = renderChart('scCatsChart', 'bar', labels,
+      [{ data: vals, backgroundColor: colors, borderRadius: 6, borderSkipped: false }],
+      {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { callback: v => fmt(v), font: { size: 11 } } },
+          y: { ticks: { font: { size: 11 } } },
+        },
+      }
+    );
+    if (chart) state.chartInstances['scCatsChart'] = chart;
+  }
+
+  // ── Category detail cards ──────────────────────────────────────────────
+  const listEl = document.getElementById('scCatsList');
+  if (!listEl) return;
+
+  listEl.innerHTML = entries.map(([catName, v]) => {
+    const pct = totalAmt > 0 ? (v.total / totalAmt * 100).toFixed(1) : '0.0';
+    const itemRows = v.items.slice(0, 4).map(s => `
+      <div class="sc-cats-item-row" onclick="openScheduledDetail('${s.id}')">
+        <span class="sc-cats-item-desc">${esc(s.description || '—')}</span>
+        <span class="sc-cats-item-amt">${fmt(Math.abs(parseFloat(s.brl_amount||s.amount||0)))}</span>
+      </div>`).join('');
+    const more = v.items.length > 4 ? `<div class="sc-cats-item-more">+${v.items.length-4} mais</div>` : '';
+
+    return `
+    <div class="card mb-3 sc-cats-card">
+      <div class="sc-cats-card-header">
+        <div class="sc-cats-dot" style="background:${v.color}"></div>
+        <div class="sc-cats-card-info">
+          <span class="sc-cats-card-name">${esc(catName)}</span>
+          <span class="sc-cats-card-count">${v.count} programado${v.count!==1?'s':''}</span>
+        </div>
+        <div class="sc-cats-card-right">
+          <span class="sc-cats-card-total">${fmt(v.total)}</span>
+          <span class="sc-cats-card-pct">${pct}%</span>
+        </div>
+      </div>
+      <div class="sc-cats-bar-track">
+        <div class="sc-cats-bar-fill" style="width:${pct}%;background:${v.color}"></div>
+      </div>
+      ${itemRows}${more}
+    </div>`;
+  }).join('');
+}
+window.renderScCategories = renderScCategories;
+
+function _scCatsSetEmpty(msg) {
+  const kpiEl  = document.getElementById('scCatsKpis');
+  const listEl = document.getElementById('scCatsList');
+  if (kpiEl)  kpiEl.innerHTML = '';
+  if (listEl) listEl.innerHTML = `<div class="empty-state"><div class="es-icon">🏷️</div><p>${msg}</p></div>`;
+  const canvas = document.getElementById('scCatsChart');
+  if (canvas) canvas.style.display = 'none';
+}
+
+
+// === PERIODICITY COLORS ===
+function getPeriodColor(period) {
+  switch((period||'').toLowerCase()) {
+    case 'daily': return '#2ecc71';
+    case 'weekly': return '#3498db';
+    case 'monthly': return '#f39c12';
+    case 'yearly': return '#9b59b6';
+    default: return '#1F6B4F';
+  }
 }

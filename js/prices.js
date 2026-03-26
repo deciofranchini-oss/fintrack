@@ -15,9 +15,288 @@ const _px = {
   activeItemId:  null,
   search:        '',
   catFilter:     '',
+  subcatFilter:  '',   // filtro subcategoria de preços
+  typeFilter:    '',   // filtro tipo dentro da subcategoria
   storeFilter:   '',
   pidStoreFilter: '',
+  groupBy:       '',   // '' | 'cat' | 'store' | 'subcat'
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SISTEMA DE CATEGORIAS HIERÁRQUICAS EXCLUSIVAS DE PREÇOS
+// Estrutura: Categoria App → Subcategoria Preços → Tipo
+// Armazenado em localStorage (chave por família) + sincronizado na UI
+// ─────────────────────────────────────────────────────────────────────────────
+
+/*
+  _pxHierarchy = {
+    [appCategoryId|'__none__']: {
+      subcategories: {
+        [subcatKey]: {
+          label: 'Bebidas',
+          types: ['Refrigerante', 'Leite', 'Suco', ...]
+        }
+      }
+    }
+  }
+  Exemplos reais:
+    Alimentação → Bebidas → Refrigerante
+    Alimentação → Bebidas → Leite
+    Automóvel   → Combustível → Gasolina
+*/
+function _pxHierKey() {
+  const fid = _famId();
+  return fid ? `px_hierarchy_${fid}` : null;
+}
+
+function _pxHierLoad() {
+  const key = _pxHierKey();
+  if (!key) return {};
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function _pxHierSave(data) {
+  const key = _pxHierKey();
+  if (!key) return;
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+function _pxHierGet() {
+  let h = _pxHierLoad();
+  // Garante estrutura mínima
+  if (!h || typeof h !== 'object') h = {};
+  return h;
+}
+
+// Retorna lista de subcategorias para um catId (ou __none__)
+function _pxSubcatsForCat(catId) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  return Object.entries((h[key]?.subcategories) || {})
+    .map(([k, v]) => ({ key: k, label: v.label, types: v.types || [] }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Retorna todos os tipos para catId + subcatKey
+function _pxTypesFor(catId, subcatKey) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  return (h[key]?.subcategories?.[subcatKey]?.types || []).sort();
+}
+
+// Adiciona subcategoria
+function _pxAddSubcat(catId, label) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  if (!h[key]) h[key] = { subcategories: {} };
+  if (!h[key].subcategories) h[key].subcategories = {};
+  const subcatKey = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  if (!subcatKey) return null;
+  if (!h[key].subcategories[subcatKey]) {
+    h[key].subcategories[subcatKey] = { label, types: [] };
+  }
+  _pxHierSave(h);
+  return subcatKey;
+}
+
+// Adiciona tipo dentro de uma subcategoria
+function _pxAddType(catId, subcatKey, typeLabel) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  if (!h[key]?.subcategories?.[subcatKey]) return;
+  const types = h[key].subcategories[subcatKey].types;
+  if (!types.includes(typeLabel)) types.push(typeLabel);
+  _pxHierSave(h);
+}
+
+// Remove subcategoria
+function _pxDeleteSubcat(catId, subcatKey) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  if (h[key]?.subcategories?.[subcatKey]) {
+    delete h[key].subcategories[subcatKey];
+    _pxHierSave(h);
+  }
+}
+
+// Remove tipo
+function _pxDeleteType(catId, subcatKey, typeLabel) {
+  const h = _pxHierGet();
+  const key = catId || '__none__';
+  const types = h[key]?.subcategories?.[subcatKey]?.types;
+  if (types) {
+    const idx = types.indexOf(typeLabel);
+    if (idx >= 0) { types.splice(idx, 1); _pxHierSave(h); }
+  }
+}
+
+// Popula o select de subcategorias no filtro da página
+function _populatePxSubcatFilter() {
+  const sel = document.getElementById('pxSubcatFilter');
+  if (!sel) return;
+  const catId = _px.catFilter || null;
+  const subcats = _pxSubcatsForCat(catId);
+  sel.innerHTML = '<option value="">Todas as subcategorias</option>' +
+    subcats.map(s => `<option value="${s.key}${__SEP__}${catId||''}">${esc(s.label)}</option>`).join('');
+  sel.value = '';
+  _px.subcatFilter = '';
+  _populatePxTypeFilter();
+}
+
+// Popula o select de tipos no filtro
+function _populatePxTypeFilter() {
+  const sel = document.getElementById('pxTypeFilter');
+  if (!sel) return;
+  const subcatVal = document.getElementById('pxSubcatFilter')?.value || '';
+  if (!subcatVal) {
+    sel.innerHTML = '<option value="">Todos os tipos</option>';
+    sel.value = '';
+    _px.typeFilter = '';
+    sel.disabled = true;
+    return;
+  }
+  const [subcatKey, catId] = subcatVal.split(__SEP__);
+  const types = _pxTypesFor(catId || null, subcatKey);
+  sel.disabled = types.length === 0;
+  sel.innerHTML = '<option value="">Todos os tipos</option>' +
+    types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  sel.value = '';
+  _px.typeFilter = '';
+}
+
+const __SEP__ = '|__|';
+
+// Popula subcategorias no formulário de item
+function _pxPopulateFormSubcats(catId) {
+  const sel = document.getElementById('pifSubcat');
+  if (!sel) return;
+  const subcats = _pxSubcatsForCat(catId);
+  sel.innerHTML = '<option value="">— Nenhuma —</option>' +
+    subcats.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('') +
+    '<option value="__new__">+ Nova subcategoria…</option>';
+}
+
+// Popula tipos no formulário de item
+function _pxPopulateFormTypes(catId, subcatKey) {
+  const sel = document.getElementById('pifType');
+  if (!sel) return;
+  if (!subcatKey || subcatKey === '__new__') {
+    sel.innerHTML = '<option value="">— Nenhum —</option>';
+    sel.disabled = true;
+    return;
+  }
+  const types = _pxTypesFor(catId, subcatKey);
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">— Nenhum —</option>' +
+    types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('') +
+    '<option value="__new__">+ Novo tipo…</option>';
+}
+
+// Handler: mudança de categoria no formulário
+function _pxFormCatChanged() {
+  const catSel = document.getElementById('pifCategory');
+  const catId = catSel?.value || null;
+  _pxPopulateFormSubcats(catId);
+  _pxPopulateFormTypes(catId, null);
+}
+
+// Handler: mudança de subcategoria no formulário
+function _pxFormSubcatChanged() {
+  const catSel = document.getElementById('pifCategory');
+  const subcatSel = document.getElementById('pifSubcat');
+  const catId = catSel?.value || null;
+  const subcatKey = subcatSel?.value || null;
+
+  if (subcatKey === '__new__') {
+    // Pede nome da nova subcategoria
+    const nome = prompt('Nome da nova subcategoria (ex: Bebidas, Laticínios, Combustível):');
+    if (!nome || !nome.trim()) { subcatSel.value = ''; return; }
+    const key = _pxAddSubcat(catId, nome.trim());
+    _pxPopulateFormSubcats(catId);
+    if (key) subcatSel.value = key;
+  }
+  _pxPopulateFormTypes(catId, subcatSel?.value || null);
+}
+
+// Handler: mudança de tipo no formulário
+function _pxFormTypeChanged() {
+  const catSel = document.getElementById('pifCategory');
+  const subcatSel = document.getElementById('pifSubcat');
+  const typeSel = document.getElementById('pifType');
+  const catId = catSel?.value || null;
+  const subcatKey = subcatSel?.value || null;
+
+  if (typeSel?.value === '__new__') {
+    const nome = prompt('Nome do novo tipo (ex: Refrigerante, Gasolina, Desnatado):');
+    if (!nome || !nome.trim()) { typeSel.value = ''; return; }
+    _pxAddType(catId, subcatKey, nome.trim());
+    _pxPopulateFormTypes(catId, subcatKey);
+    typeSel.value = nome.trim();
+  }
+}
+
+// Retorna objeto de hierarquia do item para exibição
+function _pxItemHier(item) {
+  // Lê px_subcat do metadata local por itemId
+  let stored = item.px_subcat;
+  if (!stored) {
+    const hierKey = _pxHierKey();
+    if (hierKey) {
+      try {
+        const itemMeta = JSON.parse(localStorage.getItem(hierKey + '_items') || '{}');
+        stored = itemMeta[item.id] || null;
+      } catch { stored = null; }
+    }
+  }
+  if (!stored) return null;
+  const parts = stored.split(__SEP__);
+  if (parts.length < 2) return null;
+  const [catId, subcatKey, typeLabel] = parts;
+  const h = _pxHierGet();
+  const groupKey = catId || '__none__';
+  const subcat = h[groupKey]?.subcategories?.[subcatKey];
+  if (!subcat) return null;
+  return {
+    catId,
+    subcatKey,
+    subcatLabel: subcat.label,
+    typeLabel: typeLabel || null,
+  };
+}
+
+// Salva hierarquia no campo hidden px_subcat do item
+function _pxBuildHierValue(catId, subcatKey, typeLabel) {
+  if (!subcatKey) return null;
+  return [catId || '', subcatKey, typeLabel || ''].join(__SEP__);
+}
+
+// Filtra items pela hierarquia selecionada
+function _pxApplyHierFilter(items) {
+  const subcatVal = document.getElementById('pxSubcatFilter')?.value || '';
+  const typeVal = document.getElementById('pxTypeFilter')?.value || '';
+  if (!subcatVal && !typeVal) return items;
+
+  let filtered = items;
+  if (subcatVal) {
+    const [subcatKey, catId] = subcatVal.split(__SEP__);
+    filtered = filtered.filter(item => {
+      const hier = _pxItemHier(item);
+      if (!hier) return false;
+      const catMatch = !catId || hier.catId === catId;
+      return catMatch && hier.subcatKey === subcatKey;
+    });
+  }
+  if (typeVal) {
+    filtered = filtered.filter(item => {
+      const hier = _pxItemHier(item);
+      return hier?.typeLabel === typeVal;
+    });
+  }
+  return filtered;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FEATURE FLAG
@@ -37,7 +316,7 @@ async function isPricesEnabled() {
 function _syncModulesSection() {
   const sec = document.getElementById('modulesNavSection');
   if (!sec) return;
-  const anyOn = ['groceryNav','pricesNav','investmentsNav'].some(id => {
+  const anyOn = ['groceryNav','pricesNav','investmentsNav','aiInsightsNav','debtsNav'].some(id => {
     const el = document.getElementById(id);
     return el && el.style.display !== 'none';
   });
@@ -87,21 +366,26 @@ async function isGroceryEnabled() {
 async function initPricesPage() {
   const on = await isPricesEnabled();
   if (!on) { toast('Recurso de preços não está ativo para esta família.', 'warning'); navigate('dashboard'); return; }
-  _px.search = _px.catFilter = _px.storeFilter = '';
+  _px.search = _px.catFilter = _px.storeFilter = _px.subcatFilter = _px.typeFilter = '';
   const searchEl = document.getElementById('pricesSearch');
   if (searchEl) searchEl.value = '';
-  _populatePricesCatFilter();
   await _loadPricesData();
+  _populatePricesCatFilter();
   _populatePricesStoreFilter();
+  _populatePxSubcatFilter();
   _renderPricesPage();
 }
 
 function _populatePricesCatFilter() {
   const sel = document.getElementById('pricesCatFilter');
   if (!sel) return;
-  const exp = (state.categories || []).filter(c => c.type !== 'income');
+  // Only show categories that have at least one price_item record
+  const usedCatIds = new Set(_px.items.map(i => i.category_id).filter(Boolean));
+  const cats = (state.categories || [])
+    .filter(c => c.type !== 'income' && usedCatIds.has(c.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = '<option value="">Todas as categorias</option>' +
-    exp.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
 }
 
 function _populatePricesStoreFilter() {
@@ -140,80 +424,372 @@ function _renderPricesPage() {
     const q = _px.search.toLowerCase();
     items = items.filter(i => i.name.toLowerCase().includes(q) || (i.description||'').toLowerCase().includes(q));
   }
-  if (_px.catFilter) items = items.filter(i => i.category_id === _px.catFilter);
+  if (_px.catFilter)   items = items.filter(i => i.category_id === _px.catFilter);
+  // Filtros hierárquicos exclusivos de preços
+  items = _pxApplyHierFilter(items);
+
   const countEl = document.getElementById('pricesCount');
   if (countEl) countEl.textContent = items.length + (items.length !== 1 ? ' itens' : ' item');
+
+  // ── Summary hero strip ────────────────────────────────────────────────
+  const heroEl = document.getElementById('pricesHero');
+  if (heroEl && _px.items.length) {
+    const allWithPrice  = [..._px.items].filter(i => i.last_price != null);
+    const totalItems    = _px.items.length;
+    const totalRecords  = _px.items.reduce((s, i) => s + (i.record_count || 0), 0);
+    const sorted        = [...allWithPrice].sort((a,b) => a.last_price - b.last_price);
+    const cheapest      = sorted[0];
+    const priciest      = sorted[sorted.length - 1];
+    heroEl.innerHTML = `
+      <div class="px-hero-kpi">
+        <div class="px-hero-kpi-val">${totalItems}</div>
+        <div class="px-hero-kpi-lbl">Itens cadastrados</div>
+      </div>
+      <div class="px-hero-kpi">
+        <div class="px-hero-kpi-val">${totalRecords}</div>
+        <div class="px-hero-kpi-lbl">Registros de preço</div>
+      </div>
+      ${cheapest ? `<div class="px-hero-kpi">
+        <div class="px-hero-kpi-val" style="color:var(--green)">${fmt(cheapest.last_price)}</div>
+        <div class="px-hero-kpi-lbl">Mais barato · ${esc(cheapest.name)}</div>
+      </div>` : ''}
+      ${priciest && priciest !== cheapest ? `<div class="px-hero-kpi">
+        <div class="px-hero-kpi-val">${fmt(priciest.last_price)}</div>
+        <div class="px-hero-kpi-lbl">Mais caro · ${esc(priciest.name)}</div>
+      </div>` : ''}
+    `;
+    heroEl.style.display = 'grid';
+  }
+
   if (!items.length) {
     listEl.innerHTML = `
       <div class="prices-empty">
         <div style="font-size:2.8rem;margin-bottom:12px">🏷️</div>
-        <div style="font-weight:700;font-size:.95rem;margin-bottom:6px">Nenhum item cadastrado</div>
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:6px">Nenhum item encontrado</div>
         <div style="font-size:.82rem;color:var(--muted);max-width:280px;text-align:center;line-height:1.55">
-          Registre preços ao incluir transações com recibo lido por IA,<br>ou clique em <strong>+ Novo Item</strong>.
+          Tente ajustar os filtros ou cadastre novos itens.
         </div>
       </div>`;
     return;
   }
-  listEl.innerHTML = `<div class="px-grid">` +
-    items.map(item => {
-      const avg  = item.avg_price  != null ? fmt(item.avg_price)  : null;
-      const last = item.last_price != null ? fmt(item.last_price) : null;
-      const cnt  = item.record_count || 0;
-      const cat  = item.categories?.name  || '';
-      const catColor = item.categories?.color || 'var(--accent)';
-
-      // Trend arrow: compare last vs avg
-      let trend = '';
-      if (item.avg_price != null && item.last_price != null) {
-        if      (item.last_price > item.avg_price * 1.02) trend = '<span class="px-trend up">↑</span>';
-        else if (item.last_price < item.avg_price * 0.98) trend = '<span class="px-trend dn">↓</span>';
-        else                                               trend = '<span class="px-trend eq">→</span>';
-      }
-
-      // Visual avatar: first 2 chars of item name, coloured by category
-      const initials = item.name.trim().slice(0,2).toUpperCase();
-      const unitBadge = (item.unit && item.unit !== 'un')
-        ? `<span class="px-unit">${esc(item.unit)}</span>` : '';
-
-      return `
-      <div class="px-card" onclick="openPriceItemDetail('${item.id}')"
-           style="--px-clr:${catColor}">
-        <div class="px-card-top">
-          <div class="px-avatar" style="background:color-mix(in srgb,${catColor} 15%,transparent);color:${catColor}">${initials}</div>
-          ${cat ? `<span class="px-cat-badge" style="color:${catColor};background:color-mix(in srgb,${catColor} 12%,transparent)">${esc(cat)}</span>` : ''}
-          <button class="px-cart-btn" title="Adicionar à lista de compras"
-                  onclick="event.stopPropagation();openAddToGroceryList('${item.id}','${esc(item.name).replace(/'/g,'\u0027')}','${esc(item.unit||'un')}',${item.last_price ?? 'null'})">
-            🛒
-          </button>
-        </div>
-        <div class="px-name">${esc(item.name)}${unitBadge}</div>
-        ${item.description ? `<div class="px-desc">${esc(item.description)}</div>` : ''}
-        <div class="px-prices">
-          <div class="px-price-col">
-            <span class="px-price-lbl">Preço médio</span>
-            <span class="px-price-val">${avg ?? '—'}</span>
-          </div>
-          <div class="px-price-col">
-            <span class="px-price-lbl">Último ${trend}</span>
-            <span class="px-price-val ${item.last_price != null ? 'accent' : ''}">${last ?? '—'}</span>
-          </div>
-          <div class="px-price-col">
-            <span class="px-price-lbl">Registros</span>
-            <span class="px-price-val">${cnt}</span>
-          </div>
-        </div>
-        <div class="px-card-footer">
-          <div class="px-progress">
-            <div class="px-progress-bar" style="width:${Math.min(100, cnt * 10)}%;background:${catColor}"></div>
-          </div>
-        </div>
-      </div>`;
-    }).join('') + `</div>`;
+  if (_px.groupBy) {
+    if (_px.groupBy === 'subcat') { _renderPricesGroupedBySubcat(items); return; }
+    _renderPricesGrouped(items);
+    return;
+  }
+  listEl.innerHTML = `<div class="px-grid">` + items.map(_pxCardHtml).join('') + `</div>`;
 }
 
 function pricesSearch(val)      { _px.search = val;      _renderPricesPage(); }
-function pricesCatFilter(val)   { _px.catFilter = val;   _renderPricesPage(); }
+function pricesCatFilter(val)   {
+  _px.catFilter = val;
+  _populatePxSubcatFilter();
+  _renderPricesPage();
+}
 function pricesStoreFilter(val) { _px.storeFilter = val; _renderPricesPage(); }
+function pricesSubcatFilter(val) {
+  _px.subcatFilter = val;
+  _populatePxTypeFilter();
+  _renderPricesPage();
+}
+function pricesTypeFilter(val)  { _px.typeFilter = val; _renderPricesPage(); }
+function pricesSetGroup(val) {
+  _px.groupBy = val;
+  ['pxGroupNone','pxGroupCat','pxGroupStore','pxGroupSubcat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  const map = { '': 'pxGroupNone', cat: 'pxGroupCat', store: 'pxGroupStore', subcat: 'pxGroupSubcat' };
+  const active = document.getElementById(map[val]);
+  if (active) active.classList.add('active');
+  _renderPricesPage();
+}
+
+function _renderPricesGrouped(items) {
+  const listEl = document.getElementById('pricesItemList');
+  if (!listEl) return;
+
+  if (_px.groupBy === 'cat') {
+    // Group by category name
+    const groups = {};
+    items.forEach(item => {
+      const key = item.categories?.name || 'Sem categoria';
+      const color = item.categories?.color || 'var(--accent)';
+      if (!groups[key]) groups[key] = { color, items: [], total: 0 };
+      groups[key].items.push(item);
+      groups[key].total += item.record_count || 0;
+    });
+    listEl.innerHTML = Object.entries(groups)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([gName, g]) => `
+        <div class="px-group-section">
+          <div class="px-group-header">
+            <span class="px-group-dot" style="background:${g.color}"></span>
+            <span class="px-group-label">${esc(gName)}</span>
+            <span class="px-group-count">${g.items.length} ${g.items.length !== 1 ? 'itens' : 'item'}</span>
+          </div>
+          <div class="px-grid">${g.items.map(_pxCardHtml).join('')}</div>
+        </div>`).join('');
+
+  } else if (_px.groupBy === 'store') {
+    // Group by last recorded store — uses price_history to find recent store
+    // Since items don't carry store directly, group by avg cheapest store from history
+    // Fallback: group items by name prefix (letter) or show all under store filter
+    // We load per-item store data lazily — for now group by store from _px.stores filter
+    const storeId = _px.storeFilter;
+    if (storeId) {
+      // If a store filter is active, show items that have history in that store
+      // (already filtered) grouped under that store header
+      const store = _px.stores.find(s => s.id === storeId);
+      listEl.innerHTML = `
+        <div class="px-group-section">
+          <div class="px-group-header">
+            <span class="px-group-dot" style="background:var(--accent)">🏪</span>
+            <span class="px-group-label">${esc(store?.name || 'Estabelecimento')}</span>
+            <span class="px-group-count">${items.length} ${items.length !== 1 ? 'itens' : 'item'}</span>
+          </div>
+          <div class="px-grid">${items.map(_pxCardHtml).join('')}</div>
+        </div>`;
+    } else {
+      // No store filter: group alphabetically A-Z under store headers from history
+      // Load all history grouped by store (batch query)
+      _renderPricesGroupedByStore(items, listEl);
+      return;
+    }
+  }
+}
+
+async function _renderPricesGroupedByStore(items, listEl) {
+  if (!items.length) { listEl.innerHTML = ''; return; }
+  const fid = _famId();
+  if (!fid) return;
+  // Fetch last store per item from price_history
+  const itemIds = items.map(i => i.id);
+  const { data: hist } = await sb.from('price_history')
+    .select('item_id, store_id')
+    .eq('family_id', fid)
+    .in('item_id', itemIds)
+    .order('purchased_at', { ascending: false });
+
+  // Map item_id → most recent store_id
+  const itemToStore = {};
+  (hist || []).forEach(h => {
+    if (!itemToStore[h.item_id]) itemToStore[h.item_id] = h.store_id;
+  });
+
+  const storeMap = Object.fromEntries(_px.stores.map(s => [s.id, s]));
+  const groups = {};
+  items.forEach(item => {
+    const storeId = itemToStore[item.id];
+    const store = storeId ? storeMap[storeId] : null;
+    const key = store?.name || 'Sem estabelecimento';
+    if (!groups[key]) groups[key] = { items: [] };
+    groups[key].items.push(item);
+  });
+
+  listEl.innerHTML = Object.entries(groups)
+    .sort((a,b) => a[0].localeCompare(b[0]))
+    .map(([gName, g]) => `
+      <div class="px-group-section">
+        <div class="px-group-header">
+          <span style="font-size:.95rem">🏪</span>
+          <span class="px-group-label">${esc(gName)}</span>
+          <span class="px-group-count">${g.items.length} ${g.items.length !== 1 ? 'itens' : 'item'}</span>
+        </div>
+        <div class="px-grid">${g.items.map(_pxCardHtml).join('')}</div>
+      </div>`).join('');
+}
+
+
+// ── Emoji inteligente por item — baseado em nome e categoria ─────────────────
+// Mapeamento local: sem chamada de API, instantâneo.
+function _pxItemEmoji(item) {
+  // 1. Prioridade: ícone da categoria
+  const catIcon = item.categories?.icon;
+  if (catIcon && catIcon.length <= 4) return catIcon; // emoji do cadastro
+
+  // 2. Mapa por palavras-chave no nome do item (normalizado)
+  const name = (item.name + ' ' + (item.description || '')).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // remove acentos
+
+  const MAP = [
+    // Laticínios e ovos
+    [/leite|iogurte|queijo|manteiga|nata|creme\s+de\s+leite|requeijao|mussarela/,'🥛'],
+    [/ovo|ovos/,'🥚'],
+    // Carnes
+    [/carne|bife|frango|peixe|atum|sardinha|camarao|bacalhau|linguica|salsicha|presunto|bacon|peito|coxa|sobrecoxa|patinho|alcatra|file|costela|pernil|lombo/,'🥩'],
+    // Hortifruti
+    [/banana|maca|laranja|limao|uva|morango|abacaxi|mamao|manga|pera|melao|melancia|kiwi|fruta/,'🍎'],
+    [/tomate|alface|cenoura|batata|cebola|alho|pepino|brocolis|abobrinha|pimentao|berinjela|mandioca|inhame|legume|verdura|vegetal|espinafre|couve|repolho/,'🥦'],
+    // Grãos e massas
+    [/arroz/,'🍚'],
+    [/feijao|lentilha|grao|ervilha/,'🫘'],
+    [/macarrao|massa|espaguete|lasanha|penne|fusilli|farinha|amido|aveia/,'🍝'],
+    [/pao|bolo|biscoito|bolacha|torrada|croissant|waffle|panqueca/,'🍞'],
+    // Condimentos e temperos
+    [/sal|acucar|mel|azeite|vinagre|ketchup|mostarda|maionese|molho|pimenta|canela|oregano|tempero|extrato|caldo/,'🧂'],
+    // Bebidas
+    [/agua|agua\s+mineral|agua\s+com\s+gas/,'💧'],
+    [/suco|nectar|limonada/,'🧃'],
+    [/refrigerante|coca|pepsi|guarana|fanta|sprite/,'🥤'],
+    [/cerveja|vinho|whisky|vodka|cachaca|licor|espumante/,'🍺'],
+    [/cafe|cha|cappuccino|nescafe|achocolatado|chocolate\s+quente/,'☕'],
+    // Limpeza
+    [/detergente|sabao|sabonete|shampoo|condicionador|desinfetante|multiuso|limpador|agua\s+sanitaria|alvejante|amaciante|esponja|papel\s+toalha|papel\s+higienico/,'🧹'],
+    // Higiene pessoal
+    [/creme\s+dental|pasta\s+de\s+dente|escova\s+de\s+dente|fio\s+dental|desodorante|perfume|absorvente|fraldas|barbear/,'🪥'],
+    // Congelados e padaria
+    [/sorvete|gelado|popsicle/,'🍦'],
+    [/pizza|hamburguer|hot\s+dog/,'🍕'],
+    // Bebê / criança
+    [/fralda|papinha|formula\s+infant/,'👶'],
+    // Animais
+    [/racao|petisco\s+pet|pet\s+shop/,'🐾'],
+    // Farmácia
+    [/remedio|medicamento|vitamina|suplemento|pomada|antisseptico|curativo/,'💊'],
+    // Eletrônicos / pilhas
+    [/pilha|bateria|lampada|cabo\s+usb/,'🔋'],
+    // Papelaria
+    [/caderno|caneta|lapis|borracha|cola|papel\s+a4/,'📝'],
+    // Categoria genérica por nome da categoria
+    [/aliment|mercearia|supermercado|padaria/,'🛒'],
+    [/limpeza|higiene|cuidado/,'🧼'],
+    [/bebe|infantil|kids/,'👶'],
+    [/pet|animal/,'🐾'],
+    [/farm|saude|medic/,'💊'],
+    [/bebida/,'🥤'],
+    [/hortifruti|frutas|verduras/,'🥬'],
+  ];
+
+  for (const [re, emoji] of MAP) {
+    if (re.test(name)) return emoji;
+  }
+
+  // 3. Fallback por nome da categoria
+  const catName = (item.categories?.name || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const [re, emoji] of MAP) {
+    if (re.test(catName)) return emoji;
+  }
+
+  // 4. Fallback neutro
+  return '📦';
+}
+
+function _pxCardHtml(item) {
+  const avg  = item.avg_price  != null ? fmt(item.avg_price)  : null;
+  const last = item.last_price != null ? fmt(item.last_price) : null;
+  const cnt  = item.record_count || 0;
+  const cat  = item.categories?.name  || '';
+  const catColor = item.categories?.color || 'var(--accent)';
+  let trend = '';
+  if (item.avg_price != null && item.last_price != null) {
+    if      (item.last_price > item.avg_price * 1.02) trend = '<span class="px-trend up">\u2191</span>';
+    else if (item.last_price < item.avg_price * 0.98) trend = '<span class="px-trend dn">\u2193</span>';
+    else                                               trend = '<span class="px-trend eq">\u2192</span>';
+  }
+  const emoji  = _pxItemEmoji(item);
+  const unitBadge = (item.unit && item.unit !== 'un')
+    ? `<span class="px-unit">${esc(item.unit)}</span>` : '';
+
+  // Hierarquia exclusiva de preços
+  const hier = _pxItemHier(item);
+  let hierHtml = '';
+  if (hier) {
+    hierHtml = `<div class="px-cat-breadcrumb">`;
+    if (cat) hierHtml += `<span>${esc(cat)}</span><span class="sep">›</span>`;
+    hierHtml += `<span class="px-cat-tag">${esc(hier.subcatLabel)}</span>`;
+    if (hier.typeLabel) hierHtml += `<span class="sep">›</span><span class="px-type-badge">${esc(hier.typeLabel)}</span>`;
+    hierHtml += `</div>`;
+  }
+
+  return `
+    <div class="px-card" onclick="openPriceItemDetail('${item.id}')" style="--px-clr:${catColor}">
+      <div class="px-card-top">
+        <div class="px-avatar" style="background:color-mix(in srgb,${catColor} 15%,transparent);font-size:1.4rem;line-height:1">${emoji}</div>
+        ${!hier && cat && !_px.groupBy ? `<span class="px-cat-badge" style="color:${catColor};background:color-mix(in srgb,${catColor} 12%,transparent)">${esc(cat)}</span>` : ''}
+        <button class="px-cart-btn" title="Adicionar à lista de compras"
+                onclick="event.stopPropagation();openAddToGroceryList('${item.id}','${esc(item.name).replace(/'/g,'\u0027')}','${esc(item.unit||'un')}',${item.last_price ?? 'null'})">
+          🛒
+        </button>
+      </div>
+      <div class="px-name">${esc(item.name)}${unitBadge}</div>
+      ${hierHtml}
+      ${item.description ? `<div class="px-desc">${esc(item.description)}</div>` : ''}
+      <div class="px-prices">
+        <div class="px-price-col"><span class="px-price-lbl">Preço médio</span><span class="px-price-val">${avg ?? '—'}</span></div>
+        <div class="px-price-col"><span class="px-price-lbl">Último ${trend}</span><span class="px-price-val ${item.last_price != null ? 'accent' : ''}">${last ?? '—'}</span></div>
+        <div class="px-price-col"><span class="px-price-lbl">Registros</span><span class="px-price-val">${cnt}</span></div>
+      </div>
+      <div class="px-card-footer"><div class="px-progress"><div class="px-progress-bar" style="width:${Math.min(100, cnt * 10)}%;background:${catColor}"></div></div></div>
+    </div>`;
+}
+
+// Agrupa items por subcategoria de preços
+function _renderPricesGroupedBySubcat(items) {
+  const listEl = document.getElementById('pricesItemList');
+  if (!listEl) return;
+  const groups = {};
+  const noSubcat = [];
+  items.forEach(item => {
+    const hier = _pxItemHier(item);
+    if (!hier) { noSubcat.push(item); return; }
+    if (!groups[hier.subcatKey]) {
+      groups[hier.subcatKey] = { label: hier.subcatLabel, items: [], byType: {} };
+    }
+    groups[hier.subcatKey].items.push(item);
+    if (hier.typeLabel) {
+      if (!groups[hier.subcatKey].byType[hier.typeLabel]) groups[hier.subcatKey].byType[hier.typeLabel] = [];
+      groups[hier.subcatKey].byType[hier.typeLabel].push(item);
+    }
+  });
+
+  let html = '';
+  Object.entries(groups)
+    .sort((a, b) => a[1].label.localeCompare(b[1].label))
+    .forEach(([key, g]) => {
+      const typeKeys = Object.keys(g.byType);
+      let innerHtml = '';
+      if (typeKeys.length > 0) {
+        typeKeys.sort().forEach(tl => {
+          innerHtml += `
+            <div style="margin-bottom:12px">
+              <div class="px-subcat-group-header" style="padding-left:4px;border-left:3px solid var(--accent);margin-bottom:8px">
+                <span class="px-subcat-group-label" style="font-size:.72rem;color:var(--muted)">${esc(tl)}</span>
+                <span class="px-subcat-group-meta">${g.byType[tl].length} item(s)</span>
+              </div>
+              <div class="px-grid">${g.byType[tl].map(_pxCardHtml).join('')}</div>
+            </div>`;
+        });
+        const untyped = g.items.filter(i => !_pxItemHier(i)?.typeLabel);
+        if (untyped.length) innerHtml += `<div class="px-grid">${untyped.map(_pxCardHtml).join('')}</div>`;
+      } else {
+        innerHtml = `<div class="px-grid">${g.items.map(_pxCardHtml).join('')}</div>`;
+      }
+      html += `
+        <div class="px-subcat-group">
+          <div class="px-subcat-group-header">
+            <span class="px-subcat-group-dot"></span>
+            <span class="px-subcat-group-label">${esc(g.label)}</span>
+            <span class="px-subcat-group-meta">${g.items.length} item(s)</span>
+          </div>
+          ${innerHtml}
+        </div>`;
+    });
+
+  if (noSubcat.length) {
+    html += `
+      <div class="px-subcat-group">
+        <div class="px-subcat-group-header">
+          <span class="px-subcat-group-dot" style="background:var(--muted2)"></span>
+          <span class="px-subcat-group-label" style="color:var(--muted)">Sem subcategoria</span>
+          <span class="px-subcat-group-meta">${noSubcat.length} item(s)</span>
+        </div>
+        <div class="px-grid">${noSubcat.map(_pxCardHtml).join('')}</div>
+      </div>`;
+  }
+  listEl.innerHTML = html || '<div class="prices-empty"><div style="font-size:2.8rem;margin-bottom:12px">🏷️</div><div style="font-weight:700">Nenhum item encontrado</div></div>';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ITEM DETAIL MODAL
@@ -435,6 +1011,21 @@ function _openItemForm(item) {
       (state.categories || []).filter(c => c.type !== 'income')
         .map(c => `<option value="${c.id}"${item?.category_id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
   }
+  // Popula hierarquia
+  const catId = item?.category_id || null;
+  _pxPopulateFormSubcats(catId);
+  // Restaura seleção salva no item
+  if (item?.px_subcat) {
+    const parts = item.px_subcat.split(__SEP__);
+    const [, subcatKey, typeLabel] = parts;
+    _pxPopulateFormTypes(catId, subcatKey);
+    setTimeout(() => {
+      if (el('pifSubcat') && subcatKey) el('pifSubcat').value = subcatKey;
+      if (el('pifType') && typeLabel) el('pifType').value = typeLabel;
+    }, 50);
+  } else {
+    _pxPopulateFormTypes(catId, null);
+  }
   if (el('pifError')) el('pifError').style.display = 'none';
   openModal('priceItemFormModal');
   setTimeout(() => el('pifName')?.focus(), 150);
@@ -452,6 +1043,14 @@ async function savePriceItem() {
   const date  = el('pifDate')?.value;
   const storeId   = el('pifStoreId')?.value   || null;
   const storeName = el('pifStoreInput')?.value?.trim();
+
+  // Hierarquia exclusiva de preços (armazenada em localStorage)
+  const subcatKey = el('pifSubcat')?.value || null;
+  const typeLabel = (el('pifType')?.value && el('pifType')?.value !== '__new__') ? el('pifType').value : null;
+  const pxSubcatVal = (subcatKey && subcatKey !== '__new__')
+    ? _pxBuildHierValue(catId, subcatKey, typeLabel)
+    : null;
+
   if (!name) { _pifErr('Informe o nome do item.'); return; }
   if (el('pifError')) el('pifError').style.display = 'none';
   const fid     = _famId();
@@ -465,6 +1064,16 @@ async function savePriceItem() {
     const { data: ni, error } = await sb.from('price_items').insert(payload).select('id').single();
     if (error) { _pifErr('Erro: ' + error.message); return; }
     itemId = ni.id;
+  }
+  // Persiste hierarquia no metadata local (campo px_subcat por item)
+  if (pxSubcatVal !== null) {
+    const hierKey = _pxHierKey();
+    if (hierKey) {
+      let itemMeta = {};
+      try { itemMeta = JSON.parse(localStorage.getItem(hierKey + '_items') || '{}'); } catch {}
+      itemMeta[itemId] = pxSubcatVal;
+      localStorage.setItem(hierKey + '_items', JSON.stringify(itemMeta));
+    }
   }
   if (price > 0 && date) {
     let resolvedStoreId = storeId;
@@ -483,6 +1092,7 @@ async function savePriceItem() {
   closeModal('priceItemFormModal');
   await _loadPricesData();
   _populatePricesStoreFilter();
+  _populatePxSubcatFilter();
   _renderPricesPage();
 }
 
@@ -631,8 +1241,30 @@ function _openRegisterModal(aiResult) {
       }
     }
   }
-  const rawItems = aiResult.items || [];
-  _renderRpmRows(rawItems.length ? rawItems : [{ ai_name: aiResult.description || '', quantity: 1, unit_price: aiResult.amount || 0 }]);
+  // Normalise items from both receipt_ai.js (_callClaudeVision) and prices.js (_callPricesVision)
+  // Both return items[] but with slightly different field names — unify here
+  const rawItems = (aiResult.items || []).map(it => ({
+    description: it.description || it.ai_name || '',
+    ai_name:     it.ai_name     || it.description || '',
+    quantity:    parseFloat(it.quantity)   || 1,
+    unit_price:  parseFloat(it.unit_price) || parseFloat(it.price) || 0,
+    total_price: parseFloat(it.total_price)|| (parseFloat(it.unit_price||0) * (parseFloat(it.quantity)||1)),
+    category:    it.category || null,
+  })).filter(it => it.description && it.unit_price > 0);
+
+  if (rawItems.length) {
+    _renderRpmRows(rawItems);
+  } else {
+    // Fallback: single row with the note total (nothing better to show)
+    _renderRpmRows([{
+      description: aiResult.description || aiResult.payee || '',
+      ai_name:     aiResult.description || '',
+      quantity:    1,
+      unit_price:  aiResult.amount || 0,
+      total_price: aiResult.amount || 0,
+      category:    aiResult.category || null,
+    }]);
+  }
   openModal('registerPricesModal');
 }
 
@@ -808,7 +1440,7 @@ async function rpmNormalizeAI(idx) {
 }
 
 async function rpmNormalizeAllAI() {
-  const rows = document.querySelectorAll('tr.rpm-row');
+  const rows = document.querySelectorAll('[id^="rpmItem-"]');
   for (const row of rows) {
     await rpmNormalizeAI(row.id.replace('rpmItem-', ''));
     await new Promise(r => setTimeout(r, 200));
@@ -855,7 +1487,7 @@ async function saveRegisterPrices() {
       }
     }
     // Collect grid rows then batch-save (2 queries instead of N*3)
-    const rows = document.querySelectorAll('tr.rpm-row');
+    const rows = document.querySelectorAll('[id^="rpmItem-"]');
     const items = [];
     rows.forEach(row => {
       const idx   = row.id.replace('rpmItem-', '');
