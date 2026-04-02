@@ -43,7 +43,50 @@
   } catch(e) {}
 })();
 </script>
-<link rel="stylesheet" href="css/style.css">
+<!-- ══ Anti-flash: aplica tema de login ANTES do primeiro frame ══════════════
+     Este script inline roda antes de qualquer CSS externo ser aplicado.
+     Lê o tema do localStorage e adiciona a classe no loginScreen via dataset
+     temporário; o CSS usa [data-login-theme] para aplicar o layout sem depender
+     do JS de auth.js que roda depois. ══════════════════════════════════════ -->
+<script>
+(function(){
+  try {
+    var theme = localStorage.getItem('login_theme') || 'split';
+    // Marcador lido pelo CSS antes do DOMContentLoaded
+    document.documentElement.setAttribute('data-login-theme', theme);
+    // Também adiciona a classe assim que o DOM existir
+    document.addEventListener('DOMContentLoaded', function() {
+      var ls = document.getElementById('loginScreen');
+      if (!ls) return;
+      ['ls-theme-split','ls-theme-centered','ls-theme-asymmetric',
+       'ls-theme-immersive','ls-theme-minimal'].forEach(function(c){ ls.classList.remove(c); });
+      ls.classList.add('ls-theme-' + theme);
+    }, { once: true });
+  } catch(e) {}
+})();
+</script>
+<!-- ══ CSS split into modules — edite apenas o arquivo relevante ══ -->
+<link rel="stylesheet" href="css/01_base.css">
+<link rel="stylesheet" href="css/02_layout.css">
+<link rel="stylesheet" href="css/03_transactions.css">
+<link rel="stylesheet" href="css/04_budgets.css">
+<link rel="stylesheet" href="css/05_help.css">
+<link rel="stylesheet" href="css/06_reports.css">
+<link rel="stylesheet" href="css/07_investments.css">
+<link rel="stylesheet" href="css/08_rpt_ext.css">
+<link rel="stylesheet" href="css/09_help_shell.css">
+<link rel="stylesheet" href="css/10_rpt_tx.css">
+<link rel="stylesheet" href="css/11_debts.css">
+<link rel="stylesheet" href="css/12_categories.css">
+<link rel="stylesheet" href="css/13_patches.css">
+<link rel="stylesheet" href="css/14_scheduled.css">
+<link rel="stylesheet" href="css/15_tx_timeline.css">
+<link rel="stylesheet" href="css/16_ai.css">
+<link rel="stylesheet" href="css/17_modules.css">
+<link rel="stylesheet" href="css/18_dashboard.css">
+<link rel="stylesheet" href="css/19_dreams.css">
+<link rel="stylesheet" href="css/20_login.css">
+<link rel="stylesheet" href="css/21_budget_modal.css">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
    SIDEBAR — Tema escuro com identidade do logo Family FinTrack
@@ -197,15 +240,44 @@
   transform: translateY(-1px);
 }
 /* Botão sair na topbar mantém vermelho */
-#logoutTopbarBtn {
-  background: #fff5f5 !important;
-  border-color: rgba(220,38,38,0.20) !important;
-  color: #dc2626 !important;
+/* Botão do Agente — verde elétrico com brilho */
+.topbar-agent-btn {
+  background: linear-gradient(135deg, #05df72, #00b359) !important;
+  border-color: rgba(5,223,114,0.55) !important;
+  box-shadow: 0 0 0 2px rgba(5,223,114,.22), 0 3px 12px rgba(5,223,114,.50), inset 0 1px 0 rgba(255,255,255,.20) !important;
+  color: #003d1f !important;
 }
-#logoutTopbarBtn:hover {
-  background: #fee2e2 !important;
-  border-color: #dc2626 !important;
-  box-shadow: 0 0 0 3px rgba(220,38,38,0.12) !important;
+.topbar-agent-btn:hover {
+  background: linear-gradient(135deg, #00ff88, #05df72) !important;
+  border-color: rgba(5,223,114,.80) !important;
+  box-shadow: 0 0 0 3px rgba(5,223,114,.30), 0 5px 20px rgba(5,223,114,.65), inset 0 1px 0 rgba(255,255,255,.25) !important;
+  transform: translateY(-2px) scale(1.07) !important;
+  color: #002612 !important;
+}
+/* Botão de Feedback — vermelho vivo com pulso */
+.topbar-feedback-btn {
+  background: linear-gradient(135deg, #ff3b3b, #cc0000) !important;
+  border-color: rgba(255,80,80,.55) !important;
+  box-shadow: 0 0 0 2px rgba(255,59,59,.20), 0 3px 12px rgba(204,0,0,.50), inset 0 1px 0 rgba(255,255,255,.15) !important;
+  position: relative !important;
+  color: #fff !important;
+}
+.topbar-feedback-btn:hover {
+  background: linear-gradient(135deg, #ff5555, #ee0000) !important;
+  border-color: rgba(255,80,80,.80) !important;
+  box-shadow: 0 0 0 3px rgba(255,59,59,.28), 0 5px 20px rgba(220,0,0,.60), inset 0 1px 0 rgba(255,255,255,.20) !important;
+  transform: translateY(-2px) scale(1.07) !important;
+}
+.feedback-topbar-badge {
+  position: absolute !important;
+  top: -4px !important;
+  right: -4px !important;
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: 2px solid #cc0000 !important;
+  box-shadow: 0 0 4px rgba(255,255,255,.8) !important;
 }
 /* Botões admin-only: ocultos por padrão via !important de ID.
    O JS (updateUserUI / applyPermissions) aplica display:'' ou display:'none' —
@@ -223,6 +295,10 @@
 #telemetryNavTopbar.admin-visible,
 #settingsNavTopbar.admin-visible {
   display: flex !important;
+}
+/* Elementos genéricos com admin-visible: ocultos por padrão, exibidos para admins */
+.admin-visible:not(#telemetryNavTopbar):not(#settingsNavTopbar) {
+  display: none !important;
 }
 </style>
 </head>
@@ -503,6 +579,11 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><circle cx="19" cy="5" r="3" fill="currentColor" stroke="none" opacity=".8"/></svg>
         </span><span data-i18n="nav.ai_insights">AI Insights
       </button>
+      <button class="nav-item" id="dreamsNav" data-nav="dreams" data-feature-controlled="1" onclick="navigate('dreams')" style="display:none">
+        <span class="ni-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </span><span data-i18n="nav.dreams">Sonhos
+      </button>
     </div><!-- /modules section end -->
 
     <!-- Help always visible -->
@@ -577,24 +658,16 @@
         </button>
         <!-- Reportar Feedback — oculto para admin/owner, visível para usuários -->
         <!-- Agent toggle button -->
-        <button id="agentTopbarBtn" onclick="toggleAgent()" title="FinTrack Agent — Assistente IA"
-          style="background:linear-gradient(135deg,#1d4ed8,#7c3aed);border:none;
-                 border-radius:50%;width:34px;height:34px;cursor:pointer;flex-shrink:0;
-                 display:flex;align-items:center;justify-content:center;font-size:.95rem;
-                 box-shadow:0 2px 8px rgba(124,58,237,.35);
-                 transition:transform .15s,box-shadow .15s"
-          onmouseover="this.style.transform='scale(1.12)';this.style.boxShadow='0 4px 16px rgba(124,58,237,.5)'"
-          onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(124,58,237,.35)'">
-          🤖
+        <!-- Agent toggle button -->
+        <button class="topbar-icon-btn topbar-agent-btn" id="agentTopbarBtn" onclick="toggleAgent()" title="FinTrack Agent — Assistente IA" aria-label="Abrir agente IA">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L13.7 8.3L20 10L13.7 11.7L12 18L10.3 11.7L4 10L10.3 8.3L12 2Z"/><path d="M19.5 15.5L20.5 18.5L23 19.5L20.5 20.5L19.5 23L18.5 20.5L16 19.5L18.5 18.5Z" opacity=".8"/><path d="M4.5 2.5L5.2 4.8L7.5 5.5L5.2 6.2L4.5 8.5L3.8 6.2L1.5 5.5L3.8 4.8Z" opacity=".65"/></svg>
         </button>
-        <button id="feedbackTopbarBtn" class="feedback-topbar-bubble" onclick="openFeedbackModal()" title="Reportar erro, bug ou melhoria" aria-label="Reportar feedback">
-          <svg class="feedback-topbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <!-- Feedback -->
+        <button class="topbar-icon-btn topbar-feedback-btn" id="feedbackTopbarBtn" onclick="openFeedbackModal()" title="Reportar erro, bug ou melhoria" aria-label="Reportar feedback">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="currentColor" opacity=".18"/><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 7v5.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.3" fill="currentColor"/></svg>
           <span id="feedbackBadge" class="feedback-topbar-badge" style="display:none"></span>
         </button>
-        <!-- Sair -->
-        <button class="topbar-icon-btn" id="logoutTopbarBtn" onclick="doLogout()" title="Sair">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </button>
+
       </div>
 <button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()" title="Nova Transação" aria-label="Nova Transação">+</button>
     </div>
@@ -624,7 +697,7 @@
         <button onclick="document.getElementById('dashMemberFilter').value='';document.getElementById('dashRelGroup').value='';loadDashboard()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:.85rem;padding:0;line-height:1" title="Limpar filtro">✕</button>
       </div>
       <!-- family badge moved to FX bar; dashboard customize moved to page title bar -->
-      <div class="grid-4 mb-4">
+      <div class="grid-4 mb-4" id="dashCardKpis">
         <div class="stat-card"><div class="stat-accent"></div><div class="stat-label">Patrimônio Total</div><div class="stat-value text-accent" id="statTotal">—</div><div class="stat-sub">Todas as contas</div></div>
         <div class="stat-card"><div class="stat-accent" style="background:var(--green)"></div><div class="stat-label">Receitas do Mês</div><div class="stat-value text-green" id="statIncome">—</div><div class="stat-sub">Mês atual</div></div>
         <div class="stat-card"><div class="stat-accent" style="background:var(--red)"></div><div class="stat-label">Despesas do Mês</div><div class="stat-value text-red" id="statExpenses">—</div><div class="stat-sub">Mês atual</div></div>
@@ -687,6 +760,11 @@
         <div id="dashFavCategories"></div>
       </div>
 
+      <!-- Snapshot de Orçamentos -->
+      <div id="dashBudgetSnapshot" class="card mb-4" style="display:none">
+        <div class="dash-budget-snap-inner"></div>
+      </div>
+
       <!-- Próximas transações programadas -->
       <div id="dashCardUpcoming" class="card mb-4">
         <div class="card-header" style="gap:8px;flex-wrap:wrap">
@@ -702,30 +780,74 @@
       </div>
 
       <!-- Previsão de Caixa 90 dias -->
-      <div id="dashCardForecast90" class="card mb-4">
-        <div class="card-header fc-forecast-header">
-          <span class="card-title">📈 Previsão de Caixa (90 dias)</span>
-          <div class="fc-forecast-controls">
-            <div class="fc-acct-picker" id="dashForecastAcctPicker">
-              <button type="button" class="fc-acct-btn fc-acct-btn--sm"
-                onclick="_fcPickerToggle('dashForecastAcctPicker')">
-                <span id="dashForecastAcctLabel">Todas</span>
-                <span class="fc-acct-caret">▼</span>
+      <!-- ── Previsão de Caixa 90 dias ── -->
+      <div id="dashCardForecast90" class="fcp-card mb-4">
+
+        <!-- Header escuro premium -->
+        <div class="fcp-header">
+          <div class="fcp-header-left">
+            <div class="fcp-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+              Previsão de Caixa
+            </div>
+            <div class="fcp-subtitle">próximos 90 dias</div>
+          </div>
+          <div class="fcp-controls">
+            <!-- Picker de conta -->
+            <div class="fcp-acct-picker" id="dashForecastAcctPicker">
+              <button type="button" class="fcp-acct-btn" onclick="_fcPickerToggle('dashForecastAcctPicker')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span id="dashForecastAcctLabel">Todas as contas</span>
+                <svg class="fcp-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <div class="fc-acct-dropdown" id="dashForecastAcctDropdown"></div>
             </div>
-            <label class="fc-forecast-check">
-              <input type="checkbox" id="dashForecastScheduled" checked onchange="_renderDashForecast()"
-                style="width:13px;height:13px;accent-color:var(--accent)">
-              Incluir programados
+            <!-- Toggle programados -->
+            <label class="fcp-toggle-wrap">
+              <input type="checkbox" id="dashForecastScheduled" checked onchange="_renderDashForecast()" class="fcp-toggle-input">
+              <span class="fcp-toggle-track">
+                <span class="fcp-toggle-thumb"></span>
+              </span>
+              <span class="fcp-toggle-label">Programados</span>
             </label>
           </div>
         </div>
-        <div style="position:relative;height:180px;margin-top:4px">
-          <canvas id="dashForecastChart"></canvas>
-      <div id="dashForecastDrillPanel" style="display:none;padding:10px 4px"></div>
+
+        <!-- KPI strip: saldo inicial → projetado + min/max -->
+        <div class="fcp-kpi-strip" id="dashForecastKpis">
+          <div class="fcp-kpi">
+            <div class="fcp-kpi-lbl">Saldo atual</div>
+            <div class="fcp-kpi-val" id="fcp-kpi-inicial">—</div>
+          </div>
+          <div class="fcp-kpi-arrow">→</div>
+          <div class="fcp-kpi fcp-kpi--accent">
+            <div class="fcp-kpi-lbl">Projetado em 90d</div>
+            <div class="fcp-kpi-val" id="fcp-kpi-final">—</div>
+          </div>
+          <div class="fcp-kpi-sep"></div>
+          <div class="fcp-kpi">
+            <div class="fcp-kpi-lbl">Mínimo esperado</div>
+            <div class="fcp-kpi-val fcp-kpi-val--min" id="fcp-kpi-min">—</div>
+          </div>
+          <div class="fcp-kpi">
+            <div class="fcp-kpi-lbl">Máximo esperado</div>
+            <div class="fcp-kpi-val fcp-kpi-val--max" id="fcp-kpi-max">—</div>
+          </div>
         </div>
-        <div id="dashForecastSummary" style="display:flex;gap:12px;flex-wrap:wrap;padding:8px 0 2px 0;font-size:.78rem"></div>
+
+        <!-- Gráfico -->
+        <div class="fcp-chart-wrap">
+          <canvas id="dashForecastChart"></canvas>
+        </div>
+
+        <!-- Summary: saldo final por conta -->
+        <div class="fcp-summary" id="dashForecastSummary"></div>
+
+        <!-- Hint de clique -->
+        <div class="fcp-hint">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Clique em qualquer ponto do gráfico para ver os lançamentos do dia
+        </div>
       </div>
 
       <!-- Últimas transações -->
@@ -972,6 +1094,11 @@
         <button class="tx-fb-btn" id="txFilterToggle" onclick="_txToggleFilters()" title="Filtros">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
         </button>
+        <div class="tx-fb-sep"></div>
+        <!-- Export -->
+        <button class="tx-fb-btn" onclick="showExportMenu(this,'txMainTable','transacoes')" title="Exportar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
       </div>
 
       <!-- ── Collapsible filters panel (hidden by default) ── -->
@@ -1086,14 +1213,14 @@
     </div>
 
     <!-- REPORTS -->
-    <div class="page" id="page-reports" style="position:relative;overflow:hidden">
+    <div class="page" id="page-reports" style="position:relative">
 
 
       <!-- ══ Drill-down slide panel ═══════════════════════════════════════ -->
       <style>
         #rptDrillPanel {
-          position: absolute;
-          top: 0; right: 0; bottom: 0;
+          position: fixed;
+          top: var(--topbar-h, 58px); right: 0; bottom: 0;
           width: min(440px, 100%);
           background: var(--surface);
           border-left: 1px solid var(--border);
@@ -1124,7 +1251,7 @@
         }
         /* Backdrop dimmer for the content behind the panel */
         #rptDrillBackdrop {
-          position: absolute;
+          position: fixed;
           inset: 0;
           background: rgba(0,0,0,.25);
           z-index: 119;
@@ -1245,7 +1372,7 @@
             E-mail
           </button>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.72rem;opacity:.7">⚙️</button>
+        <button class="btn btn-ghost btn-sm admin-visible" onclick="showEmailConfig()" title="Configurar EmailJS" style="font-size:.72rem;opacity:.7">⚙️</button>
         <span id="reportDataInfo" style="font-size:.72rem;color:var(--muted);margin-left:auto"></span>
       </div>
 
@@ -1300,6 +1427,11 @@
           <div class="card-header">
             <span class="card-title">Transações</span>
             <span id="reportTxCount" class="badge badge-muted"></span>
+            <button class="btn btn-ghost btn-sm" style="font-size:.74rem;margin-left:auto"
+              onclick="showExportMenu(this,'reportTxTable','relatorio_transacoes')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Exportar
+            </button>
           </div>
           <div class="table-wrap">
             <table id="reportTxTable" class="resizable-table rpt-tx-table">
@@ -1402,37 +1534,50 @@
     <!-- BUDGETS -->
 <div class="page" id="page-budgets">
 
-  <!-- Header: tabs + period picker + new button -->
+  <!-- Controles de período -->
   <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="tab-bar" style="margin-bottom:0">
-        <button class="tab active" id="budgetTabMonthly" onclick="setBudgetView('monthly')">📅 Mensal</button>
-        <button class="tab" id="budgetTabAnnual"  onclick="setBudgetView('annual')">📆 Anual</button>
+        <button class="tab active" id="budgetTabMonthly" onclick="setBudgetView('monthly')">Mensal</button>
+        <button class="tab"        id="budgetTabAnnual"  onclick="setBudgetView('annual')">Anual</button>
       </div>
       <div id="budgetMonthPicker">
         <input type="month" id="budgetMonth" onchange="loadBudgets()" style="font-size:.85rem">
       </div>
       <div id="budgetYearPicker" style="display:none">
-        <select id="budgetYear" onchange="loadBudgets()" style="font-size:.85rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text)"></select>
+        <select id="budgetYear" onchange="loadBudgets()"
+          style="font-size:.85rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text)"></select>
       </div>
     </div>
-    <button class="btn btn-primary" onclick="openBudgetModal()">+ Novo orçamento</button>
+    <button class="btn btn-primary" onclick="openBudgetModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Novo orçamento
+    </button>
   </div>
 
-  <!-- Budget cards grid -->
-  <div style="height:16px;"></div>
+  <!-- Grid de cards -->
+  <div style="height:14px"></div>
   <div class="budget-grid" id="budgetGrid"></div>
 
-  <!-- History panel -->
-  <div style="margin-top:32px">
+  <!-- Painel de histórico -->
+  <div style="margin-top:36px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-      <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📊 Histórico por categoria</span>
-      <select id="budgetHistCat" onchange="loadBudgetHistory()" style="font-size:.82rem;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:240px">
+      <span style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Histórico por categoria</span>
+      <select id="budgetHistCat" onchange="loadBudgetHistory()"
+        style="font-size:.82rem;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:260px">
         <option value="">— Selecionar categoria —</option>
       </select>
     </div>
-    <div id="budgetHistContainer" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:4px;min-height:48px">
-      <div style="color:var(--muted);font-size:.83rem;padding:16px 12px">Selecione uma categoria para ver o histórico dos últimos 12 meses.</div>
+    <div id="budgetHistContainer"
+      style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;min-height:52px">
+      <div id="budgetHistExportBar" style="display:none;justify-content:flex-end;padding:0 0 8px">
+      <button class="btn btn-ghost btn-sm" style="font-size:.74rem"
+        onclick="showExportMenu(this,'budgetHistTable','orcamento_historico')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Exportar
+      </button>
+    </div>
+    <div class="bgt-hist-placeholder">Selecione uma categoria para ver o histórico dos últimos 12 meses.</div>
     </div>
   </div>
 
@@ -1845,7 +1990,7 @@
       <div id="scheduledSummaryBar" class="sc-summary-bar" style="display:none"></div>
 
       <!-- Desktop split layout / Mobile timeline -->
-      <div id="scListView" class="sc-list-view">
+      <div id="scListView" class="sc-list-view" style="display:none">
 
         <!-- LEFT panel: Próximos 10 dias -->
         <div class="sc-panel sc-panel--upcoming" id="scUpcomingPanel">
@@ -2509,7 +2654,7 @@
             <div class="cfg-tab-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </div>
-            Família
+            Usuários
           </button>
 
           <button class="cfg-tab" onclick="cfgShowPane('pane-dados')" id="cfgNavBtn-dados">
@@ -2531,6 +2676,13 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </div>
             Avançado
+          </button>
+
+          <button class="cfg-tab" onclick="cfgShowPane('pane-traducoes')" id="cfgNavBtn-traducoes" style="display:none">
+            <div class="cfg-tab-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/></svg>
+            </div>
+            Traduções
           </button>
 
           <button class="cfg-tab" onclick="cfgShowPane('pane-feedbacks')" id="cfgNavBtn-feedbacks" style="display:none;position:relative">
@@ -2804,6 +2956,60 @@
             </div>
           </div>
 
+          <!-- ── Canais de Notificação ──────────────────────────────────── -->
+          <div class="cfg-section-label">Canais de Notificação</div>
+          <div class="cfg-card">
+            <div style="font-size:.75rem;color:var(--muted);padding:0 0 10px;line-height:1.5">
+              Ative ou desative canais globalmente. Canais desativados ficam invisíveis no perfil
+              do usuário e nas transações programadas.
+            </div>
+            <!-- E-mail -->
+            <div class="cfg-row">
+              <div class="cfg-row-icon" style="background:#f0fdf4">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              </div>
+              <div class="cfg-row-info">
+                <div class="cfg-row-label">E-mail</div>
+                <div class="cfg-row-sub">Notificações por e-mail (EmailJS)</div>
+              </div>
+              <label class="cfg-toggle-wrap">
+                <input type="checkbox" id="cfgChannelEmailEnabled" checked
+                  onchange="saveNotifChannelSetting('email', this.checked)">
+                <span class="cfg-toggle-track"></span>
+              </label>
+            </div>
+            <!-- WhatsApp -->
+            <div class="cfg-row">
+              <div class="cfg-row-icon" style="background:#f0fdf4">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div class="cfg-row-info">
+                <div class="cfg-row-label">WhatsApp</div>
+                <div class="cfg-row-sub">Notificações via WhatsApp Business</div>
+              </div>
+              <label class="cfg-toggle-wrap">
+                <input type="checkbox" id="cfgChannelWaEnabled"
+                  onchange="saveNotifChannelSetting('whatsapp', this.checked)">
+                <span class="cfg-toggle-track"></span>
+              </label>
+            </div>
+            <!-- Telegram -->
+            <div class="cfg-row">
+              <div class="cfg-row-icon" style="background:#eff6ff">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </div>
+              <div class="cfg-row-info">
+                <div class="cfg-row-label">Telegram</div>
+                <div class="cfg-row-sub">Notificações via bot do Telegram</div>
+              </div>
+              <label class="cfg-toggle-wrap">
+                <input type="checkbox" id="cfgChannelTgEnabled"
+                  onchange="saveNotifChannelSetting('telegram', this.checked)">
+                <span class="cfg-toggle-track"></span>
+              </label>
+            </div>
+          </div>
+
           <div class="cfg-section-label">Status</div>
           <div class="cfg-card">
             <div class="cfg-row">
@@ -2826,7 +3032,7 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </div>
             <div class="cfg-pane-header-text">
-              <div class="cfg-pane-header-title">Família &amp; Usuários</div>
+              <div class="cfg-pane-header-title">Usuários &amp; Família</div>
               <div class="cfg-pane-header-sub">Controle de acesso e permissões</div>
             </div>
           </div>
@@ -2929,6 +3135,149 @@
               </div>
             </div>
           </div>
+
+          <div class="cfg-section-label">Tema da tela de login</div>
+          <div class="cfg-card">
+            <div style="padding:16px">
+              <p style="font-size:.78rem;color:var(--muted);margin-bottom:14px;line-height:1.5">
+                Escolha o visual da tela de login para todos os usuários da família.
+                A configuração é salva no banco de dados e aplicada imediatamente.
+              </p>
+              <div id="loginThemeGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+
+                <!-- Opção 1: Card centrado em fundo verde -->
+                <label class="login-theme-option" data-theme="centered" style="cursor:pointer">
+                  <input type="radio" name="loginTheme" value="centered" style="display:none" onchange="saveLoginTheme('centered')">
+                  <div class="login-theme-preview" style="background:#0e3520;border-radius:10px;height:90px;position:relative;overflow:hidden;border:2px solid transparent;transition:border-color .18s">
+                    <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:14px 14px"></div>
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+                      <div style="background:#fff;border-radius:8px;width:72px;padding:8px 6px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+                        <div style="height:8px;background:#1e5c42;border-radius:3px;margin-bottom:5px"></div>
+                        <div style="height:5px;background:#e5e7eb;border-radius:2px;margin-bottom:3px"></div>
+                        <div style="height:5px;background:#e5e7eb;border-radius:2px;margin-bottom:5px"></div>
+                        <div style="height:7px;background:linear-gradient(135deg,#1e5c42,#2a6049);border-radius:3px"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="lts-option-footer">
+                    <div>
+                      <div style="font-size:.75rem;font-weight:600;color:var(--text)">Card centrado</div>
+                      <div style="font-size:.67rem;color:var(--muted)">Fundo verde, card branco</div>
+                    </div>
+                    <span class="lts-active-badge">Ativo</span>
+                  </div>
+                </label>
+
+                <!-- Opção 2: Split 50/50 -->
+                <label class="login-theme-option" data-theme="split" style="cursor:pointer">
+                  <input type="radio" name="loginTheme" value="split" style="display:none" onchange="saveLoginTheme('split')">
+                  <div class="login-theme-preview" style="border-radius:10px;height:90px;overflow:hidden;display:flex;border:2px solid transparent;transition:border-color .18s">
+                    <div style="flex:1;background:#fff;padding:6px">
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:3px;width:70%"></div>
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:6px;width:50%"></div>
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:3px"></div>
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:7px"></div>
+                      <div style="height:6px;background:linear-gradient(135deg,#1e5c42,#2a6049);border-radius:2px"></div>
+                    </div>
+                    <div style="width:1px;background:rgba(0,0,0,.08)"></div>
+                    <div style="flex:1;background:#0e3520;position:relative;overflow:hidden">
+                      <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:12px 12px"></div>
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+                        <div style="width:36px;height:12px;background:rgba(255,255,255,.25);border-radius:4px"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="lts-option-footer">
+                    <div>
+                      <div style="font-size:.75rem;font-weight:600;color:var(--text)">Split 50/50</div>
+                      <div style="font-size:.67rem;color:var(--muted)">Form branco | Hero verde</div>
+                    </div>
+                    <span class="lts-active-badge">Ativo</span>
+                  </div>
+                </label>
+
+                <!-- Opção 3: Split assimétrico 40/60 -->
+                <label class="login-theme-option" data-theme="asymmetric" style="cursor:pointer">
+                  <input type="radio" name="loginTheme" value="asymmetric" style="display:none" onchange="saveLoginTheme('asymmetric')">
+                  <div class="login-theme-preview" style="border-radius:10px;height:90px;overflow:hidden;display:flex;border:2px solid transparent;transition:border-color .18s">
+                    <div style="flex:0 0 40%;background:#fff;padding:6px">
+                      <div style="height:3px;background:#e5e7eb;border-radius:2px;margin-bottom:3px;width:80%"></div>
+                      <div style="height:3px;background:#e5e7eb;border-radius:2px;margin-bottom:5px;width:55%"></div>
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:3px"></div>
+                      <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:6px"></div>
+                      <div style="height:6px;background:linear-gradient(135deg,#1e5c42,#2a6049);border-radius:2px"></div>
+                    </div>
+                    <div style="flex:1;background:#0e3520;position:relative;overflow:hidden">
+                      <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:12px 12px"></div>
+                      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+                        <div style="width:48px;height:14px;background:rgba(255,255,255,.22);border-radius:5px"></div>
+                        <div style="width:36px;height:5px;background:rgba(255,255,255,.12);border-radius:3px"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="lts-option-footer">
+                    <div>
+                      <div style="font-size:.75rem;font-weight:600;color:var(--text)">Assimétrico 40/60</div>
+                      <div style="font-size:.67rem;color:var(--muted)">Form compacto | Logo grande</div>
+                    </div>
+                    <span class="lts-active-badge">Ativo</span>
+                  </div>
+                </label>
+
+                <!-- Opção 4: Tela cheia verde, form dark integrado -->
+                <label class="login-theme-option" data-theme="immersive" style="cursor:pointer">
+                  <input type="radio" name="loginTheme" value="immersive" style="display:none" onchange="saveLoginTheme('immersive')">
+                  <div class="login-theme-preview" style="background:#0e3520;border-radius:10px;height:90px;position:relative;overflow:hidden;display:flex;border:2px solid transparent;transition:border-color .18s">
+                    <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:14px 14px"></div>
+                    <div style="position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:center;padding:8px">
+                      <div style="width:40px;height:9px;background:rgba(255,255,255,.2);border-radius:3px;margin-bottom:6px"></div>
+                      <div style="width:55px;height:5px;background:rgba(255,255,255,.12);border-radius:2px;margin-bottom:3px"></div>
+                      <div style="width:40px;height:5px;background:rgba(255,255,255,.08);border-radius:2px"></div>
+                    </div>
+                    <div style="width:1px;background:rgba(255,255,255,.08)"></div>
+                    <div style="position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:center;padding:8px;gap:4px">
+                      <div style="height:5px;background:rgba(255,255,255,.12);border-radius:2px"></div>
+                      <div style="height:5px;background:rgba(255,255,255,.18);border-radius:2px"></div>
+                      <div style="height:7px;background:linear-gradient(135deg,rgba(42,122,82,.8),rgba(30,92,66,.9));border-radius:3px;margin-top:3px;border:1px solid rgba(93,219,160,.25)"></div>
+                    </div>
+                  </div>
+                  <div class="lts-option-footer">
+                    <div>
+                      <div style="font-size:.75rem;font-weight:600;color:var(--text)">Imersivo</div>
+                      <div style="font-size:.67rem;color:var(--muted)">Tela cheia verde + form dark</div>
+                    </div>
+                    <span class="lts-active-badge">Ativo</span>
+                  </div>
+                </label>
+
+                <!-- Opção 5: Minimalista branco total -->
+                <label class="login-theme-option" data-theme="minimal" style="cursor:pointer">
+                  <input type="radio" name="loginTheme" value="minimal" style="display:none" onchange="saveLoginTheme('minimal')">
+                  <div class="login-theme-preview" style="background:#f9fafb;border-radius:10px;height:90px;position:relative;overflow:hidden;border:2px solid transparent;transition:border-color .18s;border:2px solid transparent">
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+                      <div style="width:90px;text-align:center;padding:8px">
+                        <div style="height:8px;background:#1e5c42;border-radius:3px;margin:0 auto 8px;width:50px"></div>
+                        <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:3px"></div>
+                        <div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:6px"></div>
+                        <div style="height:6px;background:linear-gradient(135deg,#1e5c42,#2a6049);border-radius:3px"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="lts-option-footer">
+                    <div>
+                      <div style="font-size:.75rem;font-weight:600;color:var(--text)">Minimalista</div>
+                      <div style="font-size:.67rem;color:var(--muted)">Fundo claro, sem hero</div>
+                    </div>
+                    <span class="lts-active-badge">Ativo</span>
+                  </div>
+                </label>
+
+              </div>
+              <div class="lts-save-row">
+                <div id="loginThemeSaveStatus" class="lts-save-status"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ══ PANE: AVANÇADO (admin) ═══════════════════════════════════════ -->
@@ -2977,10 +3326,22 @@
               <div id="attachScanResults" style="margin-top:12px"></div>
             </div>
           </div>
-          <div class="cfg-section-label">Traduções</div>
-          <div class="cfg-card" id="translationsSection2">
+        </div>
+
+        <!-- ══ PANE: TRADUÇÕES (admin) ══════════════════════════════════════ -->
+        <div class="cfg-pane" id="pane-traducoes">
+          <div class="cfg-pane-header">
+            <div class="cfg-pane-header-icon" style="background:#f0fdf4">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/></svg>
+            </div>
+            <div class="cfg-pane-header-text">
+              <div class="cfg-pane-header-title">Traduções</div>
+              <div class="cfg-pane-header-sub">Gestão de strings de interface por idioma</div>
+            </div>
+          </div>
+          <div id="translationsSection2" style="margin:-4px 0 0">
             <div id="translationsAdminWrap" style="padding:4px 0 8px">
-              <div style="padding:24px;text-align:center;color:var(--muted);font-size:.83rem">Carregando…</div>
+              <div style="padding:24px;text-align:center;color:var(--muted);font-size:.83rem">Selecione esta aba para carregar as traduções.</div>
             </div>
           </div>
         </div>
@@ -3397,6 +3758,18 @@
       </div>
 
     </div><!-- /page-ai_insights -->
+
+
+    <!-- ══ DREAMS PAGE ══════════════════════════════════════════════════════ -->
+    <div class="page" id="page-dreams" style="display:none">
+      <div id="dreams-list-container" style="padding:0 0 100px">
+        <!-- Rendered by dreams.js renderDreamsPage() -->
+        <div class="drm-empty" style="padding:60px 20px;text-align:center;color:var(--muted)">
+          <div style="font-size:2.5rem;margin-bottom:12px">🌟</div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text);margin-bottom:6px">Carregando sonhos…</div>
+        </div>
+      </div>
+    </div><!-- /page-dreams -->
 
 
     <!-- ══ HELP PAGE ════════════════════════════════════════════════════════ -->
@@ -4195,6 +4568,11 @@ Se você não solicitou isso, ignore este e-mail.`,
           <option value="">Todos os meses</option>
         </select>
         <span id="auditCount" class="aud-count"></span>
+        <button class="btn btn-ghost btn-sm" style="font-size:.74rem;margin-left:auto"
+          onclick="showExportMenu(this,'auditTableDesktop','auditoria')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar
+        </button>
       </div>
 
       <!-- Tabela desktop (≥ 600px) -->
@@ -4846,562 +5224,798 @@ Se você não solicitou isso, ignore este e-mail.`,
 </div><!-- /mainApp -->
 
   <!-- ═══════════ LOGIN SCREEN ═══════════ -->
-  <div id="loginScreen" class="login-screen-shell login-bg-opt1" style="display:flex;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:24px">
+  <div id="loginScreen" class="ls-shell" style="display:flex;position:fixed;inset:0;z-index:9999">
+    <div class="ls-layout">
 
-    <!-- Decorative background layers -->
-    <!-- Opção 2: Névoa difusa + linhas diagonais -->
-    <!-- Option 1: single orb composited via CSS — no DOM elements needed -->
+      <!-- ══ PAINEL ESQUERDO: formulário (branco) ══ -->
+      <div class="ls-form-panel">
+        <div class="ls-card">
 
-    <div class="login-card login-card-a" style="width:100%;max-width:400px">
-      <div style="text-align:center;margin-bottom:28px">
-        <img id="loginLogoImg" src="logo.jpg" alt="Logo"  style="width:299px;height:auto;object-fit:contain;margin-bottom:12px">
-        <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#9ca3af" data-i18n="auth.tagline">Família inteligente,  Finanças sob controle</div>
-      </div>
-      <div id="loginFormArea">
+          <!-- Logo adaptado ao tema — usa sempre logo_glow_soft.png -->
+          <img class="ls-form-logo" src="logo_glow_soft.png" alt="Family FinTrack" id="loginLogoImg"
+            onerror="this.onerror=null">
 
-        <!-- Login method toggle -->
-        <div style="display:flex;background:#f3f4f6;border-radius:10px;padding:3px;margin-bottom:20px;gap:2px">
-          <button id="loginTabPassword" onclick="switchLoginTab('password')"
-            style="flex:1;padding:8px;border:none;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;font-family:inherit">
-            <span data-i18n="auth.login_tab_pwd">🔑 Senha</span>
-          </button>
-          <button id="loginTabMagic" onclick="switchLoginTab('magic')"
-            style="flex:1;padding:8px;border:none;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;background:transparent;color:#6b7280;font-family:inherit">
-            <span data-i18n="auth.login_tab_magic">✉️ Link por E-mail</span>
-          </button>
-        </div>
-
-        <!-- Password login panel -->
-        <div id="loginPanelPassword">
-          <div class="form-group" style="margin-bottom:16px">
-            <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block" data-i18n="auth.label_email">E-mail</label>
-            <input type="email" id="loginEmail" class="login-input" placeholder="seu@email.com"
-              style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-              onkeydown="if(event.key==='Enter')document.getElementById('loginPassword').focus({preventScroll:true})">
+          <!-- Mobile-only logo -->
+          <div class="ls-mobile-logo">
+            <img src="logo_glow_soft.png" alt="Family FinTrack" onerror="this.onerror=null">
           </div>
-          <div class="form-group" style="margin-bottom:20px;position:relative">
-            <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block" data-i18n="auth.label_password">Senha</label>
-            <input type="password" id="loginPassword" class="login-input" placeholder="••••••••"
-              style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box;padding-right:44px"
-              onkeydown="if(event.key==='Enter')doLogin()">
-            <button onclick="toggleLoginPwd()" style="position:absolute;right:12px;bottom:11px;background:none;border:none;cursor:pointer;font-size:1rem;color:#9ca3af">👁</button>
-          </div>
-          <div style="display:flex;align-items:center;margin-bottom:16px;gap:8px">
-            <input type="checkbox" id="rememberMe" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer;flex-shrink:0">
-            <label for="rememberMe" style="font-size:.82rem;color:#6b7280;cursor:pointer;user-select:none" data-i18n="auth.remember_me">Salvar meu usuário</label>
-          </div>
-          <button onclick="doLogin()" id="loginBtn" class="login-btn"
-            style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-            <span data-i18n="auth.btn_enter">Entrar</span>
-          </button>
-          <div style="text-align:center;margin-top:10px">
-            <button onclick="showForgotPwdForm()" style="background:none;border:none;color:#6b7280;font-size:.78rem;cursor:pointer;text-decoration:underline" data-i18n="auth.forgot_password">Esqueci minha senha</button>
-          </div>
-        </div>
 
-        <!-- Magic link panel -->
-        <div id="loginPanelMagic" style="display:none">
-          <div style="text-align:center;margin-bottom:16px">
-            <div style="font-size:.83rem;color:#6b7280;line-height:1.5">
-              Informe seu e-mail e enviaremos um link para entrar sem senha.
+          <div class="ls-card-title">Bem-vindo de volta</div>
+          <div class="ls-card-sub">Acesse sua conta</div>
+
+          <!-- ── LOGIN ── -->
+          <div id="loginFormArea">
+            <div class="ls-field-group">
+              <label class="ls-label" data-i18n="auth.label_email">E-mail</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <input type="email" id="loginEmail" name="email" class="ls-input" placeholder="seu@email.com" autocomplete="username email"
+                  onkeydown="if(event.key==='Enter')document.getElementById('loginPassword').focus({preventScroll:true})">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <label class="ls-label" data-i18n="auth.label_password">Senha</label>
+                <button onclick="showForgotPwdForm()" class="ls-link" data-i18n="auth.forgot_password">Esqueci a senha</button>
+              </div>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="loginPassword" name="password" class="ls-input" placeholder="••••••••" autocomplete="current-password"
+                  onkeydown="if(event.key==='Enter')doLogin()">
+                <button onclick="toggleLoginPwd()" class="ls-eye-btn" type="button">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <label class="ls-remember">
+              <input type="checkbox" id="rememberMe">
+              <span class="ls-check-box"></span>
+              <span data-i18n="auth.remember_me">Salvar e-mail e senha</span>
+            </label>
+            <button onclick="doLogin()" id="loginBtn" class="ls-btn-primary">
+              <span data-i18n="auth.btn_enter">Entrar</span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+            <div id="loginError" class="ls-error" style="display:none"></div>
+            <div id="loginRequestAccessWrap" style="text-align:center;margin-top:18px;display:none">
+              <span class="ls-muted" data-i18n="auth.no_account">Não tem conta?</span>
+              <button id="loginRequestAccessBtn" onclick="showRegisterForm()" class="ls-link ls-link--bold" data-i18n="auth.request_access">Solicitar acesso</button>
+            </div>
+          </div><!-- /loginFormArea -->
+
+          <!-- ── FORGOT PASSWORD ── -->
+          <div id="forgotPwdArea" style="display:none">
+            <div class="ls-back-row">
+              <button onclick="showLoginFormArea()" class="ls-back-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Voltar
+              </button>
+            </div>
+            <div class="ls-card-title" style="font-size:1.1rem">Recuperar Senha</div>
+            <div class="ls-card-sub">Enviaremos um link para seu e-mail</div>
+            <div class="ls-field-group">
+              <label class="ls-label">E-mail</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <input type="email" id="forgotPwdEmail" class="ls-input" placeholder="seu@email.com"
+                  onkeydown="if(event.key==='Enter')doForgotPwd()">
+              </div>
+            </div>
+            <button onclick="doForgotPwd()" id="forgotPwdBtn" class="ls-btn-primary">
+              <span data-i18n="auth.btn_send_recovery">Enviar Link de Recuperação</span>
+            </button>
+            <div id="forgotPwdError" class="ls-error" style="display:none"></div>
+          </div>
+
+          <!-- ── RECOVERY PASSWORD ── -->
+          <div id="recoveryPwdArea" style="display:none">
+            <div class="ls-icon-badge">🔐</div>
+            <div class="ls-card-title">Nova Senha</div>
+            <div class="ls-card-sub">Escolha uma senha segura para sua conta</div>
+            <div class="ls-field-group">
+              <label class="ls-label">Nova senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="recoveryPwd1" class="ls-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
+                  onkeydown="if(event.key==='Enter')document.getElementById('recoveryPwd2').focus()">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Confirmar</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="recoveryPwd2" class="ls-input" placeholder="Repita a nova senha" autocomplete="new-password"
+                  onkeydown="if(event.key==='Enter')doRecoveryPwd()">
+              </div>
+            </div>
+            <button onclick="doRecoveryPwd()" id="recoveryPwdBtn" class="ls-btn-primary">
+              <span data-i18n="auth.btn_set_password">Salvar Nova Senha</span>
+            </button>
+            <div id="recoveryPwdError" class="ls-error" style="display:none"></div>
+          </div>
+
+          <!-- ── REGISTER ── -->
+          <div id="registerFormArea" style="display:none">
+            <div class="ls-back-row">
+              <button onclick="showLoginFormArea()" class="ls-back-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Voltar
+              </button>
+            </div>
+            <div class="ls-card-title" style="font-size:1.1rem">Solicitar Acesso</div>
+            <div class="ls-card-sub">Crie sua conta para começar</div>
+            <div class="ls-field-group">
+              <label class="ls-label">Nome completo</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="regName" class="ls-input" placeholder="Seu nome">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">E-mail</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <input type="email" id="regEmail" class="ls-input" placeholder="seu@email.com">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="regPassword" class="ls-input" placeholder="Mínimo 8 caracteres">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Confirmar Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="regPassword2" class="ls-input" placeholder="Repita a senha"
+                  onkeydown="if(event.key==='Enter')doRegister()">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Idioma</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <select id="regLanguage" class="ls-input ls-select">
+                  <option value="pt">🇧🇷 Português</option>
+                  <option value="en">🇺🇸 English</option>
+                  <option value="es">🇪🇸 Español</option>
+                  <option value="fr">🇫🇷 Français</option>
+                </select>
+              </div>
+            </div>
+            <button onclick="doRegister()" id="regBtn" class="ls-btn-primary">
+              <span data-i18n="register.btn_submit">Enviar Solicitação</span>
+            </button>
+            <div id="regError" class="ls-error" style="display:none"></div>
+          </div>
+
+          <!-- ── PENDING APPROVAL ── -->
+          <div id="pendingApprovalArea" style="display:none;text-align:center;padding:12px 0">
+            <div class="ls-icon-badge">⏳</div>
+            <div class="ls-card-title">Aguardando aprovação</div>
+            <div class="ls-card-sub" style="margin-bottom:24px">Um administrador irá aprovar seu acesso em breve.</div>
+            <button onclick="showLoginFormArea()" class="ls-btn-ghost">Voltar ao login</button>
+          </div>
+
+          <!-- ── INVITE ACCEPTED — registro via convite ── -->
+          <div id="inviteRegisterArea" style="display:none">
+            <div class="ls-icon-badge">🎉</div>
+            <div class="ls-card-title" style="font-size:1.1rem;text-align:center">Você foi convidado!</div>
+            <div class="ls-card-sub" id="inviteWelcomeMsg" style="text-align:center;margin-bottom:20px">Complete seu cadastro para entrar na família</div>
+            <div class="ls-field-group">
+              <label class="ls-label">Nome completo</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="inviteRegName" class="ls-input" placeholder="Seu nome completo">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">E-mail (confirmação)</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <input type="email" id="inviteRegEmail" class="ls-input" placeholder="seu@email.com" readonly style="background:var(--surface2,#f3f4f6);color:var(--muted,#6b7280)">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="inviteRegPassword" class="ls-input" placeholder="Mínimo 8 caracteres">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Confirmar Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="inviteRegPassword2" class="ls-input" placeholder="Repita a senha"
+                  onkeydown="if(event.key==='Enter')doInviteRegister()">
+              </div>
+            </div>
+            <input type="hidden" id="inviteToken">
+            <button onclick="doInviteRegister()" id="inviteRegBtn" class="ls-btn-primary">
+              Criar conta e entrar na família
+            </button>
+            <div id="inviteRegError" class="ls-error" style="display:none"></div>
+          </div>
+
+          <!-- ── CHANGE PASSWORD (first login) ── -->
+          <div id="changePwdArea" style="display:none">
+            <div class="ls-info-banner">🔐 Defina uma nova senha no seu primeiro acesso.</div>
+            <div class="ls-field-group">
+              <label class="ls-label">Nova Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="newPwd1" class="ls-input" placeholder="Mínimo 8 caracteres">
+              </div>
+            </div>
+            <div class="ls-field-group">
+              <label class="ls-label">Confirmar Senha</label>
+              <div class="ls-input-wrap">
+                <svg class="ls-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <input type="password" id="newPwd2" class="ls-input" placeholder="Repita a senha">
+              </div>
+            </div>
+            <button onclick="doChangePwd()" class="ls-btn-primary">
+              <span data-i18n="auth.btn_set_enter">Definir Senha e Entrar</span>
+            </button>
+            <div id="changePwdError" class="ls-error" style="display:none"></div>
+          </div>
+
+        </div><!-- /ls-card -->
+      </div><!-- /ls-form-panel -->
+
+      <!-- ══ PAINEL DIREITO: hero (verde escuro) ══ -->
+      <div class="ls-hero">
+        <div class="ls-hero-orb"></div>
+        <div class="ls-hero-inner">
+          <img src="logo_glow_soft.png" alt="Family FinTrack" class="ls-hero-logo"
+            onerror="this.src='logo_transparent.png'">
+          <div class="ls-hero-tagline">Família Inteligente,<br>Finanças sob Controle</div>
+          <div class="ls-hero-sub">Seu futuro financeiro começa aqui</div>
+          <div class="ls-hero-features">
+            <div class="ls-feat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><circle cx="19" cy="5" r="3" fill="currentColor" opacity=".8"/></svg>
+              <span>IA financeira embarcada</span>
+            </div>
+            <div class="ls-feat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Visão 360° da família</span>
+            </div>
+            <div class="ls-feat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Dados privados e seguros</span>
             </div>
           </div>
-          <div class="form-group" style="margin-bottom:20px">
-            <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
-            <input type="email" id="magicEmail" placeholder="seu@email.com"
-              style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-             
-              onkeydown="if(event.key==='Enter')doMagicLink()">
-          </div>
-          <button onclick="doMagicLink()" id="magicLinkBtn"
-            style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-            <span data-i18n="auth.btn_send_link">✉️ Enviar Link de Acesso</span>
-          </button>
-          <!-- Sent confirmation state -->
-          <div id="magicLinkSent" style="display:none;margin-top:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:16px;text-align:center">
-            <div style="font-size:1.5rem;margin-bottom:6px">📬</div>
-            <div style="font-size:.85rem;font-weight:600;color:#166534;margin-bottom:4px">Link enviado!</div>
-            <div style="font-size:.78rem;color:#15803d;line-height:1.5">Verifique sua caixa de entrada e clique no link para entrar.</div>
-            <button onclick="doMagicLink()" id="magicResendBtn"
-              style="margin-top:10px;background:none;border:1px solid #86efac;color:#16a34a;font-size:.75rem;font-weight:600;padding:5px 14px;border-radius:20px;cursor:pointer;font-family:inherit">
-              Reenviar
-            </button>
-          </div>
         </div>
+      </div><!-- /ls-hero -->
 
-        <div id="loginError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
-        <div id="loginRequestAccessWrap" style="text-align:center;margin-top:12px;font-size:.8rem;color:#6b7280;display:none">
-          <span data-i18n="auth.no_account">Não tem conta?</span>
-          <button id="loginRequestAccessBtn" onclick="showRegisterForm()"
-            style="display:inline-flex;align-items:center;gap:6px;
-                   padding:8px 18px;border-radius:24px;
-                   border:1.5px solid #2a6049;
-                   background:transparent;
-                   color:#2a6049;font-weight:700;cursor:pointer;
-                   font-size:.8rem;font-family:inherit;
-                   transition:all .2s;letter-spacing:.02em"
-            onmouseover="this.style.background='#2a6049';this.style.color='#fff'"
-            onmouseout="this.style.background='transparent';this.style.color='#2a6049'"
-            data-i18n="auth.request_access">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-            Solicitar acesso
-          </button>
-        </div>
-      </div>
+    </div><!-- /ls-layout -->
+  </div><!-- /loginScreen -->
 
-      <!-- Forgot password form -->
-      <div id="forgotPwdArea" style="display:none">
-        <div style="font-size:1rem;font-weight:700;color:#1e5c42;text-align:center;margin-bottom:8px">🔑 Recuperar Senha</div>
-        <div style="font-size:.82rem;color:#6b7280;text-align:center;margin-bottom:20px">Informe seu e-mail e enviaremos um link de recuperação para o endereço cadastrado.</div>
-        <div class="form-group" style="margin-bottom:20px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
-          <input type="email" id="forgotPwdEmail" placeholder="seu@email.com"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           
-            onkeydown="if(event.key==='Enter')doForgotPwd()">
-        </div>
-        <button onclick="doForgotPwd()" id="forgotPwdBtn"
-          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-          <span data-i18n="auth.btn_send_recovery">Enviar Link de Recuperação</span>
-        </button>
-        <div id="forgotPwdError" style="margin-top:12px;font-size:.8rem;text-align:center;display:none"></div>
-        <div style="text-align:center;margin-top:14px">
-          <button onclick="showLoginFormArea()" style="background:none;border:none;color:#6b7280;font-size:.8rem;cursor:pointer;text-decoration:underline">← Voltar ao login</button>
-        </div>
-      </div>
 
-      <!-- Password recovery form (shown after clicking reset link from email) -->
-      <div id="recoveryPwdArea" style="display:none">
-        <div style="text-align:center;margin-bottom:16px">
-          <div style="font-size:2rem;margin-bottom:8px">🔐</div>
-          <div style="font-size:1rem;font-weight:700;color:#1e5c42">Definir Nova Senha</div>
-          <div style="font-size:.8rem;color:#6b7280;margin-top:4px">Escolha uma senha segura para sua conta.</div>
-        </div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Nova senha</label>
-          <input type="password" id="recoveryPwd1" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           
-            onkeydown="if(event.key==='Enter')document.getElementById('recoveryPwd2').focus()">
-        </div>
-        <div class="form-group" style="margin-bottom:20px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Confirmar senha</label>
-          <input type="password" id="recoveryPwd2" placeholder="Repita a nova senha" autocomplete="new-password"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           
-            onkeydown="if(event.key==='Enter')doRecoveryPwd()">
-        </div>
-        <button onclick="doRecoveryPwd()" id="recoveryPwdBtn"
-          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-          <span data-i18n="auth.btn_set_password">Salvar Nova Senha</span>
-        </button>
-        <div id="recoveryPwdError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
-      </div>
-
-      <!-- Register form -->
-      <div id="registerFormArea" style="display:none">
-        <div style="font-size:1rem;font-weight:700;color:#1e5c42;text-align:center;margin-bottom:16px">📝 Solicitar Acesso</div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Nome completo</label>
-          <input type="text" id="regName" placeholder="Seu nome"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           >
-        </div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
-          <input type="email" id="regEmail" placeholder="seu@email.com"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           >
-        </div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Senha (mín. 8 chars)</label>
-          <input type="password" id="regPassword" placeholder="••••••••"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-           >
-        </div>
-        <div class="form-group" style="margin-bottom:20px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Confirmar Senha</label>
-          <input type="password" id="regPassword2" placeholder="••••••••"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-            onkeydown="if(event.key==='Enter')doRegister()"
-           >
-        </div>
-        <div class="form-group" style="margin-bottom:20px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">🌐 <span data-i18n="settings.language">Idioma preferido</span></label>
-          <select id="regLanguage"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box;background:#fff">
-            <option value="pt">🇧🇷 Português</option>
-            <option value="en">🇺🇸 English</option>
-            <option value="es">🇪🇸 Español</option>
-            <option value="fr">🇫🇷 Français</option>
-          </select>
-        </div>
-        <button onclick="doRegister()" id="regBtn"
-          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-          <span data-i18n="register.btn_submit">Enviar Solicitação</span>
-        </button>
-        <div id="regError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
-        <div style="text-align:center;margin-top:14px">
-          <button onclick="showLoginFormArea()" style="background:none;border:none;color:#6b7280;font-size:.8rem;cursor:pointer;text-decoration:underline">← Voltar ao login</button>
-        </div>
-      </div>
-
-      <!-- Pending approval screen -->
-      <div id="pendingApprovalArea" style="display:none;text-align:center">
-        <div style="font-size:2.5rem;margin-bottom:12px">⏳</div>
-        <div style="font-size:1rem;font-weight:700;color:#1e5c42;margin-bottom:8px">Aguardando aprovação</div>
-        <div style="font-size:.82rem;color:#6b7280;margin-bottom:20px">Sua solicitação foi enviada. Um administrador precisa aprovar seu acesso antes que você possa entrar.</div>
-        <button onclick="showLoginFormArea()" style="background:none;border:1.5px solid #2a6049;color:#2a6049;padding:10px 24px;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer">Voltar ao login</button>
-      </div>
-      <!-- Change password form (shown on first login) -->
-      <div id="changePwdArea" style="display:none">
-        <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:.82rem;color:#92400e">
-          🔐 Por segurança, defina uma nova senha no seu primeiro acesso.
-        </div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Nova Senha</label>
-          <input type="password" id="newPwd1" placeholder="Mínimo 8 caracteres"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box">
-        </div>
-        <div class="form-group" style="margin-bottom:20px">
-          <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">Confirmar Senha</label>
-          <input type="password" id="newPwd2" placeholder="Repita a senha"
-            style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box">
-        </div>
-        <button onclick="doChangePwd()"
-          style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-          <span data-i18n="auth.btn_set_enter">Definir Senha e Entrar</span>
-        </button>
-        <div id="changePwdError" style="margin-top:10px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════ USER ADMIN MODAL ═══════════ -->
+    <!-- ═══════════ USER ADMIN MODAL ═══════════ -->
   <!-- ══ ADMIN USER MANAGEMENT MODAL — Modern tabs ═══════════════════════ -->
   <div class="modal-overlay" id="userAdminModal">
-    <div class="modal ua-modal"><div class="modal-handle"></div>
+    <div class="modal uam-modal"><div class="modal-handle"></div>
 
-      <!-- Header -->
-      <div class="ua-header">
-        <div class="ua-header-info">
-          <div class="ua-header-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Gerenciamento
+      <!-- ══ HEADER ══════════════════════════════════════════════════════ -->
+      <div class="uam-header">
+        <div class="uam-header-left">
+          <div class="uam-header-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
-          <div class="ua-header-sub">Usuários, famílias e lista de espera</div>
+          <div>
+            <div class="uam-header-title">Administração</div>
+            <div class="uam-header-sub">Usuários · Famílias · Lista de Espera</div>
+          </div>
         </div>
-        <button class="modal-close" onclick="closeModal('userAdminModal')">✕</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <!-- KPIs rápidas no header -->
+          <div class="uam-kpi-pills" id="uamHeaderKpis">
+            <div class="uam-kpi-pill uam-kpi-users">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+              <span id="uamKpiUsers">—</span>
+            </div>
+            <div class="uam-kpi-pill uam-kpi-families">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span id="uamKpiFamilies">—</span>
+            </div>
+            <div class="uam-kpi-pill uam-kpi-pending" id="uamKpiPendingPill" style="display:none">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span id="uamKpiPending">0</span> pendentes
+            </div>
+          </div>
+          <button class="modal-close" onclick="closeModal('userAdminModal')">✕</button>
+        </div>
       </div>
 
-      <!-- Tab bar -->
-      <div class="ua-tab-bar">
-        <button class="ua-tab" id="uaTabPending" onclick="switchUATab('pending')">
+      <!-- ══ TAB BAR ══════════════════════════════════════════════════════ -->
+      <div class="uam-tabs">
+        <button class="uam-tab" id="uaTabPending" onclick="switchUATab('pending')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           Pendentes
-          <span id="uaPendingBadge" style="display:none;min-width:17px;height:17px;border-radius:999px;background:#dc2626;color:#fff;font-size:.6rem;font-weight:700;padding:0 4px;line-height:17px;text-align:center;margin-left:2px"></span>
+          <span id="uaPendingBadge" class="uam-badge uam-badge-red" style="display:none"></span>
         </button>
-        <button class="ua-tab active" id="uaTabUsers" onclick="switchUATab('users')">
+        <button class="uam-tab active" id="uaTabUsers" onclick="switchUATab('users')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
           Usuários
         </button>
-        <button class="ua-tab" id="uaTabFamilies" onclick="switchUATab('families')">
+        <button class="uam-tab" id="uaTabFamilies" onclick="switchUATab('families')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
           Famílias
         </button>
-        <button class="ua-tab" id="uaTabWaitlist" onclick="switchUATab('waitlist')">
+        <button class="uam-tab" id="uaTabWaitlist" onclick="switchUATab('waitlist')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Lista de Espera
-          <span id="uaWaitlistBadge" style="display:none;min-width:17px;height:17px;border-radius:999px;background:#2a6049;color:#fff;font-size:.6rem;font-weight:700;padding:0 4px;line-height:17px;text-align:center;margin-left:2px"></span>
+          <span id="uaWaitlistBadge" class="uam-badge uam-badge-green" style="display:none"></span>
         </button>
       </div>
 
-      <!-- Pane body -->
-      <div class="ua-body">
+      <!-- ══ BODY ══════════════════════════════════════════════════════════ -->
+      <div class="uam-body">
 
-        <!-- ── PENDING TAB ── -->
-        <div id="uaPending" class="ua-pane" style="display:none">
-          <div id="uaPendingContent">
-            <div class="ua-loading">⏳ Carregando…</div>
+        <!-- ─── PENDING ───────────────────────────────────────────────── -->
+        <div id="uaPending" class="uam-pane" style="display:none">
+          <div class="uam-pane-bar">
+            <span class="uam-pane-title">⏳ Aprovações Pendentes</span>
+            <button class="uam-refresh-btn" onclick="_renderPendingTab()" title="Recarregar">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+          </div>
+          <div id="uaPendingContent" class="uam-scroll">
+            <div class="uam-empty-state">⏳ Carregando…</div>
           </div>
         </div>
 
-        <!-- ── WAITLIST TAB ── -->
-        <div id="uaWaitlist" class="ua-pane" style="display:none">
-          <div class="ua-pane-toolbar">
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="ua-pane-title">Lista de Espera</span>
-              <span id="uaWaitlistCount" class="ua-count-badge"></span>
+        <!-- ─── USERS ──────────────────────────────────────────────────── -->
+        <div id="uaUsers" class="uam-pane" style="display:flex;flex-direction:column">
+          <!-- Toolbar com busca -->
+          <div class="uam-pane-bar">
+            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+              <span class="uam-pane-title">Usuários</span>
+              <span id="userAdminCount" class="uam-count"></span>
             </div>
             <div style="display:flex;gap:6px;align-items:center">
-              <select id="uaWlFilter" onchange="loadWaitlist()" class="ua-select">
-                <option value="pending">⏳ Aguardando</option>
-                <option value="invited">✉️ Convidados</option>
-                <option value="all">Todos</option>
-              </select>
-              <button class="ua-icon-btn" onclick="loadWaitlist()" title="Recarregar">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <div class="uam-search-wrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="uamUserSearch" placeholder="Buscar…"
+                  oninput="uamFilterUsers(this.value)" class="uam-search-input">
+              </div>
+              <button class="uam-btn-primary" onclick="showNewUserForm()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Novo
               </button>
             </div>
           </div>
-          <div id="uaWaitlistContent" class="ua-scroll-area">
-            <div class="ua-loading">Carregando…</div>
-          </div>
-        </div>
 
-        <!-- ── USERS TAB ── -->
-        <div id="uaUsers" class="ua-pane" style="display:flex;flex-direction:column">
-          <div class="ua-pane-toolbar">
-            <span id="userAdminCount" class="ua-count-badge"></span>
-            <button class="ua-action-btn" onclick="showNewUserForm()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Novo usuário
-            </button>
-          </div>
-
-          <!-- User form — card style -->
-          <div id="userFormArea" style="display:none" class="ua-form-card">
-            <div class="ua-form-title" id="userFormTitle">Novo Usuário</div>
+          <!-- Formulário de usuário (card expansível) -->
+          <div id="userFormArea" style="display:none" class="uam-form-wrap">
+            <div class="uam-form-header">
+              <span class="uam-form-title" id="userFormTitle">Novo Usuário</span>
+              <button class="uam-form-close" onclick="document.getElementById('userFormArea').style.display='none'">✕</button>
+            </div>
             <input type="hidden" id="editUserId">
-
-            <div class="ua-form-grid">
-              <div class="ua-field">
-                <label>Nome completo</label>
-                <input type="text" id="uName" placeholder="Nome completo" class="ua-input">
-              </div>
-              <div class="ua-field">
-                <label>E-mail</label>
-                <input type="email" id="uEmail" placeholder="email@dominio.com" class="ua-input">
-              </div>
-              <div class="ua-field">
-                <label>Senha <span style="font-size:.7rem;color:var(--muted)" id="pwdHint">(mín. 8 caracteres)</span></label>
-                <input type="password" id="uPassword" placeholder="Deixe em branco para manter" class="ua-input">
-              </div>
-              <div class="ua-field">
-                <label>Perfil de acesso</label>
-                <select id="uRole" class="ua-select-full">
-                  <option value="viewer">👁 Visualizador</option>
-                  <option value="user" selected>👤 Usuário</option>
-                  <option value="admin">🔧 Administrador</option>
-                </select>
-              </div>
-              <div class="ua-field" style="grid-column:1/-1">
-                <label>Família inicial <span style="font-size:.7rem;color:var(--muted)">(opcional)</span></label>
-                <div style="display:grid;grid-template-columns:1fr 160px;gap:8px">
-                  <select id="uInitFamilyId" class="ua-select-full">
-                    <option value="">— Nenhuma (admin global) —</option>
-                  </select>
-                  <select id="uInitFamilyRole" class="ua-select-full">
-                    <option value="user">👤 Usuário</option>
-                    <option value="admin">🔧 Admin</option>
+            <div class="uam-form-body">
+              <!-- Col 1: dados básicos -->
+              <div class="uam-form-col">
+                <div class="uam-field">
+                  <label>Nome completo</label>
+                  <input type="text" id="uName" placeholder="Nome completo" class="uam-input">
+                </div>
+                <div class="uam-field">
+                  <label>E-mail</label>
+                  <input type="email" id="uEmail" placeholder="email@dominio.com" class="uam-input">
+                </div>
+                <div class="uam-field">
+                  <label>Senha <span class="uam-hint" id="pwdHint">(mín. 8 caracteres)</span></label>
+                  <input type="password" id="uPassword" placeholder="Deixe em branco para manter" class="uam-input">
+                </div>
+                <div class="uam-field">
+                  <label>Perfil de acesso</label>
+                  <select id="uRole" class="uam-input">
                     <option value="viewer">👁 Visualizador</option>
-                    <option value="owner">👑 Owner</option>
+                    <option value="user" selected>👤 Usuário</option>
+                    <option value="admin">🔧 Administrador</option>
                   </select>
+                </div>
+                <div class="uam-field">
+                  <label>Família inicial <span class="uam-hint">(opcional)</span></label>
+                  <div style="display:grid;grid-template-columns:1fr 130px;gap:6px">
+                    <select id="uInitFamilyId" class="uam-input"><option value="">— Nenhuma —</option></select>
+                    <select id="uInitFamilyRole" class="uam-input">
+                      <option value="user">👤 Usuário</option>
+                      <option value="admin">🔧 Admin</option>
+                      <option value="viewer">👁 Visualizador</option>
+                      <option value="owner">👑 Owner</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <!-- Col 2: permissões + avatar -->
+              <div class="uam-form-col">
+                <div class="uam-field">
+                  <label>Permissões</label>
+                  <div class="uam-perms-grid">
+                    <label class="uam-perm"><input type="checkbox" id="pView" checked><span>👁 Ver</span></label>
+                    <label class="uam-perm"><input type="checkbox" id="pCreate" checked><span>➕ Criar</span></label>
+                    <label class="uam-perm"><input type="checkbox" id="pEdit" checked><span>✏️ Editar</span></label>
+                    <label class="uam-perm"><input type="checkbox" id="pDelete"><span>🗑 Excluir</span></label>
+                    <label class="uam-perm"><input type="checkbox" id="pExport" checked><span>📤 Exportar</span></label>
+                    <label class="uam-perm"><input type="checkbox" id="pImport"><span>📥 Importar</span></label>
+                  </div>
+                </div>
+                <div class="uam-field">
+                  <label>Foto de perfil</label>
+                  <div class="uam-avatar-row">
+                    <div id="uAvatarPreview" class="uam-avatar-preview"></div>
+                    <div style="flex:1">
+                      <input type="file" id="uAvatarFile" accept="image/*" style="font-size:.72rem;max-width:100%" onchange="previewUserAvatar(this)">
+                      <button class="uam-btn-ghost" id="uAvatarRemoveBtn" onclick="removeUserAvatar()" style="margin-top:6px;display:none;font-size:.7rem;color:var(--danger)">✕ Remover foto</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="uAvatarRemoveFlag" value="">
                 </div>
               </div>
             </div>
-
-            <div class="ua-perms-title">Permissões</div>
-            <div class="ua-perms-row">
-              <label class="ua-perm-toggle"><input type="checkbox" id="pView" checked><span>Visualizar</span></label>
-              <label class="ua-perm-toggle"><input type="checkbox" id="pCreate" checked><span>Criar</span></label>
-              <label class="ua-perm-toggle"><input type="checkbox" id="pEdit" checked><span>Editar</span></label>
-              <label class="ua-perm-toggle"><input type="checkbox" id="pDelete"><span>Excluir</span></label>
-              <label class="ua-perm-toggle"><input type="checkbox" id="pExport" checked><span>Exportar</span></label>
-              <label class="ua-perm-toggle"><input type="checkbox" id="pImport"><span>Importar</span></label>
-            </div>
-
-            <!-- Avatar -->
-            <div class="ua-avatar-row">
-              <div id="uAvatarPreview" class="ua-avatar-preview"></div>
-              <div style="flex:1;min-width:0">
-                <div style="font-size:.75rem;font-weight:700;color:var(--text2);margin-bottom:6px">Foto de perfil</div>
-                <input type="file" id="uAvatarFile" accept="image/*" style="font-size:.74rem;max-width:200px" onchange="previewUserAvatar(this)">
-                <button class="btn btn-ghost btn-sm" id="uAvatarRemoveBtn" onclick="removeUserAvatar()" style="font-size:.72rem;color:var(--muted);margin-top:4px;display:none">✕ Remover</button>
-              </div>
-            </div>
-            <input type="hidden" id="uAvatarRemoveFlag" value="">
-
-            <div class="ua-form-footer">
-              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('userFormArea').style.display='none'">Cancelar</button>
-              <button class="btn btn-primary btn-sm" onclick="saveUser()">💾 Salvar</button>
+            <div class="uam-form-footer">
+              <button class="uam-btn-ghost" onclick="document.getElementById('userFormArea').style.display='none'">Cancelar</button>
+              <button class="uam-btn-primary" onclick="saveUser()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Salvar usuário
+              </button>
             </div>
           </div>
 
-          <!-- Users list -->
-          <div id="usersList"></div>
+          <!-- Lista de usuários -->
+          <div id="usersList" class="uam-scroll uam-users-list"></div>
         </div>
 
-        <!-- ── FAMILIES TAB ── -->
-        <div id="uaFamilies" class="ua-pane" style="display:none">
-          <!-- Wizard row -->
-          <div id="uaWizardRow" style="display:none" class="ua-wizard-banner">
+        <!-- ─── FAMILIES ───────────────────────────────────────────────── -->
+        <div id="uaFamilies" class="uam-pane" style="display:none">
+          <!-- Wizard banner -->
+          <div id="uaWizardRow" style="display:none" class="uam-wizard-banner">
             <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-size:1.4rem">🧭</span>
+              <span style="font-size:1.5rem">🧭</span>
               <div>
                 <div style="font-size:.86rem;font-weight:700;color:var(--accent)">Assistente de Configuração</div>
-                <div style="font-size:.75rem;color:var(--muted)" id="wizardSettingsSub">Configurar nome, membros e categorias da família</div>
+                <div style="font-size:.75rem;color:var(--muted)" id="wizardSettingsSub">Configurar nome, membros e categorias</div>
               </div>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="openWizardManual()" style="flex-shrink:0">▶ Iniciar</button>
+            <button class="uam-btn-primary" onclick="openWizardManual()" style="flex-shrink:0">▶ Iniciar</button>
           </div>
 
-          <div class="ua-pane-toolbar">
-            <span style="font-size:.8rem;color:var(--muted)">Gerencie as famílias e seus membros</span>
-            <button class="ua-action-btn" onclick="showFamilyForm()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <div class="uam-pane-bar">
+            <span class="uam-pane-title">Famílias</span>
+            <button class="uam-btn-primary" onclick="showFamilyForm()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Nova família
             </button>
           </div>
 
-          <!-- Family form -->
-          <div id="familyFormArea" style="display:none" class="ua-form-card">
-            <div class="ua-form-title" id="familyFormTitle">Nova Família</div>
+          <!-- Formulário de família -->
+          <div id="familyFormArea" style="display:none" class="uam-form-wrap uam-form-wrap--slim">
+            <div class="uam-form-header">
+              <span class="uam-form-title" id="familyFormTitle">Nova Família</span>
+              <button class="uam-form-close" onclick="document.getElementById('familyFormArea').style.display='none'">✕</button>
+            </div>
             <input type="hidden" id="editFamilyId">
-            <div class="ua-form-grid">
-              <div class="ua-field">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 18px">
+              <div class="uam-field">
                 <label>Nome da família *</label>
-                <input type="text" id="fName" placeholder="Ex: Família Silva" class="ua-input">
+                <input type="text" id="fName" placeholder="Ex: Família Silva" class="uam-input">
               </div>
-              <div class="ua-field">
-                <label>Descrição</label>
-                <input type="text" id="fDesc" placeholder="Opcional" class="ua-input">
+              <div class="uam-field">
+                <label>Descrição <span class="uam-hint">(opcional)</span></label>
+                <input type="text" id="fDesc" placeholder="Breve descrição" class="uam-input">
               </div>
             </div>
-            <div class="ua-form-footer">
-              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('familyFormArea').style.display='none'">Cancelar</button>
-              <button class="btn btn-primary btn-sm" onclick="saveFamily()">💾 Salvar</button>
+            <div class="uam-form-footer">
+              <button class="uam-btn-ghost" onclick="document.getElementById('familyFormArea').style.display='none'">Cancelar</button>
+              <button class="uam-btn-primary" onclick="saveFamily()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Salvar
+              </button>
             </div>
           </div>
 
-          <div id="familiesList"></div>
+          <div id="familiesList" class="uam-scroll"></div>
         </div>
 
-      </div><!-- /ua-body -->
+        <!-- ─── WAITLIST ───────────────────────────────────────────────── -->
+        <div id="uaWaitlist" class="uam-pane" style="display:none">
+          <div class="uam-pane-bar">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="uam-pane-title">Lista de Espera</span>
+              <span id="uaWaitlistCount" class="uam-count"></span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="uaWlFilter" onchange="loadWaitlist()" class="uam-select">
+                <option value="pending">⏳ Aguardando</option>
+                <option value="invited">✉️ Convidados</option>
+                <option value="all">Todos</option>
+              </select>
+              <button class="uam-refresh-btn" onclick="loadWaitlist()" title="Recarregar">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="uaWaitlistContent" class="uam-scroll"></div>
+        </div>
 
-      <!-- Scoped styles -->
+      </div><!-- /uam-body -->
+
+      <!-- ══ SCOPED STYLES ══════════════════════════════════════════════════ -->
       <style>
-        .ua-modal { max-width: 780px; display: flex; flex-direction: column; max-height: 88dvh; padding: 0; overflow: hidden; }
-        .ua-header {
+        /* ── Modal shell ───────────────────────────────────────────────── */
+        .uam-modal {
+          max-width: 860px; width: 100%;
+          display: flex; flex-direction: column;
+          max-height: 90dvh; padding: 0; overflow: hidden;
+          border-radius: 18px;
+        }
+
+        /* ── Header ────────────────────────────────────────────────────── */
+        .uam-header {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 18px 22px 14px;
-          border-bottom: 1px solid var(--border);
-          background: var(--surface);
+          padding: 16px 20px 14px;
+          background: linear-gradient(135deg, #0e3520 0%, #1a5c3a 100%);
           flex-shrink: 0;
+          gap: 12px;
         }
-        .ua-header-title {
-          display: flex; align-items: center; gap: 8px;
-          font-size: .95rem; font-weight: 800; color: var(--text); margin-bottom: 2px;
-        }
-        .ua-header-sub { font-size: .75rem; color: var(--muted); }
-        .ua-tab-bar {
-          display: flex;
-          border-bottom: 1px solid var(--border);
-          background: var(--surface2);
-          overflow-x: auto;
-          scrollbar-width: none;
-          flex-shrink: 0;
-        }
-        .ua-tab-bar::-webkit-scrollbar { display: none; }
-        .ua-tab {
-          display: flex; align-items: center; gap: 6px;
-          padding: 12px 16px;
-          font-family: var(--font-sans); font-size: .78rem; font-weight: 600;
-          color: var(--muted);
-          border: none; background: none; cursor: pointer;
-          border-bottom: 2.5px solid transparent;
-          margin-bottom: -1px;
-          white-space: nowrap;
-          transition: color .15s, border-color .15s;
-          flex-shrink: 0;
-        }
-        .ua-tab:hover { color: var(--text); }
-        .ua-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
-        .ua-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-        .ua-pane { display: flex; flex-direction: column; gap: 0; height: 100%; overflow: hidden; }
-        .ua-scroll-area { flex: 1; overflow-y: auto; padding: 14px 20px; }
-        .ua-pane-toolbar {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 20px; border-bottom: 1px solid var(--border);
-          background: var(--surface2); flex-shrink: 0;
-        }
-        .ua-pane-title { font-size: .84rem; font-weight: 700; color: var(--text); }
-        .ua-count-badge {
-          display: inline-flex; align-items: center;
-          font-size: .72rem; color: var(--muted);
-        }
-        .ua-action-btn {
-          display: flex; align-items: center; gap: 6px;
-          padding: 7px 13px;
-          font-family: var(--font-sans); font-size: .78rem; font-weight: 700;
-          color: #fff; background: var(--accent);
-          border: none; border-radius: 20px; cursor: pointer;
-          white-space: nowrap; transition: opacity .15s;
-        }
-        .ua-action-btn:hover { opacity: .88; }
-        .ua-icon-btn {
+        .uam-header-left { display: flex; align-items: center; gap: 12px; }
+        .uam-header-icon {
+          width: 40px; height: 40px; border-radius: 11px;
+          background: rgba(255,255,255,.14);
           display: flex; align-items: center; justify-content: center;
-          width: 30px; height: 30px;
-          border: 1.5px solid var(--border); border-radius: 8px;
-          background: var(--surface); color: var(--muted); cursor: pointer;
+          color: rgba(255,255,255,.9); flex-shrink: 0;
+        }
+        .uam-header-title { font-size: 1rem; font-weight: 800; color: #fff; margin-bottom: 1px; }
+        .uam-header-sub { font-size: .72rem; color: rgba(255,255,255,.55); }
+        .uam-kpi-pills { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .uam-kpi-pill {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 9px; border-radius: 20px;
+          font-size: .68rem; font-weight: 700;
+        }
+        .uam-kpi-users    { background: rgba(255,255,255,.12); color: rgba(255,255,255,.85); }
+        .uam-kpi-families { background: rgba(255,255,255,.10); color: rgba(255,255,255,.75); }
+        .uam-kpi-pending  { background: rgba(220,38,38,.25); color: #fca5a5; }
+
+        /* ── Tabs ──────────────────────────────────────────────────────── */
+        .uam-tabs {
+          display: flex; border-bottom: 1px solid var(--border);
+          background: var(--surface2); overflow-x: auto;
+          scrollbar-width: none; flex-shrink: 0;
+        }
+        .uam-tabs::-webkit-scrollbar { display: none; }
+        .uam-tab {
+          display: flex; align-items: center; gap: 6px;
+          padding: 11px 16px;
+          font-family: var(--font-sans); font-size: .78rem; font-weight: 600;
+          color: var(--muted); border: none; background: none; cursor: pointer;
+          border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+          white-space: nowrap; transition: color .15s, border-color .15s;
+          flex-shrink: 0;
+        }
+        .uam-tab:hover { color: var(--text); }
+        .uam-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
+
+        /* ── Body / Panes ──────────────────────────────────────────────── */
+        .uam-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+        .uam-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+        .uam-scroll { flex: 1; overflow-y: auto; padding: 12px 18px; }
+
+        /* ── Pane toolbar ──────────────────────────────────────────────── */
+        .uam-pane-bar {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 10px 18px; border-bottom: 1px solid var(--border);
+          background: var(--surface2); flex-shrink: 0; gap: 10px;
+        }
+        .uam-pane-title { font-size: .86rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+        .uam-count {
+          font-size: .7rem; color: var(--muted);
+          background: var(--bg2); border-radius: 20px;
+          padding: 1px 8px; border: 1px solid var(--border);
+        }
+
+        /* ── Search ────────────────────────────────────────────────────── */
+        .uam-search-wrap {
+          display: flex; align-items: center; gap: 6px;
+          background: var(--surface); border: 1.5px solid var(--border);
+          border-radius: 20px; padding: 5px 11px;
+          transition: border-color .15s;
+        }
+        .uam-search-wrap:focus-within { border-color: var(--accent); }
+        .uam-search-wrap svg { color: var(--muted); flex-shrink: 0; }
+        .uam-search-input {
+          border: none; background: transparent; outline: none;
+          font-family: var(--font-sans); font-size: .78rem; color: var(--text);
+          width: 130px;
+        }
+
+        /* ── Buttons ───────────────────────────────────────────────────── */
+        .uam-btn-primary {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 7px 14px; border: none; border-radius: 20px;
+          background: var(--accent); color: #fff;
+          font-family: var(--font-sans); font-size: .76rem; font-weight: 700;
+          cursor: pointer; white-space: nowrap; transition: opacity .15s, transform .12s;
+        }
+        .uam-btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+        .uam-btn-ghost {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 7px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+          background: transparent; color: var(--text2);
+          font-family: var(--font-sans); font-size: .76rem; font-weight: 600;
+          cursor: pointer; transition: all .15s;
+        }
+        .uam-btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+        .uam-refresh-btn {
+          width: 32px; height: 32px; border-radius: 8px;
+          border: 1.5px solid var(--border); background: var(--surface);
+          color: var(--muted); cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
           transition: all .15s;
         }
-        .ua-icon-btn:hover { border-color: var(--accent); color: var(--accent); }
-        .ua-select {
-          font-family: var(--font-sans); font-size: .78rem; padding: 6px 8px;
-          border: 1px solid var(--border); border-radius: 7px;
+        .uam-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .uam-select {
+          font-family: var(--font-sans); font-size: .76rem;
+          padding: 5px 8px; border: 1.5px solid var(--border); border-radius: 8px;
           background: var(--surface); color: var(--text);
         }
-        .ua-form-card {
-          margin: 14px 20px;
-          background: var(--surface2); border: 1px solid var(--border);
-          border-radius: 12px; padding: 16px 18px;
+
+        /* ── Badges ────────────────────────────────────────────────────── */
+        .uam-badge {
+          display: inline-flex; align-items: center; justify-content: center;
+          min-width: 18px; height: 18px; border-radius: 20px;
+          font-size: .62rem; font-weight: 700; padding: 0 5px; margin-left: 3px;
         }
-        .ua-form-title { font-size: .88rem; font-weight: 700; color: var(--text); margin-bottom: 14px; }
-        .ua-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-        @media (max-width: 560px) { .ua-form-grid { grid-template-columns: 1fr; } }
-        .ua-field label { font-size: .72rem; font-weight: 700; color: var(--text2); display: block; margin-bottom: 5px; }
-        .ua-input, .ua-select-full {
-          width: 100%; padding: 8px 10px;
+        .uam-badge-red   { background: #dc2626; color: #fff; }
+        .uam-badge-green { background: var(--accent); color: #fff; }
+
+        /* ── Form wrap ─────────────────────────────────────────────────── */
+        .uam-form-wrap {
+          background: linear-gradient(135deg,
+            color-mix(in srgb, var(--accent) 6%, var(--surface2)) 0%,
+            var(--surface2) 100%);
+          border-bottom: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .uam-form-wrap--slim { /* used for family form */ }
+        .uam-form-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 12px 18px 0;
+        }
+        .uam-form-title { font-size: .9rem; font-weight: 800; color: var(--text); }
+        .uam-form-close {
+          background: none; border: none; cursor: pointer; color: var(--muted);
+          font-size: 1rem; padding: 2px 6px; border-radius: 6px;
+          transition: color .15s;
+        }
+        .uam-form-close:hover { color: var(--danger, #dc2626); }
+        .uam-form-body {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: 0 24px; padding: 14px 18px;
+        }
+        @media (max-width: 600px) { .uam-form-body { grid-template-columns: 1fr; } }
+        .uam-form-col { display: flex; flex-direction: column; gap: 10px; }
+        .uam-form-footer {
+          display: flex; gap: 8px; justify-content: flex-end;
+          padding: 12px 18px; border-top: 1px solid var(--border);
+          background: var(--surface);
+        }
+        .uam-field { display: flex; flex-direction: column; gap: 4px; }
+        .uam-field label { font-size: .71rem; font-weight: 700; color: var(--text2); }
+        .uam-hint { font-size: .68rem; font-weight: 400; color: var(--muted); }
+        .uam-input {
+          width: 100%; padding: 8px 10px; box-sizing: border-box;
           font-family: var(--font-sans); font-size: .82rem;
-          border: 1.5px solid var(--border); border-radius: 8px;
+          border: 1.5px solid var(--border); border-radius: 9px;
           background: var(--surface); color: var(--text);
-          outline: none; box-sizing: border-box; transition: border-color .15s;
+          outline: none; transition: border-color .15s;
         }
-        .ua-input:focus, .ua-select-full:focus { border-color: var(--accent); }
-        .ua-perms-title { font-size: .75rem; font-weight: 700; color: var(--text2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
-        .ua-perms-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-        .ua-perm-toggle {
+        .uam-input:focus { border-color: var(--accent); }
+
+        /* ── Permissions grid ──────────────────────────────────────────── */
+        .uam-perms-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; }
+        .uam-perm {
           display: flex; align-items: center; gap: 5px;
-          padding: 5px 10px;
-          background: var(--surface); border: 1.5px solid var(--border);
-          border-radius: 20px; cursor: pointer; font-size: .75rem; font-weight: 600;
+          padding: 5px 8px; background: var(--surface);
+          border: 1.5px solid var(--border); border-radius: 8px;
+          cursor: pointer; font-size: .72rem; font-weight: 600;
           color: var(--text2); transition: all .15s; user-select: none;
         }
-        .ua-perm-toggle:has(input:checked) { border-color: var(--accent); background: var(--accent-lt); color: var(--accent); }
-        .ua-avatar-row {
-          display: flex; align-items: center; gap: 14px;
-          padding: 10px 12px; background: var(--surface);
-          border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px;
+        .uam-perm:has(input:checked) {
+          border-color: var(--accent);
+          background: var(--accent-lt, #e8f2ee);
+          color: var(--accent);
         }
-        .ua-avatar-preview { width: 48px; height: 48px; border-radius: 50%; overflow: hidden; flex-shrink: 0; border: 2px solid var(--border); }
-        .ua-form-footer { display: flex; gap: 8px; justify-content: flex-end; }
-        .ua-loading { text-align: center; padding: 32px; color: var(--muted); font-size: .85rem; }
-        .ua-wizard-banner {
+        .uam-perm input { display: none; }
+
+        /* ── Avatar ────────────────────────────────────────────────────── */
+        .uam-avatar-row { display: flex; align-items: center; gap: 10px; }
+        .uam-avatar-preview {
+          width: 48px; height: 48px; border-radius: 50%; overflow: hidden;
+          flex-shrink: 0; border: 2px solid var(--border);
+          background: var(--surface2);
+        }
+
+        /* ── Users list ────────────────────────────────────────────────── */
+        .uam-users-list { padding: 10px 18px !important; }
+        .uam-user-row {
+          display: flex; align-items: center; gap: 12px;
+          padding: 10px 14px; margin-bottom: 4px;
+          background: var(--surface2); border: 1px solid var(--border);
+          border-radius: 12px; cursor: pointer;
+          transition: all .15s;
+        }
+        .uam-user-row:hover {
+          border-color: var(--accent);
+          background: color-mix(in srgb, var(--accent) 5%, var(--surface2));
+          transform: translateY(-1px);
+          box-shadow: 0 2px 10px rgba(0,0,0,.06);
+        }
+        .uam-user-info { flex: 1; min-width: 0; }
+        .uam-user-name { font-size: .85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .uam-user-email { font-size: .71rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .uam-user-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+        .uam-user-actions { display: flex; gap: 4px; flex-shrink: 0; }
+        .uam-user-action-btn {
+          width: 28px; height: 28px; border-radius: 7px;
+          border: 1px solid var(--border); background: var(--surface);
+          color: var(--muted); cursor: pointer; display: flex;
+          align-items: center; justify-content: center;
+          font-size: .75rem; transition: all .15s;
+        }
+        .uam-user-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .uam-user-action-btn.danger:hover { border-color: var(--danger,#dc2626); color: var(--danger,#dc2626); }
+        .uam-role-badge {
+          display: inline-flex; align-items: center; gap: 3px;
+          font-size: .65rem; font-weight: 700;
+          padding: 2px 8px; border-radius: 20px;
+          border: 1px solid;
+        }
+        .uam-status-dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          flex-shrink: 0; display: inline-block;
+        }
+        .uam-family-tag {
+          display: inline-flex; align-items: center; gap: 3px;
+          font-size: .63rem; padding: 1px 7px; border-radius: 20px;
+          background: var(--accent-lt,#e8f2ee); color: var(--accent);
+          border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+          font-weight: 600; white-space: nowrap;
+          max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* ── Empty / loading states ────────────────────────────────────── */
+        .uam-empty-state {
+          text-align: center; padding: 48px 20px;
+          color: var(--muted); font-size: .85rem;
+        }
+        .uam-empty-icon { font-size: 2.4rem; margin-bottom: 10px; }
+
+        /* ── Pending section header ────────────────────────────────────── */
+        .uam-pending-banner {
+          background: linear-gradient(135deg, #fef3c7, #fef9e8);
+          border: 1.5px solid #f59e0b; border-radius: 12px;
+          padding: 14px 16px; margin-bottom: 14px;
+          display: flex; align-items: flex-start; gap: 12px;
+        }
+
+        /* ── Wizard banner ─────────────────────────────────────────────── */
+        .uam-wizard-banner {
           display: flex; align-items: center; justify-content: space-between; gap: 12px;
-          flex-wrap: wrap; margin: 14px 20px 0;
-          background: var(--accent-lt); border: 1px solid var(--accent);
+          flex-wrap: wrap; margin: 12px 18px 0;
+          background: var(--accent-lt, #e8f2ee); border: 1px solid var(--accent);
           border-radius: 10px; padding: 12px 16px;
         }
-        /* Users list — card rows */
-        #usersList { padding: 10px 20px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1; }
-        #familiesList { padding: 10px 20px; overflow-y: auto; flex: 1; }
-        #uaPendingContent { padding: 16px 20px; overflow-y: auto; flex: 1; }
       </style>
 
     </div>
   </div>
-
 
 <!-- ── Modal: Configurar IA (Google Gemini API Key) ──────────────────────── -->
 <div class="modal-overlay" id="aiConfigModal">
@@ -5569,7 +6183,7 @@ Se você não solicitou isso, ignore este e-mail.`,
       <input type="hidden" id="scTypeField" value="expense">
 
       <!-- Context tabs: Abas mode -->
-      <div id="scContextTabBar" style="display:flex;border-bottom:1px solid var(--border);margin-top:14px;padding:0 16px;gap:0">
+      <div id="scContextTabBar" style="display:flex;margin-top:12px;padding:0 16px;gap:0">
         <button class="tx-ctx-tab active" data-tab="scCtxPrincipal" onclick="switchScTab('scCtxPrincipal',this)">Principal</button>
         <button class="tx-ctx-tab" data-tab="scCtxDetalhes" onclick="switchScTab('scCtxDetalhes',this)">Detalhes</button>
         <button class="tx-ctx-tab" data-tab="scCtxRecorrencia" onclick="switchScTab('scCtxRecorrencia',this)">Recorrência</button>
@@ -5620,6 +6234,7 @@ Se você não solicitou isso, ignore este e-mail.`,
           </div>
           <div class="form-group"><label>Conta Origem <span class="req-star">*</span></label><select id="scAccountId" onchange="onScAccountChange()"></select></div>
           <div class="form-group" id="scTransferToGroup" style="display:none"><label>Conta Destino <span class="req-star">*</span></label><select id="scTransferToAccountId" onchange="onScTransferAccountChange()"></select></div>
+          <div class="form-group"><label>Primeira data <span class="req-star">*</span></label><input type="date" id="scStartDatePrincipal" oninput="_scSyncDate(this.value)" onchange="_scSyncDate(this.value)"></div>
           <div class="form-group"><label>Status</label><select id="scStatus"><option value="active">Ativo</option><option value="paused">Pausado</option></select></div>
           <div class="form-group" id="scPayeeGroup" style="position:relative">
             <label>Beneficiário / Fonte <span class="req-star">*</span></label>
@@ -5717,7 +6332,7 @@ Se você não solicitou isso, ignore este e-mail.`,
       <!-- ── TAB/STEP 2: Recorrência ────────────────────────────── -->
       <div class="tx-ctx-pane" id="scCtxRecorrencia" style="display:none;padding:16px">
         <div class="form-grid">
-          <div class="form-group"><label>Primeira data <span class="req-star">*</span></label><input type="date" id="scStartDate"></div>
+          <div class="form-group"><label>Primeira data <span class="req-star">*</span></label><input type="date" id="scStartDate" oninput="_scSyncDate(this.value)" onchange="_scSyncDate(this.value)"></div>
           <div class="form-group"></div>
 
           <div class="form-group full">
@@ -5815,7 +6430,7 @@ Se você não solicitou isso, ignore este e-mail.`,
           </div>
 
           <!-- WhatsApp -->
-          <div class="sc-channel-card">
+          <div class="sc-channel-card" id="scWaChannelCard">
             <label class="sc-channel-header" style="cursor:pointer">
               <input type="checkbox" id="scNotifyWhatsapp" style="width:16px;height:16px;cursor:pointer" onchange="toggleScheduledWhatsappDetails(this.checked)">
               <div>
@@ -5844,7 +6459,7 @@ Se você não solicitou isso, ignore este e-mail.`,
           </div>
 
           <!-- Telegram -->
-          <div class="sc-channel-card">
+          <div class="sc-channel-card" id="scTgChannelCard">
             <label class="sc-channel-header" style="cursor:pointer">
               <input type="checkbox" id="scNotifyTelegram" style="width:16px;height:16px;cursor:pointer" onchange="toggleScheduledTelegramDetails(this.checked)">
               <div>
@@ -6091,7 +6706,7 @@ Se você não solicitou isso, ignore este e-mail.`,
       </div>
 
       <!-- Context tabs: Abas mode -->
-      <div id="txContextTabBar" style="display:flex;border-bottom:1px solid var(--border);margin-top:14px;padding:0 16px;gap:0">
+      <div id="txContextTabBar" style="display:flex;padding:0 16px;gap:0;margin-top:10px">
         <button class="tx-ctx-tab active" data-tab="txCtxPrincipal" onclick="switchTxTab('txCtxPrincipal',this)">Principal</button>
         <button class="tx-ctx-tab" data-tab="txCtxDetalhes" onclick="switchTxTab('txCtxDetalhes',this)">Detalhes</button>
         <button class="tx-ctx-tab" data-tab="txCtxAnexo" onclick="switchTxTab('txCtxAnexo',this)">Anexo / IA</button>
@@ -6393,7 +7008,22 @@ Se você não solicitou isso, ignore este e-mail.`,
         </div>
         <div class="form-group"><label id="accountBalanceLabel">Saldo Inicial</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="accountBalanceSignBtn" onclick="toggleAmtSign('accountBalance')" aria-label="Alternar sinal">+</button><input type="text" id="accountBalance" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="_amtFieldInput('accountBalance')" onkeydown="_amtFieldKeydown('accountBalance', event)" onblur="_amtFieldBlur('accountBalance')" onfocus="_amtFieldFocus('accountBalance')"></div><div style="font-size:.72rem;color:var(--muted);margin-top:4px">Este é o saldo de abertura. O saldo atual é calculado automaticamente com base nas transações.</div></div>
         <div class="form-group full">
-          <label>Ícone</label>
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            <span>Ícone</span>
+            <button type="button" onclick="accountAiSuggestIcon()" title="Sugerir ícone com IA"
+              style="display:flex;align-items:center;gap:4px;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;border:1.5px solid var(--accent);background:var(--accent-lt);color:var(--accent);cursor:pointer;transition:all .15s"
+              onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+              onmouseout="this.style.background='var(--accent-lt)';this.style.color='var(--accent)'">
+              🤖 Sugerir com IA
+            </button>
+          </label>
+          <!-- AI suggestions panel -->
+          <div id="accountAiSuggestPanel" style="display:none;margin-bottom:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+            <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Sugestões da IA</div>
+            <div id="accountAiSuggestContent" style="display:flex;gap:8px;flex-wrap:wrap">
+              <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:8px">⏳ Buscando…</div>
+            </div>
+          </div>
           <div class="icon-picker" id="accountIconPicker">
             <div class="icon-picker-tabs">
               <button class="icon-tab active" onclick="showIconGroup(event,'banks-br')">🇧🇷 Bancos BR</button>
@@ -6688,23 +7318,42 @@ Se você não solicitou isso, ignore este e-mail.`,
   </div>
 </div>
 
-<!-- Budget Drilldown Modal -->
+<!-- Budget Drilldown Modal v3 -->
 <div class="modal-overlay" id="budgetDrilldownModal">
-  <div class="modal" style="max-width:680px"><div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="budgetDrillTitle">Transações do Orçamento</span>
-      <button class="modal-close" onclick="closeModal('budgetDrilldownModal')">✕</button>
-    </div>
-    <div class="modal-body" style="padding:0">
-      <div style="padding:10px 16px 8px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:.78rem;color:var(--muted)" id="budgetDrillTotal"></div>
-      <div class="table-wrap" style="margin:0;max-height:60vh;overflow-y:auto">
-        <table>
-          <thead><tr><th style="width:72px">Data</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
-          <tbody id="budgetDrillBody"></tbody>
-        </table>
+  <div class="modal" style="max-width:700px;padding:0"><div class="modal-handle" style="margin:10px auto 0"></div>
+    <!-- Header dinâmico: hero + KPIs + barra -->
+    <div id="budgetDrillHeader"></div>
+
+    <!-- Título da tabela + botão fechar -->
+    <div class="modal-header" style="padding:10px 16px 8px;border-bottom:none">
+      <span class="modal-title" id="budgetDrillTitle" style="font-size:.85rem;font-weight:600;color:var(--muted)">Transações</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="budgetDrillTotal" style="font-size:.72rem;color:var(--muted)"></span>
+        <button class="modal-close" onclick="closeModal('budgetDrilldownModal')">✕</button>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('budgetDrilldownModal')">Fechar</button></div>
+
+    <div class="modal-body" style="padding:0;max-height:75vh;overflow-y:auto">
+      <!-- Subcategorias com barras -->
+      <div id="budgetDrillSubs"></div>
+
+      <!-- Tabela de transações -->
+      <div style="padding:0 0 8px">
+        <div class="table-wrap" style="margin:0">
+          <table>
+            <thead><tr>
+              <th style="width:72px">Data</th>
+              <th>Descrição</th>
+              <th style="text-align:right;white-space:nowrap">Valor</th>
+            </tr></thead>
+            <tbody id="budgetDrillBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('budgetDrilldownModal')">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -6955,85 +7604,100 @@ Se você não solicitou isso, ignore este e-mail.`,
 </div>
 
 <div class="modal-overlay" id="budgetModal">
-  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="budgetModalTitle">Novo Orçamento</span>
+  <div class="modal bgt-modal-v2" style="max-width:520px"><div class="modal-handle"></div>
+
+    <div class="bgt-modal-header">
+      <div class="bgt-modal-header-icon" id="budgetModalIcon">🎯</div>
+      <div style="flex:1;min-width:0">
+        <div class="bgt-modal-title" id="budgetModalTitle">Novo Orçamento</div>
+        <div class="bgt-modal-sub" id="budgetModalSub">Defina um limite de gasto por categoria</div>
+      </div>
       <button class="modal-close" onclick="closeModal('budgetModal')">✕</button>
     </div>
-    <div class="modal-body">
+
+    <div class="modal-body bgt-modal-body">
       <input type="hidden" id="budgetId">
-      <!-- hidden tracker for current type -->
       <div id="budgetModalTypeCurrent" data-type="monthly" style="display:none"></div>
 
-      <div class="form-grid">
-        <!-- Type tabs -->
-        <div class="form-group full">
-          <label>Tipo de orçamento</label>
-          <div class="tab-bar" style="margin-bottom:0">
-            <button type="button" class="tab active" id="budgetModalTypeMonthly" onclick="setBudgetModalType('monthly')">📅 Mensal</button>
-            <button type="button" class="tab" id="budgetModalTypeAnnual"  onclick="setBudgetModalType('annual')">📆 Anual</button>
+      <div class="bgt-type-group">
+        <div class="bgt-type-label">Tipo de orçamento</div>
+        <div class="bgt-type-cards">
+          <button type="button" class="bgt-type-card bgt-type-card--active" id="budgetModalTypeMonthly"
+            onclick="setBudgetModalType('monthly')">
+            <span class="bgt-type-card-icon">📅</span>
+            <span class="bgt-type-card-name">Mensal</span>
+            <span class="bgt-type-card-desc">Um mês específico</span>
+          </button>
+          <button type="button" class="bgt-type-card" id="budgetModalTypeRecurring"
+            onclick="setBudgetModalType('recurring')">
+            <span class="bgt-type-card-icon">🔄</span>
+            <span class="bgt-type-card-name">Recorrente</span>
+            <span class="bgt-type-card-desc">Todo mês, permanente</span>
+          </button>
+          <button type="button" class="bgt-type-card" id="budgetModalTypeAnnual"
+            onclick="setBudgetModalType('annual')">
+            <span class="bgt-type-card-icon">📆</span>
+            <span class="bgt-type-card-name">Anual</span>
+            <span class="bgt-type-card-desc">Um ano inteiro</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="budgetTypeHint" class="bgt-type-hint">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="budgetTypeHintText">Selecione o mês para este orçamento</span>
+      </div>
+
+      <div class="bgt-fields-grid">
+        <div class="bgt-field" id="budgetModalMonthGroup">
+          <label class="bgt-field-label">Mês *</label>
+          <input type="month" id="budgetModalMonth" class="bgt-field-input">
+        </div>
+        <div class="bgt-field" id="budgetModalYearGroup" style="display:none">
+          <label class="bgt-field-label">Ano *</label>
+          <select id="budgetModalYear" class="bgt-field-input"></select>
+        </div>
+        <div class="bgt-field">
+          <label class="bgt-field-label">Categoria *</label>
+          <select id="budgetCategory" class="bgt-field-input"></select>
+          <div id="budgetCatHint" class="bgt-cat-hint" style="display:none">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Inclui gastos de todas as subcategorias
           </div>
         </div>
-
-        <!-- Month picker (monthly) -->
-        <div class="form-group full" id="budgetModalMonthGroup">
-          <label>Mês *</label>
-          <input type="month" id="budgetModalMonth">
-        </div>
-
-        <!-- Year picker (annual) -->
-        <div class="form-group full" id="budgetModalYearGroup" style="display:none">
-          <label>Ano *</label>
-          <select id="budgetModalYear" style="width:100%"></select>
-        </div>
-
-        <!-- Category: parents + indented children -->
-        <div class="form-group full">
-          <label>Categoria *</label>
-          <select id="budgetCategory"></select>
-          <div id="budgetCatHint" style="font-size:.72rem;color:var(--muted);margin-top:4px;display:none">
-            💡 Orçamento de categoria pai inclui gastos de todas as subcategorias.
+        <div class="bgt-field">
+          <label class="bgt-field-label">Valor limite *</label>
+          <div class="bgt-amount-wrap">
+            <span class="bgt-amount-currency">R$</span>
+            <input type="text" id="budgetAmount" class="bgt-field-input bgt-amount-input"
+              inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"
+              oninput="_amtFieldInput('budgetAmount')" onkeydown="_amtFieldKeydown('budgetAmount', event)"
+              onblur="_amtFieldBlur('budgetAmount')" onfocus="_amtFieldFocus('budgetAmount')">
           </div>
         </div>
-
-        <!-- Amount -->
-        <div class="form-group full">
-          <label>Valor limite *</label>
-          <div class="amt-wrap">
-            <button type="button" class="amt-sign-btn" style="visibility:hidden">+</button>
-            <input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="_amtFieldInput('budgetAmount')" onkeydown="_amtFieldKeydown('budgetAmount', event)" onblur="_amtFieldBlur('budgetAmount')" onfocus="_amtFieldFocus('budgetAmount')">
-          </div>
-        </div>
-
-        <!-- Membro da família (optional) -->
-        <div class="form-group full">
-          <label>Membro da família <span style="font-size:.72rem;color:var(--muted)">(opcional — deixe vazio para orçamento geral)</span></label>
-          <select id="budgetFamilyMember" style="width:100%">
+        <div class="bgt-field">
+          <label class="bgt-field-label">Membro <span class="bgt-field-optional">opcional</span></label>
+          <select id="budgetFamilyMember" class="bgt-field-input">
             <option value="">👨‍👩‍👧 Família (geral)</option>
           </select>
         </div>
-
-        <!-- Auto-reset (monthly only) -->
-        <div class="form-group full" id="budgetAutoResetGroup">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:400">
-            <input type="checkbox" id="budgetAutoReset" checked style="width:16px;height:16px;margin-top:2px;cursor:pointer">
-            <div>
-              <div style="font-weight:600;font-size:.88rem">🔄 Resetar a cada mês</div>
-              <div style="font-size:.75rem;color:var(--muted);margin-top:2px">O orçamento se repete automaticamente todo mês, contabilizando apenas as transações do período</div>
-            </div>
-          </label>
-        </div>
-
-        <!-- Notes -->
-        <div class="form-group full">
-          <label>Observação</label>
-          <input type="text" id="budgetNotes" placeholder="Ex: Limite do cartão, verba de viagem...">
+        <div class="bgt-field">
+          <label class="bgt-field-label">Observação <span class="bgt-field-optional">opcional</span></label>
+          <input type="text" id="budgetNotes" class="bgt-field-input"
+            placeholder="Ex: limite do cartão, verba específica…">
         </div>
       </div>
+
+      <input type="hidden" id="budgetAutoReset" value="true">
+      <div id="budgetAutoResetGroup" style="display:none"></div>
     </div>
-    <div class="modal-footer">
+
+    <div class="bgt-modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('budgetModal')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveBudget()">Salvar</button>
+      <button class="btn btn-primary" onclick="saveBudget()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Salvar orçamento
+      </button>
     </div>
   </div>
 </div>
@@ -7342,7 +8006,41 @@ Se você não solicitou isso, ignore este e-mail.`,
           </div>
           <input type="hidden" id="myProfileFormMode" value="tabs">
 
-          <div class="prof-section-label" style="margin-top:16px">🧙 Assistente de configuração</div>
+          <div class="prof-section-label" style="margin-top:16px">🔔 Alertas visuais</div>
+          <div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">Como as notificações pop-up aparecem na tela.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <label id="alertStyleToastBtn" class="form-mode-option" onclick="selectAlertStyle('toast')" style="cursor:pointer;border:1.5px solid var(--accent);border-radius:var(--r-sm);padding:10px 12px;background:var(--accent-lt,#e8f2ee);display:block">
+              <div style="font-size:.82rem;font-weight:700;color:var(--accent);margin-bottom:3px">🍞 Toast discreto</div>
+              <div style="font-size:.72rem;color:var(--muted)">Notificação no canto, some sozinha.</div>
+            </label>
+            <label id="alertStyleModalBtn" class="form-mode-option" onclick="selectAlertStyle('modal')" style="cursor:pointer;border:1.5px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;background:transparent;display:block">
+              <div style="font-size:.82rem;font-weight:700;color:var(--text2);margin-bottom:3px">💬 Modal confirmado</div>
+              <div style="font-size:.72rem;color:var(--muted)">Pop-up central — requer confirmação.</div>
+            </label>
+          </div>
+          <input type="hidden" id="myProfileAlertStyle" value="toast">
+          <div id="alertToastDurationRow" style="margin-bottom:10px">
+            <label style="font-size:.78rem;font-weight:600;color:var(--text2);display:block;margin-bottom:6px">Duração do toast</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <label class="alert-dur-opt"><input type="radio" name="alertDuration" id="alertDur2" value="2000"> <span>Rápido (2s)</span></label>
+              <label class="alert-dur-opt"><input type="radio" name="alertDuration" id="alertDur3" value="3200" checked> <span>Normal (3s)</span></label>
+              <label class="alert-dur-opt"><input type="radio" name="alertDuration" id="alertDur5" value="5000"> <span>Longo (5s)</span></label>
+            </div>
+          </div>
+          <input type="hidden" id="myProfileAlertDuration" value="3200">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
+            <div>
+              <div style="font-size:.82rem;font-weight:600;color:var(--text)">Som de notificação</div>
+              <div style="font-size:.72rem;color:var(--muted);margin-top:1px">Toque suave ao exibir alertas de sucesso.</div>
+            </div>
+            <label class="toggle-switch" style="flex-shrink:0">
+              <input type="checkbox" id="myProfileAlertSound">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div style="height:1px;background:var(--border);margin:14px 0"></div>
+
+          <div class="prof-section-label" style="margin-top:0">🧙 Assistente de configuração</div>
           <div style="background:linear-gradient(135deg,var(--accent-lt,#e8f2ee) 0%,var(--surface2) 100%);border:1.5px solid var(--accent);border-radius:12px;padding:14px 16px">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
               <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">🧙</div>
@@ -7380,6 +8078,13 @@ Se você não solicitou isso, ignore este e-mail.`,
                   <div id="profModAi" style="font-size:.65rem;color:var(--muted)">verificando…</div>
                 </div>
               </div>
+              <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;display:flex;align-items:center;gap:6px">
+                <span style="font-size:.9rem">🌟</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:.72rem;font-weight:600;color:var(--text)">Sonhos</div>
+                  <div id="profModDreams" style="font-size:.65rem;color:var(--muted)">verificando…</div>
+                </div>
+              </div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="restartWizardFromProfile()" style="width:100%;justify-content:center;gap:8px">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
@@ -7414,13 +8119,13 @@ Se você não solicitou isso, ignore este e-mail.`,
                   <span class="prof-notif-channel-label">E-mail</span>
                   <span style="font-size:.7rem;color:var(--muted);margin-left:4px">(usa e-mail do perfil)</span>
                 </label>
-                <label class="prof-notif-channel-row">
+                <label class="prof-notif-channel-row" id="profTxNotifWaRow">
                   <input type="checkbox" id="myProfileNotifyTxWa">
                   <span class="prof-notif-channel-icon">💬</span>
                   <span class="prof-notif-channel-label">WhatsApp</span>
                   <span style="font-size:.7rem;color:var(--muted);margin-left:4px">(usa número abaixo)</span>
                 </label>
-                <label class="prof-notif-channel-row">
+                <label class="prof-notif-channel-row" id="profTxNotifTgRow">
                   <input type="checkbox" id="myProfileNotifyTxTg">
                   <span class="prof-notif-channel-icon">✈️</span>
                   <span class="prof-notif-channel-label">Telegram</span>
@@ -7433,7 +8138,7 @@ Se você não solicitou isso, ignore este e-mail.`,
           <!-- Canais padrão -->
           <div class="prof-section-label">🔔 Canais padrão</div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px">
-            <div class="form-group" style="margin-bottom:0">
+            <div id="profWaChannelWrap" class="form-group" style="margin-bottom:0">
               <label style="font-size:.78rem">WhatsApp padrão</label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="tel" id="myProfileWhatsappNumber" placeholder="5511999999999" style="flex:1">
@@ -7441,13 +8146,26 @@ Se você não solicitou isso, ignore este e-mail.`,
               </div>
               <div style="font-size:.7rem;color:var(--muted);margin-top:3px">Pré-preenchido ao habilitar notificação por WhatsApp em Programados.</div>
             </div>
-            <div class="form-group" style="margin-bottom:0">
+            <div id="profTgChannelWrap" class="form-group" style="margin-bottom:0">
               <label style="font-size:.78rem">Telegram padrão (Chat ID)</label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="text" id="myProfileTelegramChatId" placeholder="Ex.: 7540422976" style="flex:1">
                 <button type="button" class="btn btn-ghost btn-sm" id="myProfileTelegramTestBtn" onclick="testMyProfileNotification('telegram')">🧪 Testar</button>
               </div>
-              <div style="font-size:.7rem;color:var(--muted);margin-top:3px">Abra o bot do Telegram, envie /start e informe aqui o chat ID retornado.</div>
+              <!-- Botão + link dinâmico para obter o Chat ID via getUpdates -->
+              <div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+                <button type="button" class="btn btn-ghost btn-sm"
+                  style="font-size:.7rem;padding:3px 10px;border-color:var(--accent);color:var(--accent);white-space:nowrap"
+                  onclick="_openTelegramGetUpdates()">
+                  📬 Obtenha o Chat ID
+                </button>
+                <span id="myProfileTgGetUpdatesLinkWrap" style="font-size:.7rem;color:var(--muted)">
+                  <!-- preenchido por _openTelegramGetUpdates() / _renderTgGetUpdatesHint() -->
+                </span>
+              </div>
+              <div style="font-size:.7rem;color:var(--muted);margin-top:3px">
+                Envie uma mensagem para o seu bot no Telegram e clique em <em>Obtenha o Chat ID</em> para descobrir seu ID.
+              </div>
             </div>
           </div>
         </div>
@@ -8885,7 +9603,7 @@ Se você não solicitou isso, ignore este e-mail.`,
     <!-- Header -->
     <div class="wz-header">
       <div class="wz-logo">
-        <img id="wzLogoImg" src="logo_wizard.png" alt="Family FinTrack" style="height:28px;object-fit:contain" onerror="this.src='logo.jpg';this.onerror=null">
+        <img id="wzLogoImg" src="logo_wizard.png" alt="Family FinTrack" style="height:32px;object-fit:contain" onerror="this.src='logo.jpg';this.onerror=null">
       </div>
       <button class="wz-close-btn" onclick="_wzDismiss()" title="Pular configuração">✕</button>
     </div>
@@ -9020,7 +9738,10 @@ Se você não solicitou isso, ignore este e-mail.`,
   </div>
 
   <script src="js/debts.js"></script>
-  <script src="js/agent.js"></script>
+  <script src="js/dreams_kb.js"></script>
+<script src="js/dreams.js"></script>
+  <script src="js/agent_engine.js"></script>
+<script src="js/agent.js"></script>
 
 <script>
 window.toggleScheduledSection = window.toggleScheduledSection || function(section){
@@ -9189,6 +9910,7 @@ async function _loadProfWizModulesStatus() {
     { id: 'profModInvestments', key: 'module_investments_enabled',   label: 'Investimentos' },
     { id: 'profModDebts',       key: 'module_debts_enabled',         label: 'Dívidas' },
     { id: 'profModAi',          key: 'module_aiInsights_enabled',    label: 'AI Insights' },
+    { id: 'profModDreams',      key: 'module_dreams_enabled',        label: 'Sonhos' },
   ];
   for (const c of checks) {
     const el = document.getElementById(c.id);
@@ -9334,38 +10056,48 @@ window.openMyProfile = function(...args) {
 
 <!-- ══ AGENT PANEL ══════════════════════════════════════════════════════════ -->
 <div id="agentPanel" style="display:none;position:fixed;bottom:0;right:0;z-index:99990;
-  flex-direction:column;width:min(420px,100vw);height:min(600px,90dvh);
+  flex-direction:column;width:min(420px,100vw);height:min(620px,90dvh);
   background:var(--surface);border:1px solid var(--border);
-  border-radius:16px 16px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.18);
+  border-radius:16px 16px 0 0;
+  box-shadow:0 -12px 48px rgba(5,34,20,.22),0 -4px 16px rgba(22,163,74,.12);
   font-family:var(--font-sans);overflow:hidden">
 
   <!-- Header -->
-  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;
-    background:linear-gradient(135deg,#1d4ed8,#7c3aed);flex-shrink:0">
-    <span style="font-size:1.2rem">🤖</span>
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;flex-shrink:0;
+    background:linear-gradient(135deg,#0f5132 0%,#166534 45%,#16a34a 100%);
+    border-bottom:1px solid rgba(134,239,172,.20);position:relative;overflow:hidden">
+    <!-- Decorative shine -->
+    <div style="position:absolute;top:-20px;right:30px;width:80px;height:80px;
+      border-radius:50%;background:rgba(255,255,255,.06);pointer-events:none"></div>
+    <div style="width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.15);
+      border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;backdrop-filter:blur(8px)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1" fill="#86efac" stroke="none"/></svg>
+    </div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:.88rem;font-weight:800;color:#fff">FinTrack Agent</div>
-      <div style="font-size:.68rem;color:rgba(255,255,255,.7)">Assistente IA — digite seu pedido</div>
+      <div style="font-size:.9rem;font-weight:800;color:#f0fdf4;letter-spacing:-.01em">FinTrack Agent</div>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:1px">
+        <span style="width:6px;height:6px;border-radius:50%;background:#4ade80;
+          box-shadow:0 0 6px #4ade80;flex-shrink:0;animation:agentPulse 2s ease-in-out infinite"></span>
+        <span style="font-size:.65rem;color:rgba(240,253,244,.75)">Online · Finanças · Ajuda · Ações</span>
+      </div>
     </div>
     <button onclick="toggleAgent()"
-      style="background:rgba(255,255,255,.18);border:none;color:#fff;width:26px;height:26px;
-             border-radius:50%;cursor:pointer;font-size:.8rem;display:flex;align-items:center;
-             justify-content:center;flex-shrink:0">✕</button>
+      style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.20);color:#f0fdf4;
+             width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:.75rem;
+             display:flex;align-items:center;justify-content:center;flex-shrink:0;
+             transition:background .15s">✕</button>
   </div>
 
-  <!-- Quick suggestions -->
-  <div style="padding:8px 12px;border-bottom:1px solid var(--border);
-    display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-shrink:0">
-    <button onclick="agentSuggest('Qual meu saldo total?')"
-      class="agent-chip">💰 Saldo total</button>
-    <button onclick="agentSuggest('Crie uma despesa de R$')"
-      class="agent-chip">➕ Nova despesa</button>
-    <button onclick="agentSuggest('Crie transação programada mensal de R$')"
-      class="agent-chip">📅 Programada</button>
-    <button onclick="agentSuggest('Crie o beneficiário ')"
-      class="agent-chip">🏪 Beneficiário</button>
-    <button onclick="agentSuggest('Crie a categoria ')"
-      class="agent-chip">🏷️ Categoria</button>
+  <!-- Quick suggestions — preenchidas dinamicamente por agentRefreshQuickReplies() -->
+  <div id="agentQuickBar" style="padding:8px 12px;border-bottom:1px solid var(--border);
+    display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;background:var(--surface2)">
+    <button onclick="agentSuggest('Quanto gastei este mês?')" class="agent-chip">📊 Gastos do mês</button>
+    <button onclick="agentSuggest('Quais contas estão no vermelho?')" class="agent-chip">💰 Saldo</button>
+    <button onclick="agentSuggest('Crie uma despesa de R$')" class="agent-chip">➕ Despesa</button>
+    <button onclick="agentSuggest('Crie receita de R$')" class="agent-chip">💰 Receita</button>
+    <button onclick="agentSuggest('Resumo financeiro do mês')" class="agent-chip">📈 Resumo</button>
+    <button onclick="agentSuggest('Como adicionar uma conta?')" class="agent-chip">❓ Ajuda</button>
   </div>
 
   <!-- Feed -->
@@ -9378,21 +10110,32 @@ window.openMyProfile = function(...args) {
   <!-- Input bar -->
   <div style="padding:10px 12px;border-top:1px solid var(--border);
     display:flex;gap:8px;align-items:flex-end;flex-shrink:0;background:var(--surface)">
-    <textarea id="agentInput" rows="1" onkeydown="agentKeydown(event)"
-      placeholder="Ex: Crie uma despesa de R$50 na Padaria…"
-      style="flex:1;padding:9px 12px;font-family:var(--font-sans);font-size:.84rem;
-             border:1.5px solid var(--border);border-radius:10px;background:var(--surface2);
-             color:var(--text);resize:none;outline:none;line-height:1.4;
-             max-height:100px;overflow-y:auto;transition:border-color .15s"
-      oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"
-      onfocus="this.style.borderColor='var(--accent)'"
-      onblur="this.style.borderColor='var(--border)'"></textarea>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <!-- Inline autocomplete hints (populados por JS) -->
+      <div id="agentInlineHints" style="display:none;flex-wrap:wrap;gap:5px"></div>
+      <!-- Confirm/cancel bar (mostrado quando há ação pendente) -->
+      <div id="agentConfirmBar" style="display:none;gap:6px;align-items:center">
+        <button class="agent-action-btn agent-action-btn--primary" onclick="agentSend_confirm()">✓ Confirmar</button>
+        <button class="agent-action-btn agent-action-btn--secondary" onclick="agentSend_cancel()">✗ Cancelar</button>
+      </div>
+      <textarea id="agentInput" rows="1" onkeydown="agentKeydown(event)"
+        placeholder="Ex: Crie uma despesa de R$50 na Padaria…"
+        style="padding:9px 12px;font-family:var(--font-sans);font-size:.84rem;
+               border:1.5px solid var(--border);border-radius:10px;background:var(--surface2);
+               color:var(--text);resize:none;outline:none;line-height:1.4;
+               max-height:100px;overflow-y:auto;transition:border-color .15s;width:100%;box-sizing:border-box"
+        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"
+        onfocus="this.style.borderColor='#16a34a'"
+        onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
     <button id="agentSendBtn" onclick="agentSend()"
-      style="background:linear-gradient(135deg,#1d4ed8,#7c3aed);border:none;color:#fff;
+      style="background:linear-gradient(135deg,#15803d,#16a34a);border:none;color:#fff;
              width:38px;height:38px;border-radius:10px;cursor:pointer;flex-shrink:0;
-             display:flex;align-items:center;justify-content:center;font-size:.9rem;
-             transition:opacity .15s"
-      onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+             display:flex;align-items:center;justify-content:center;
+             box-shadow:0 2px 8px rgba(22,163,74,.35);
+             transition:opacity .15s,transform .15s"
+      onmouseover="this.style.opacity='.88';this.style.transform='translateY(-1px)'"
+      onmouseout="this.style.opacity='1';this.style.transform=''">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"/>
@@ -9403,19 +10146,28 @@ window.openMyProfile = function(...args) {
 </div>
 
 <style>
-/* Agent panel CSS */
-.agent-msg { display:flex; flex-direction:column; max-width:92%; }
+/* ── Agent panel CSS — FinTrack Copiloto v3 ─────────────────────────────── */
+@keyframes agentPulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+@keyframes agentDot { 0%,60%,100%{opacity:.2;transform:scale(.8)} 30%{opacity:1;transform:scale(1)} }
+@keyframes agentSlideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes agentStarSpin { 0%{transform:rotate(0deg) scale(1)} 50%{transform:rotate(18deg) scale(1.15)} 100%{transform:rotate(0deg) scale(1)} }
+/* Pulso sutil no ícone da estrela do agente */
+.topbar-agent-btn svg { animation: agentStarSpin 3.5s ease-in-out infinite; }
+.topbar-agent-btn:hover svg { animation: agentStarSpin .5s ease-in-out 1; }
+
+.agent-msg { display:flex; flex-direction:column; max-width:94%; animation:agentSlideIn .18s ease; }
 .agent-msg--user { align-self:flex-end; }
 .agent-msg--assistant { align-self:flex-start; }
-.agent-bubble {
-  display:flex; align-items:flex-start; gap:8px;
-}
+.agent-bubble { display:flex; align-items:flex-start; gap:8px; }
 .agent-avatar {
-  font-size:1.1rem; flex-shrink:0; margin-top:2px;
+  width:28px;height:28px;border-radius:8px;
+  background:linear-gradient(135deg,#0f5132,#16a34a);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;
 }
+.agent-avatar svg { display:block; }
 .agent-text {
   background:var(--surface2); border:1px solid var(--border);
-  border-radius:12px 12px 12px 2px;
+  border-radius:4px 12px 12px 12px;
   padding:9px 12px; font-size:.82rem; color:var(--text); line-height:1.6;
 }
 .agent-text code {
@@ -9423,31 +10175,131 @@ window.openMyProfile = function(...args) {
   font-family:monospace; font-size:.78rem;
 }
 .agent-msg--user .agent-text {
-  background:linear-gradient(135deg,#1d4ed8,#7c3aed);
-  color:#fff; border:none; border-radius:12px 12px 2px 12px;
+  background:linear-gradient(135deg,#15803d,#16a34a);
+  color:#fff; border:none; border-radius:12px 4px 12px 12px;
 }
 .agent-typing {
   display:flex; gap:4px; align-items:center; padding:10px 14px;
   background:var(--surface2); border:1px solid var(--border);
-  border-radius:12px 12px 12px 2px;
+  border-radius:4px 12px 12px 12px;
 }
 .agent-typing span {
   width:6px; height:6px; border-radius:50%;
-  background:var(--muted); display:inline-block;
+  background:var(--accent); display:inline-block;
   animation:agentDot .9s ease-in-out infinite;
 }
 .agent-typing span:nth-child(2) { animation-delay:.2s; }
 .agent-typing span:nth-child(3) { animation-delay:.4s; }
-@keyframes agentDot { 0%,60%,100%{opacity:.2;transform:scale(.8)} 30%{opacity:1;transform:scale(1)} }
+
+/* ── Chips base ── */
 .agent-chip {
-  white-space:nowrap; padding:4px 10px; font-size:.72rem; font-weight:600;
-  border:1px solid var(--border); border-radius:20px; background:var(--surface2);
+  white-space:nowrap; padding:5px 11px; font-size:.71rem; font-weight:600;
+  border:1px solid var(--border); border-radius:20px; background:var(--surface);
   color:var(--text2); cursor:pointer; font-family:var(--font-sans);
   transition:all .15s; flex-shrink:0;
 }
-.agent-chip:hover { border-color:var(--accent); background:var(--accent-lt); color:var(--accent); }
+.agent-chip:hover { border-color:var(--accent); background:rgba(22,163,74,.1); color:var(--accent); }
+.agent-chip--confirm { border-color:#16a34a; background:rgba(22,163,74,.15); color:#16a34a; }
+.agent-chip--confirm:hover { background:#16a34a; color:#fff; }
+.agent-chip--alt { border-color:var(--border); color:var(--muted); }
+.agent-quick-chip {
+  white-space:nowrap; padding:4px 10px; font-size:.69rem; font-weight:600;
+  border:1px solid var(--border); border-radius:16px; background:transparent;
+  color:var(--text2); cursor:pointer; font-family:var(--font-sans);
+  transition:all .15s; flex-shrink:0;
+}
+.agent-quick-chip:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── Guided card ── */
+.agent-guided-card {
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px;
+  font-size:.82rem; width:100%; box-sizing:border-box;
+}
+.agent-guided-header {
+  display:flex; align-items:flex-start; gap:10px;
+}
+.agent-guided-icon { font-size:1.4rem; flex-shrink:0; line-height:1; }
+.agent-guided-title { font-weight:700; color:var(--text); font-size:.88rem; }
+.agent-guided-subtitle { font-size:.74rem; color:var(--muted); margin-top:2px; }
+.agent-guided-progress {
+  margin-left:auto; width:48px; height:4px;
+  background:var(--border); border-radius:2px; overflow:hidden; flex-shrink:0; margin-top:6px;
+}
+.agent-guided-progress-bar {
+  height:100%; background:var(--accent); border-radius:2px;
+  transition:width .3s ease;
+}
+
+/* ── Guided fields ── */
+.agent-guided-fields { display:flex; flex-direction:column; gap:0; }
+.agent-guided-field {
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:5px 0; border-bottom:1px dashed rgba(255,255,255,.07);
+}
+.agent-guided-field:last-child { border-bottom:none; }
+.agent-guided-field-label { color:var(--muted); font-size:.77rem; }
+.agent-guided-field-value { font-size:.8rem; color:var(--text); font-weight:500; text-align:right; }
+.agent-guided-field--missing .agent-guided-field-label { color:#fbbf24; }
+.agent-guided-field--missing .agent-guided-field-value { color:#fde68a; font-weight:700; }
+.agent-guided-empty { color:var(--muted); font-style:italic; font-weight:400; }
+
+/* ── Chips groups (guided) ── */
+.agent-guided-chips-section { display:flex; flex-direction:column; gap:8px; }
+.agent-chips-group { display:flex; flex-direction:column; gap:5px; }
+.agent-chips-label { font-size:.73rem; color:var(--muted); font-weight:600; }
+.agent-chips-row { display:flex; flex-wrap:wrap; gap:5px; }
+.agent-chips-confirm {
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25);
+  border-radius:8px; padding:6px 10px;
+}
+.agent-chips-confirm-text { font-size:.77rem; color:var(--text2); }
+.agent-guided-hint { font-size:.72rem; color:var(--muted); font-style:italic; }
+
+/* ── Confidence badge ── */
+.agent-conf-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; border-radius:50%; background:#fbbf24;
+  color:#000; font-size:.58rem; font-weight:700;
+  margin-left:4px; vertical-align:middle;
+}
+
+/* ── Response cards ── */
+.agent-response { border-radius:10px; padding:10px 13px; font-size:.82rem; line-height:1.6; }
+.agent-response--success { background:rgba(22,163,74,.1); border:1px solid rgba(22,163,74,.3); }
+.agent-response--error { background:rgba(220,38,38,.08); border:1px solid rgba(220,38,38,.25); }
+.agent-response--confirm { background:rgba(37,99,235,.08); border:1px solid rgba(37,99,235,.25); }
+.agent-response--neutral { background:var(--surface2); border:1px solid var(--border); }
+.agent-response-text { color:var(--text); margin-bottom:6px; }
+.agent-response-detail { font-size:.78rem; color:var(--muted); margin-bottom:8px; }
+.agent-response-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+
+/* ── Action buttons ── */
+.agent-action-btn {
+  padding:6px 14px; font-size:.77rem; font-weight:600; border-radius:8px;
+  cursor:pointer; border:1px solid var(--border); font-family:var(--font-sans);
+  transition:all .15s; background:var(--surface);color:var(--text2);
+}
+.agent-action-btn--primary {
+  background:linear-gradient(135deg,#15803d,#16a34a); color:#fff; border:none;
+  box-shadow:0 2px 6px rgba(22,163,74,.3);
+}
+.agent-action-btn--primary:hover { opacity:.88; transform:translateY(-1px); }
+.agent-action-btn--secondary { color:var(--muted); }
+.agent-action-btn--secondary:hover { border-color:var(--muted); color:var(--text); }
+
+/* ── Quick replies row ── */
+.agent-quick-replies {
+  display:flex; flex-wrap:wrap; gap:5px; padding:4px 0;
+}
+
+/* ── Inline confirm bar ── */
+#agentConfirmBar { display:none; flex-wrap:wrap; gap:6px; align-items:center; }
+#agentConfirmBar.active { display:flex !important; }
 </style>
 
+  <script src="js/export_grid.js"></script>
 </body>
 </html>
 
