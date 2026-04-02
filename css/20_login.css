@@ -1,0 +1,684 @@
+/* ════════════════════════════════════════════════════ */
+/* 20_login.css */
+/* Login theme selector, login screen v4, help desktop */
+/* Source: style.css L23507–24172 (666 lines) */
+/* Braces: 106 open / 106 close ✓ */
+/* ════════════════════════════════════════════════════ */
+
+/* ═════════════════════════════════════════════════════════════════════
+   LOGIN SCREEN v5 — Sóbrio, profissional, com grid quadriculado
+   Design: painel centralizado sobre fundo escuro + grid
+   Paleta: verde-floresta do app (#0e2d1a, #1a4d30, #2a6049)
+   ═════════════════════════════════════════════════════════════════════ */
+
+/* ── Shell ───────────────────────────────────────────────────────────── */
+.ls-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow: hidden;
+  font-family: 'Outfit', system-ui, sans-serif;
+  display: flex;
+  background: #0a1e12;
+}
+
+/* ── Layout: fundo total com grid ────────────────────────────────────── */
+.ls-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #0a1e12;
+  overflow: hidden;
+}
+
+/* Grid quadriculado — identidade visual do app */
+.ls-layout::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.042) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.042) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Vinheta radial — profundidade e foco no centro */
+.ls-layout::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 50%,
+      rgba(10,30,18,.0) 0%,
+      rgba(10,30,18,.72) 100%),
+    radial-gradient(ellipse 50% 40% at 20% 90%,
+      rgba(42,96,73,.22) 0%,
+      transparent 60%),
+    radial-gradient(ellipse 40% 35% at 80% 10%,
+      rgba(30,75,50,.18) 0%,
+      transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Painel oculto do hero (sem uso no v5) ───────────────────────────── */
+.ls-hero { display: none !important; }
+
+/* ── Painel do formulário ─────────────────────────────────────────────── */
+.ls-form-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 460px;
+  padding: 0 24px;
+  /* No panel background — card is self-contained */
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ── Card do formulário ───────────────────────────────────────────────── */
+.ls-card {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 36px 36px 32px;
+  box-shadow:
+    0 32px 80px rgba(0,0,0,.52),
+    0 8px 24px rgba(0,0,0,.32),
+    0 0 0 1px rgba(255,255,255,.06);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Linha de destaque no topo do card */
+.ls-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #1a4d30 0%, #2a6049 35%, #3d8a5a 65%, #2a6049 100%);
+  border-radius: 20px 20px 0 0;
+}
+
+/* ── Logo no topo do card ─────────────────────────────────────────────── */
+.ls-form-logo {
+  display: block;
+  height: 52px;
+  width: auto;
+  object-fit: contain;
+  margin: 0 auto 26px;
+}
+
+/* ── Título e subtítulo ───────────────────────────────────────────────── */
+.ls-card-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -.025em;
+  margin-bottom: 4px;
+  line-height: 1.25;
+  text-align: center;
+}
+.ls-card-sub {
+  font-size: .8rem;
+  color: #9ca3af;
+  margin-bottom: 28px;
+  font-weight: 400;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Campos de formulário ─────────────────────────────────────────────── */
+.ls-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.ls-label {
+  font-size: .7rem;
+  font-weight: 700;
+  color: #374151;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+/* Input wrapper com ícone inline */
+.ls-input-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  transition: border-color .16s, background .16s, box-shadow .16s;
+}
+.ls-input-wrap:focus-within {
+  border-color: #2a6049;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(42,96,73,.10);
+}
+.ls-input-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 46px;
+  color: #9ca3af;
+  pointer-events: none;
+  line-height: 0;
+}
+.ls-input-icon svg { display: block; width: 15px; height: 15px; flex-shrink: 0; }
+.ls-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px 0 0 !important;
+  height: 46px;
+  line-height: 46px;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 10px 10px 0;
+  font-size: .88rem;
+  color: #111827;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+}
+.ls-input.ls-no-icon {
+  padding-left: 14px !important;
+  border-radius: 10px;
+}
+.ls-input::placeholder { color: #c4c9d4; }
+.ls-eye-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 46px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  padding: 0;
+  transition: color .15s;
+  line-height: 0;
+  border-radius: 0 9px 9px 0;
+}
+.ls-eye-btn svg { display: block; width: 15px; height: 15px; }
+.ls-eye-btn:hover { color: #374151; }
+.ls-select { cursor: pointer; }
+.ls-select option { background: #fff; color: #111; }
+
+/* ── Remember me ──────────────────────────────────────────────────────── */
+.ls-remember {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  margin-bottom: 20px;
+  user-select: none;
+}
+.ls-remember input[type=checkbox] { display: none; }
+.ls-check-box {
+  width: 16px; height: 16px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+}
+.ls-remember input:checked + .ls-check-box {
+  background: #2a6049;
+  border-color: #2a6049;
+}
+.ls-remember input:checked + .ls-check-box::after {
+  content: '';
+  width: 3px; height: 7px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px,-1px);
+}
+.ls-remember span:last-child { font-size: .8rem; color: #6b7280; }
+
+/* ── Botão primário ───────────────────────────────────────────────────── */
+.ls-btn-primary {
+  width: 100%;
+  padding: 13px 20px;
+  background: linear-gradient(135deg, #1a4d30 0%, #2a6049 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: .9rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  letter-spacing: .01em;
+  position: relative;
+  overflow: hidden;
+  transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 12px rgba(26,77,48,.30);
+}
+.ls-btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  transform: translateX(-110%);
+  transition: transform .45s ease;
+}
+.ls-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(26,77,48,.38);
+}
+.ls-btn-primary:hover::before { transform: translateX(110%); }
+.ls-btn-primary:active { transform: translateY(0); }
+
+/* ── Botão ghost ──────────────────────────────────────────────────────── */
+.ls-btn-ghost {
+  padding: 10px 22px;
+  background: transparent;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  color: #374151;
+  font-size: .86rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s, border-color .15s;
+}
+.ls-btn-ghost:hover { background: #f3f4f6; border-color: #d1d5db; }
+
+/* ── Links ────────────────────────────────────────────────────────────── */
+.ls-link {
+  background: none;
+  border: none;
+  color: #2a6049;
+  font-size: .78rem;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  text-decoration: none;
+  transition: color .15s;
+}
+.ls-link:hover { color: #1a4d30; text-decoration: underline; text-underline-offset: 2px; }
+.ls-link--bold {
+  font-size: .8rem;
+  font-weight: 700;
+  margin-left: 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ls-muted { font-size: .8rem; color: #9ca3af; }
+
+/* ── Erros ────────────────────────────────────────────────────────────── */
+.ls-error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: .8rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Info banner ──────────────────────────────────────────────────────── */
+.ls-info-banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 13px;
+  font-size: .8rem;
+  color: #92400e;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+/* ── Icon badge ───────────────────────────────────────────────────────── */
+.ls-icon-badge { font-size: 1.8rem; text-align: center; margin-bottom: 10px; }
+
+/* ── Back button ──────────────────────────────────────────────────────── */
+.ls-back-row { margin-bottom: 12px; }
+.ls-back-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: .78rem;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  transition: color .15s;
+}
+.ls-back-btn:hover { color: #374151; }
+
+/* ── Mobile logo — oculto no desktop, mostra grid no mobile ───────────── */
+.ls-mobile-logo { display: none; }
+
+/* ── Divider ──────────────────────────────────────────────────────────── */
+.ls-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: #d1d5db;
+  font-size: .72rem;
+}
+.ls-divider::before,
+.ls-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+/* ── Footer do card ───────────────────────────────────────────────────── */
+.ls-footer-row {
+  text-align: center;
+  margin-top: 18px;
+  font-size: .8rem;
+  color: #9ca3af;
+}
+
+/* ── Branding pequeno abaixo do card ──────────────────────────────────── */
+.ls-below-card {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: 1;
+  pointer-events: none;
+}
+.ls-brand-tagline {
+  font-size: .65rem;
+  font-weight: 500;
+  color: rgba(255,255,255,.22);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+/* ── Estilos de formulário para sub-telas (acesso solicitado, etc) ────── */
+.ls-access-req-form,
+.ls-forgot-form,
+.ls-register-form {
+  /* Herdam do .ls-card */
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   TEMAS DE LOGIN — all themes now map to the centered grid design
+   ═════════════════════════════════════════════════════════════════════ */
+
+/* Split: mantém design padrão */
+.ls-theme-split .ls-hero,
+.ls-theme-asymmetric .ls-hero,
+.ls-theme-immersive .ls-hero,
+.ls-theme-minimal .ls-hero { display: none !important; }
+
+/* All themes: form panel centered */
+.ls-theme-split .ls-form-panel,
+.ls-theme-asymmetric .ls-form-panel,
+.ls-theme-centered .ls-form-panel,
+.ls-theme-immersive .ls-form-panel,
+.ls-theme-minimal .ls-form-panel {
+  flex: unset;
+  width: 100%;
+  max-width: 460px;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Logo sempre visível */
+.ls-theme-split .ls-form-logo,
+.ls-theme-asymmetric .ls-form-logo,
+.ls-theme-centered .ls-form-logo,
+.ls-theme-immersive .ls-form-logo,
+.ls-theme-minimal .ls-form-logo { display: block !important; }
+
+/* [data-login-theme] equivalents */
+:root[data-login-theme="split"] #loginScreen .ls-hero,
+:root[data-login-theme="asymmetric"] #loginScreen .ls-hero,
+:root[data-login-theme="centered"] #loginScreen .ls-hero,
+:root[data-login-theme="immersive"] #loginScreen .ls-hero,
+:root[data-login-theme="minimal"] #loginScreen .ls-hero { display: none !important; }
+
+:root[data-login-theme="split"] #loginScreen .ls-form-panel,
+:root[data-login-theme="asymmetric"] #loginScreen .ls-form-panel,
+:root[data-login-theme="centered"] #loginScreen .ls-form-panel,
+:root[data-login-theme="immersive"] #loginScreen .ls-form-panel,
+:root[data-login-theme="minimal"] #loginScreen .ls-form-panel {
+  flex: unset;
+  width: 100%;
+  max-width: 460px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-login-theme="split"] #loginScreen .ls-form-logo,
+:root[data-login-theme="asymmetric"] #loginScreen .ls-form-logo,
+:root[data-login-theme="centered"] #loginScreen .ls-form-logo,
+:root[data-login-theme="immersive"] #loginScreen .ls-form-logo,
+:root[data-login-theme="minimal"] #loginScreen .ls-form-logo { display: block !important; }
+
+/* ═════════════════════════════════════════════════════════════════════
+   MOBILE — fundo verde escuro + grid, card branco centralizado
+   ═════════════════════════════════════════════════════════════════════ */
+@media (max-width: 759px) {
+  .ls-shell {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ls-layout {
+    flex-direction: column;
+    min-height: 100%;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .ls-hero { display: none !important; }
+  .ls-form-panel {
+    flex: 1;
+    width: 100%;
+    max-width: 100%;
+    background: transparent;
+    box-shadow: none;
+    padding: 24px 16px 40px;
+    align-items: center;
+    justify-content: center;
+    overflow-y: visible;
+  }
+  .ls-card {
+    padding: 28px 22px 24px;
+    border-radius: 18px;
+    max-width: 440px;
+    margin: auto;
+  }
+  .ls-form-logo {
+    height: 44px !important;
+    margin-bottom: 20px !important;
+  }
+  .ls-card-title { font-size: 1.2rem; }
+
+  @supports (padding-top: env(safe-area-inset-top)) {
+    .ls-form-panel {
+      padding-top: max(24px, env(safe-area-inset-top));
+      padding-bottom: max(40px, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   VARIANTE: Dark Imersivo — card translúcido, fundo mais profundo
+   ═════════════════════════════════════════════════════════════════════ */
+.ls-theme-immersive .ls-layout,
+:root[data-login-theme="immersive"] #loginScreen .ls-layout {
+  background: #060f09;
+}
+.ls-theme-immersive .ls-layout::before,
+:root[data-login-theme="immersive"] #loginScreen .ls-layout::before {
+  background-image:
+    linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.ls-theme-immersive .ls-card,
+:root[data-login-theme="immersive"] #loginScreen .ls-card {
+  background: rgba(255,255,255,.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: 0 32px 80px rgba(0,0,0,.60), 0 0 0 1px rgba(255,255,255,.06);
+}
+.ls-theme-immersive .ls-card::before,
+:root[data-login-theme="immersive"] #loginScreen .ls-card::before {
+  background: linear-gradient(90deg, rgba(42,96,73,.8) 0%, rgba(61,138,90,.7) 50%, rgba(42,96,73,.8) 100%);
+}
+.ls-theme-immersive .ls-card-title,
+:root[data-login-theme="immersive"] #loginScreen .ls-card-title {
+  color: #f0fdf4;
+}
+.ls-theme-immersive .ls-card-sub,
+:root[data-login-theme="immersive"] #loginScreen .ls-card-sub {
+  color: rgba(255,255,255,.45);
+}
+.ls-theme-immersive .ls-label,
+:root[data-login-theme="immersive"] #loginScreen .ls-label {
+  color: rgba(255,255,255,.55);
+}
+.ls-theme-immersive .ls-input-wrap,
+:root[data-login-theme="immersive"] #loginScreen .ls-input-wrap {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.12);
+}
+.ls-theme-immersive .ls-input-wrap:focus-within,
+:root[data-login-theme="immersive"] #loginScreen .ls-input-wrap:focus-within {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(61,138,90,.8);
+  box-shadow: 0 0 0 3px rgba(42,96,73,.18);
+}
+.ls-theme-immersive .ls-input,
+:root[data-login-theme="immersive"] #loginScreen .ls-input {
+  color: #f0fdf4 !important;
+}
+.ls-theme-immersive .ls-input::placeholder,
+:root[data-login-theme="immersive"] #loginScreen .ls-input::placeholder {
+  color: rgba(255,255,255,.28);
+}
+.ls-theme-immersive .ls-input-icon,
+.ls-theme-immersive .ls-eye-btn,
+:root[data-login-theme="immersive"] #loginScreen .ls-input-icon,
+:root[data-login-theme="immersive"] #loginScreen .ls-eye-btn {
+  color: rgba(255,255,255,.38);
+}
+.ls-theme-immersive .ls-btn-primary,
+:root[data-login-theme="immersive"] #loginScreen .ls-btn-primary {
+  background: linear-gradient(135deg, #1a4d30 0%, #2a6049 60%, #3d7a5e 100%);
+  box-shadow: 0 2px 16px rgba(42,96,73,.45);
+}
+.ls-theme-immersive .ls-btn-ghost,
+:root[data-login-theme="immersive"] #loginScreen .ls-btn-ghost {
+  border-color: rgba(255,255,255,.15);
+  color: rgba(255,255,255,.65);
+  background: transparent;
+}
+.ls-theme-immersive .ls-btn-ghost:hover,
+:root[data-login-theme="immersive"] #loginScreen .ls-btn-ghost:hover {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.25);
+  color: rgba(255,255,255,.9);
+}
+.ls-theme-immersive .ls-link,
+:root[data-login-theme="immersive"] #loginScreen .ls-link {
+  color: rgba(93,219,160,.8);
+}
+.ls-theme-immersive .ls-link:hover,
+:root[data-login-theme="immersive"] #loginScreen .ls-link:hover {
+  color: rgba(93,219,160,1);
+}
+.ls-theme-immersive .ls-muted,
+:root[data-login-theme="immersive"] #loginScreen .ls-muted {
+  color: rgba(255,255,255,.38);
+}
+.ls-theme-immersive .ls-remember span:last-child,
+:root[data-login-theme="immersive"] #loginScreen .ls-remember span:last-child {
+  color: rgba(255,255,255,.5);
+}
+.ls-theme-immersive .ls-check-box,
+:root[data-login-theme="immersive"] #loginScreen .ls-check-box {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.2);
+}
+.ls-theme-immersive .ls-back-btn,
+:root[data-login-theme="immersive"] #loginScreen .ls-back-btn {
+  color: rgba(255,255,255,.35);
+}
+.ls-theme-immersive .ls-back-btn:hover,
+:root[data-login-theme="immersive"] #loginScreen .ls-back-btn:hover {
+  color: rgba(255,255,255,.75);
+}
+.ls-theme-immersive .ls-error,
+:root[data-login-theme="immersive"] #loginScreen .ls-error {
+  background: rgba(220,38,38,.12);
+  border-color: rgba(220,38,38,.25);
+  color: #fca5a5;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   VARIANTE: Minimalista Claro — fundo quase branco, grid verde suave
+   ═════════════════════════════════════════════════════════════════════ */
+.ls-theme-minimal .ls-layout,
+:root[data-login-theme="minimal"] #loginScreen .ls-layout {
+  background: #f4f8f5;
+}
+.ls-theme-minimal .ls-layout::before,
+:root[data-login-theme="minimal"] #loginScreen .ls-layout::before {
+  background-image:
+    linear-gradient(rgba(42,96,73,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,96,73,.055) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.ls-theme-minimal .ls-layout::after,
+:root[data-login-theme="minimal"] #loginScreen .ls-layout::after {
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 50%,
+      rgba(244,248,245,.0) 0%,
+      rgba(235,244,238,.55) 100%);
+}
+.ls-theme-minimal .ls-card,
+:root[data-login-theme="minimal"] #loginScreen .ls-card {
+  box-shadow: 0 8px 32px rgba(42,96,73,.12), 0 2px 8px rgba(0,0,0,.06), 0 0 0 1px rgba(42,96,73,.08);
+}
+
+@media (max-width: 380px) {
+  .ls-card { padding: 22px 16px 20px; border-radius: 16px; }
+  .ls-card-title { font-size: 1.1rem; }
+  .ls-input, .ls-input-icon { height: 44px; line-height: 44px; }
+  .ls-eye-btn { height: 44px; }
+}

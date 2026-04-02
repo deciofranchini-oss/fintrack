@@ -1,0 +1,408 @@
+/* ════════════════════════════════════════════════════ */
+/* 21_budget_modal.css */
+/* Budget modal v2, login theme CSS, RPT-TX new styles */
+/* Source: style.css L24173–24506 (334 lines) */
+/* Braces: 90 open / 90 close ✓ */
+/* ════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* BUDGET MODAL v2 — design moderno */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+.bgt-modal-v2 { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+
+/* Header do modal */
+.bgt-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.bgt-modal-header-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--accent-lt);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.bgt-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.bgt-modal-sub {
+  font-size: .72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Body */
+.bgt-modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Seletor de tipo — cards clicáveis */
+.bgt-type-group { display: flex; flex-direction: column; gap: 8px; }
+.bgt-type-label {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+.bgt-type-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.bgt-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 8px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.bgt-type-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+}
+.bgt-type-card--active {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+  box-shadow: 0 0 0 2px rgba(42,96,73,.12);
+}
+.bgt-type-card-icon { font-size: 1.1rem; line-height: 1; }
+.bgt-type-card-name { font-size: .78rem; font-weight: 700; color: var(--text); }
+.bgt-type-card-desc { font-size: .65rem; color: var(--muted); }
+
+/* Hint contextual */
+.bgt-type-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: var(--blue-lt, #e8f0fb);
+  border: 1px solid rgba(30,91,168,.15);
+  border-radius: 8px;
+  font-size: .75rem;
+  color: var(--blue, #1e5ba8);
+}
+.bgt-type-hint svg { flex-shrink: 0; color: var(--blue, #1e5ba8); }
+
+/* Campos em grid 2 colunas */
+.bgt-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .bgt-fields-grid { grid-template-columns: 1fr; }
+  .bgt-type-cards { grid-template-columns: repeat(3,1fr); }
+}
+.bgt-field { display: flex; flex-direction: column; gap: 5px; }
+.bgt-field-label {
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: .04em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bgt-field-optional {
+  font-size: .65rem;
+  font-weight: 400;
+  color: var(--muted);
+  background: var(--bg2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.bgt-field-input {
+  padding: 9px 12px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  font-size: .88rem;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color .15s, box-shadow .15s;
+}
+.bgt-field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(42,96,73,.10);
+  background: var(--surface);
+}
+
+/* Valor com prefixo R$ */
+.bgt-amount-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.bgt-amount-currency {
+  position: absolute;
+  left: 12px;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--muted);
+  pointer-events: none;
+}
+.bgt-amount-input { padding-left: 30px !important; }
+
+/* Hint de subcategoria */
+.bgt-cat-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .7rem;
+  color: var(--accent);
+  padding: 4px 8px;
+  background: var(--accent-lt);
+  border-radius: 6px;
+}
+
+/* Footer */
+.bgt-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+.bgt-modal-footer .btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+   LOGIN THEME SELECTOR — settings appearance pane
+/* ═══════════════════════════════════════════════════════════════════ */
+
+.login-theme-option {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  transition: border-color .18s, box-shadow .18s;
+  cursor: pointer;
+}
+.login-theme-option:hover {
+  border-color: var(--accent2);
+  box-shadow: 0 2px 12px rgba(42,96,73,.10);
+}
+.login-theme-preview {
+  transition: none;
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+/* Card totalmente destacado quando selecionado */
+.login-theme-option:has(input[type=radio]:checked) {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(42,96,73,.15);
+  background: var(--accent-lt);
+}
+
+/* Footer row: nome + desc + badge "Ativo" */
+.lts-option-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 10px;
+  gap: 6px;
+}
+
+/* Badge "Ativo" — oculto até selecionar */
+.lts-active-badge {
+  display: none;
+  font-size: .62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.login-theme-option:has(input[type=radio]:checked) .lts-active-badge {
+  display: inline-block;
+}
+.login-theme-option:has(input[type=radio]:checked) .lts-option-footer > div > div:first-child {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Save row */
+.lts-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  gap: 10px;
+}
+.lts-save-status {
+  font-size: .78rem;
+  color: var(--green);
+  font-weight: 600;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+   LOGIN THEMES — applied via class on #loginScreen
+   Base: ls-theme-* classes added to .ls-shell
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Theme: minimal (light background, centered, no hero) */
+.ls-theme-minimal .ls-hero { display: none !important; }
+.ls-theme-minimal .ls-form-panel {
+  flex: 1;
+  background: #f4f6f3;
+  box-shadow: none;
+}
+.ls-theme-minimal .ls-card {
+  max-width: 420px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 36px 32px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 24px rgba(0,0,0,.08);
+}
+.ls-theme-minimal .ls-form-logo { height: 56px; }
+.ls-theme-minimal .ls-mobile-logo { display: none; }
+.ls-theme-minimal .ls-card-title { color: #111827; }
+.ls-theme-minimal .ls-input { background: #f9fafb; border-color: #e5e7eb; color: #111; }
+.ls-theme-minimal .ls-input::placeholder { color: #c4c9d4; }
+.ls-theme-minimal .ls-label { color: #374151; }
+.ls-theme-minimal .ls-muted { color: #9ca3af; }
+.ls-theme-minimal .ls-remember span:last-child { color: #6b7280; }
+.ls-theme-minimal .ls-error { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+.ls-theme-minimal .ls-info-banner { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ls-theme-minimal .ls-back-btn { color: #9ca3af; }
+.ls-theme-minimal .ls-back-btn:hover { color: #374151; }
+@media (max-width: 759px) {
+  .ls-theme-minimal .ls-form-panel { background: #f4f6f3; padding: 24px 20px; }
+  .ls-theme-minimal .ls-card { box-shadow: 0 4px 24px rgba(0,0,0,.10); }
+}
+
+/* Theme: centered (fullscreen green, white card) */
+.ls-theme-centered .ls-hero { display: none !important; }
+.ls-theme-centered .ls-form-panel {
+  flex: 1;
+  background: #0e3520;
+  box-shadow: none;
+}
+.ls-theme-centered .ls-form-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+  background-size: 36px 36px;
+  pointer-events: none;
+}
+.ls-theme-centered .ls-card {
+  max-width: 400px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 28px;
+  box-shadow: 0 32px 80px rgba(0,0,0,.45);
+  position: relative;
+}
+.ls-theme-centered .ls-form-logo { height: 80px; }
+.ls-theme-centered .ls-mobile-logo { display: none !important; }
+.ls-theme-centered .ls-card-title { color: #111827; }
+.ls-theme-centered .ls-input { background: #f9fafb; border-color: #e5e7eb; color: #111; }
+.ls-theme-centered .ls-input::placeholder { color: #c4c9d4; }
+.ls-theme-centered .ls-label { color: #374151; }
+
+/* Theme: split (50/50, current default — just ensure it's set) */
+/* (no extra CSS needed — default .ls-form-panel and .ls-hero styles handle it) */
+
+/* Theme: asymmetric (40/60) */
+.ls-theme-asymmetric .ls-form-panel { flex: 0 0 40%; }
+.ls-theme-asymmetric .ls-hero { flex: 0 0 60%; }
+
+/* Theme: immersive (fullscreen green, dark form, no white card) */
+.ls-theme-immersive .ls-form-panel {
+  background: transparent;
+  box-shadow: none;
+}
+.ls-theme-immersive .ls-card {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  max-width: 360px;
+}
+.ls-theme-immersive .ls-card-title { color: #fff; }
+.ls-theme-immersive .ls-card-sub { color: rgba(255,255,255,.45); }
+.ls-theme-immersive .ls-input {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.15);
+  color: #fff;
+}
+.ls-theme-immersive .ls-input::placeholder { color: rgba(255,255,255,.3); }
+.ls-theme-immersive .ls-input:focus {
+  border-color: rgba(93,219,160,.5);
+  background: rgba(255,255,255,.12);
+  box-shadow: 0 0 0 3px rgba(42,192,73,.12);
+}
+.ls-theme-immersive .ls-label { color: rgba(255,255,255,.55); }
+.ls-theme-immersive .ls-form-logo { display: none; }
+.ls-theme-immersive .ls-muted { color: rgba(255,255,255,.45); }
+.ls-theme-immersive .ls-link { color: #5ddba0; }
+.ls-theme-immersive .ls-link:hover { color: #8fecbf; }
+.ls-theme-immersive .ls-remember span:last-child { color: rgba(255,255,255,.5); }
+.ls-theme-immersive .ls-check-box { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.2); }
+.ls-theme-immersive .ls-eye-btn { color: rgba(255,255,255,.35); }
+.ls-theme-immersive .ls-eye-btn:hover { color: rgba(255,255,255,.75); }
+.ls-theme-immersive .ls-error { background: rgba(220,38,38,.2); border-color: rgba(220,38,38,.35); color: #fca5a5; }
+.ls-theme-immersive .ls-info-banner { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.3); color: #fcd34d; }
+.ls-theme-immersive .ls-back-btn { color: rgba(255,255,255,.5); }
+.ls-theme-immersive .ls-back-btn:hover { color: rgba(255,255,255,.85); }
+.ls-theme-immersive .ls-btn-ghost { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.7); }
+.ls-theme-immersive .ls-btn-ghost:hover { background: rgba(255,255,255,.12); color: #fff; }
+@media (max-width: 759px) {
+  .ls-theme-immersive .ls-form-panel {
+    background: #0e3520;
+    padding: 24px 20px;
+  }
+  .ls-theme-immersive .ls-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    padding: 28px 24px;
+    backdrop-filter: blur(16px);
+    max-width: 420px;
+  }
+}
+
