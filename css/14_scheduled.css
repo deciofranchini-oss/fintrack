@@ -361,7 +361,50 @@
   text-transform: uppercase;
 }
 
-/* Login styles moved to css/20_login.css to avoid cross-module cascade conflicts. */
+/* Mobile — login redesign */
+@media (max-width: 480px) {
+  #loginScreen {
+    padding: 12px !important;
+    align-items: flex-start !important;
+    padding-top: max(env(safe-area-inset-top, 0px), 16px) !important;
+    overflow-y: auto !important;
+  }
+  .login-card-a {
+    padding: 24px 18px 28px;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 100% !important;
+    margin-top: 8px;
+    box-shadow:
+      0 2px 0 rgba(255,255,255,.06) inset,
+      0 16px 48px rgba(0,0,0,.4),
+      0 0 0 1px rgba(255,255,255,.05);
+  }
+  #loginLogoImg {
+    width: 160px !important;
+  }
+  #loginScreen .form-group { margin-bottom: 14px !important; }
+  .login-card-a input[type="email"],
+  .login-card-a input[type="password"],
+  .login-card-a input[type="text"],
+  .login-card-a .login-input {
+    font-size: 1rem !important;
+    padding: 13px 14px !important;
+    border-radius: 12px !important;
+  }
+  #loginBtn, #magicLinkBtn, #forgotPwdBtn, #recoveryPwdBtn {
+    padding: 15px !important;
+    font-size: 1rem !important;
+    border-radius: 12px !important;
+    min-height: 52px;
+  }
+  .lgn-line1, .lgn-line2, .lgn-line3 { opacity: .7; }
+}
+
+@media (max-width: 360px) {
+  .login-card-a { padding: 18px 12px 22px; }
+  #loginLogoImg { width: 130px !important; }
+}
 
 
 
