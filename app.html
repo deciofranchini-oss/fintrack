@@ -162,12 +162,12 @@
   box-shadow: 4px 0 24px rgba(0,0,0,0.35) !important;
 }
 
-/* ── Header: fundo BRANCO puro, logo contido com limites seguros ── */
+/* ── Header: fundo BRANCO puro, logo contido e navegação estável ── */
 .sb-header {
   background: #ffffff !important;
   border-bottom: 2px solid #e8f0eb !important;
-  padding: 10px 12px 10px 14px !important;
-  min-height: 72px !important;
+  padding: 0 !important;
+  min-height: 80px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
@@ -175,30 +175,26 @@
   overflow: hidden !important;
 }
 
-/* Wrapper do logo: cresce só no eixo horizontal, sem esticar altura */
+/* Wrapper do logo: ocupa o espaço útil sem esticar o header */
 .sb-logo-wrap {
   flex: 1 1 auto !important;
   min-width: 0 !important;
-  min-height: 0 !important;
   display: flex !important;
   align-items: center !important;
-  padding: 0 !important;
+  padding: 10px 6px 10px 14px !important;
   overflow: hidden !important;
 }
 
-/* Logo contido com trava de largura/altura para não cobrir a tela */
-#sidebarLogoImg,
-.sb-logo-img {
+/* Logo sempre contido dentro do header */
+#sidebarLogoImg {
   width: auto !important;
   height: auto !important;
-  max-height: 38px !important;
-  min-height: 0 !important;
-  max-width: calc(100% - 4px) !important;
+  max-height: 52px !important;
+  max-width: 170px !important;
   object-fit: contain !important;
   object-position: left center !important;
   display: block !important;
   filter: none !important;
-  flex-shrink: 1 !important;
 }
 
 .sb-close {
@@ -534,7 +530,7 @@
            src="logo.jpg"
            alt="Family FinTrack"
            class="sb-logo-img"
-           style="max-width:170px;max-height:38px;width:auto;height:auto;object-fit:contain;display:block;filter:none">
+           style="width:auto;height:auto;max-width:170px;max-height:52px;object-fit:contain;display:block">
     </div>
     <button class="sb-close" onclick="closeSidebar()" aria-label="Fechar menu">✕</button>
   </div>
@@ -547,17 +543,17 @@
       <button class="nav-item active" onclick="navigate('dashboard')" id="dashboardNav"    data-nav="dashboard">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        </span><span data-i18n="nav.dashboard">Dashboard
+        </span><span class="nav-text" data-i18n="nav.dashboard">Dashboard</span>
       </button>
       <button class="nav-item" onclick="navigate('transactions')" id="transactionsNav" data-nav="transactions">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-        </span><span data-i18n="nav.transactions">Transações
+        </span><span class="nav-text" data-i18n="nav.transactions">Transações</span>
       </button>
       <button class="nav-item" onclick="navigate('accounts')" id="accountsNav"     data-nav="accounts">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-        </span><span data-i18n="nav.accounts">Contas
+        </span><span class="nav-text" data-i18n="nav.accounts">Contas</span>
       </button>
     </div>
 
@@ -566,12 +562,12 @@
       <button class="nav-item" onclick="navigate('reports')" id="reportsNav"      data-nav="reports">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        </span><span data-i18n="nav.reports">Relatórios
+        </span><span class="nav-text" data-i18n="nav.reports">Relatórios</span>
       </button>
       <button class="nav-item" onclick="navigate('budgets')" id="budgetsNav"      data-nav="budgets">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </span><span data-i18n="nav.budgets">Orçamentos
+        </span><span class="nav-text" data-i18n="nav.budgets">Orçamentos</span>
       </button>
     </div>
 
@@ -580,7 +576,7 @@
       <button class="nav-item" onclick="navigate('scheduled')" id="scheduledNav"    data-nav="scheduled">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        </span><span data-i18n="nav.scheduled">Programados
+        </span><span class="nav-text" data-i18n="nav.scheduled">Programados</span>
       </button>
     </div>
 
@@ -589,12 +585,12 @@
       <button class="nav-item" onclick="navigate('categories')" id="categoriesNav"   data-nav="categories">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        </span><span data-i18n="nav.categories">Categorias
+        </span><span class="nav-text" data-i18n="nav.categories">Categorias</span>
       </button>
       <button class="nav-item" onclick="navigate('payees')" id="payeesNav"       data-nav="payees">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        </span><span data-i18n="nav.payees">Beneficiários
+        </span><span class="nav-text" data-i18n="nav.payees">Beneficiários</span>
       </button>
     </div>
 
@@ -604,32 +600,32 @@
       <button class="nav-item" id="groceryNav" data-nav="grocery" data-feature-controlled="1" onclick="navigate('grocery')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-        </span><span data-i18n="nav.grocery">Mercado
+        </span><span class="nav-text" data-i18n="nav.grocery">Mercado</span>
       </button>
       <button class="nav-item" id="investmentsNav" data-nav="investments" data-feature-controlled="1" onclick="navigate('investments')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-        </span><span data-i18n="nav.investments">Investimentos
+        </span><span class="nav-text" data-i18n="nav.investments">Investimentos</span>
       </button>
       <button class="nav-item" id="debtsNav" data-nav="debts" data-feature-controlled="1" onclick="navigate('debts')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-        </span><span data-i18n="nav.debts">Dívidas
+        </span><span class="nav-text" data-i18n="nav.debts">Dívidas</span>
       </button>
       <button class="nav-item" id="pricesNav" data-nav="prices" data-feature-controlled="1" onclick="navigate('prices')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/></svg>
-        </span><span data-i18n="nav.prices">Preços
+        </span><span class="nav-text" data-i18n="nav.prices">Preços</span>
       </button>
       <button class="nav-item" id="aiInsightsNav" data-nav="ai_insights" data-feature-controlled="1" onclick="navigate('ai_insights')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><circle cx="19" cy="5" r="3" fill="currentColor" stroke="none" opacity=".8"/></svg>
-        </span><span data-i18n="nav.ai_insights">AI Insights
+        </span><span class="nav-text" data-i18n="nav.ai_insights">AI Insights</span>
       </button>
       <button class="nav-item" id="dreamsNav" data-nav="dreams" data-feature-controlled="1" onclick="navigate('dreams')" style="display:none">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        </span><span data-i18n="nav.dreams">Sonhos
+        </span><span class="nav-text" data-i18n="nav.dreams">Sonhos</span>
       </button>
     </div><!-- /modules section end -->
 
@@ -638,12 +634,12 @@
       <button class="nav-item" onclick="navigate('help')" id="helpNav" data-nav="help">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </span>Ajuda
+        </span><span class="nav-text">Ajuda</span>
       </button>
       <button class="nav-item" onclick="navigate('privacy')" id="privacyNav" data-nav="privacy">
         <span class="ni-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </span>Privacidade
+        </span><span class="nav-text">Privacidade</span>
       </button>
     </div>
       
@@ -744,11 +740,11 @@
         <button onclick="document.getElementById('dashMemberFilter').value='';document.getElementById('dashRelGroup').value='';loadDashboard()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:.85rem;padding:0;line-height:1" title="Limpar filtro">✕</button>
       </div>
       <!-- family badge moved to FX bar; dashboard customize moved to page title bar -->
-      <div class="grid-4 mb-4" id="dashCardKpis">
-        <div class="stat-card"><div class="stat-accent"></div><div class="stat-label">Patrimônio Total</div><div class="stat-value text-accent" id="statTotal">—</div><div class="stat-sub">Todas as contas</div></div>
-        <div class="stat-card"><div class="stat-accent" style="background:var(--green)"></div><div class="stat-label">Receitas do Mês</div><div class="stat-value text-green" id="statIncome">—</div><div class="stat-sub">Mês atual</div></div>
-        <div class="stat-card"><div class="stat-accent" style="background:var(--red)"></div><div class="stat-label">Despesas do Mês</div><div class="stat-value text-red" id="statExpenses">—</div><div class="stat-sub">Mês atual</div></div>
-        <div class="stat-card"><div class="stat-accent" style="background:var(--amber)"></div><div class="stat-label">Saldo do Mês</div><div class="stat-value" id="statBalance">—</div><div class="stat-sub">Receitas − Despesas</div></div>
+      <div class="grid-4 mb-4 dash-kpi-grid" id="dashCardKpis">
+        <div class="stat-card dash-kpi-card dash-kpi-card--total"><div class="stat-accent dash-kpi-accent"></div><div class="stat-label dash-kpi-label">Patrimônio Total</div><div class="stat-value dash-kpi-value text-accent" id="statTotal">—</div><div class="stat-sub dash-kpi-sub">Todas as contas</div></div>
+        <div class="stat-card dash-kpi-card dash-kpi-card--income"><div class="stat-accent dash-kpi-accent"></div><div class="stat-label dash-kpi-label">Receitas do Mês</div><div class="stat-value dash-kpi-value text-green" id="statIncome">—</div><div class="stat-sub dash-kpi-sub">Mês atual</div></div>
+        <div class="stat-card dash-kpi-card dash-kpi-card--expense"><div class="stat-accent dash-kpi-accent"></div><div class="stat-label dash-kpi-label">Despesas do Mês</div><div class="stat-value dash-kpi-value text-red" id="statExpenses">—</div><div class="stat-sub dash-kpi-sub">Mês atual</div></div>
+        <div class="stat-card dash-kpi-card dash-kpi-card--balance"><div class="stat-accent dash-kpi-accent"></div><div class="stat-label dash-kpi-label">Saldo do Mês</div><div class="stat-value dash-kpi-value" id="statBalance">—</div><div class="stat-sub dash-kpi-sub">Receitas − Despesas</div></div>
       </div>
       <!-- Saldo por Conta -->
       <div class="card mb-4" id="dashCardAccounts">
