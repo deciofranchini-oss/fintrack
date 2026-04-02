@@ -610,3 +610,144 @@ window.txAiAnalyze           = txAiAnalyze;
 window.txAiClear             = txAiClear;
 window.switchProfTab         = switchProfTab;
 window.loadFormModeIntoProfile = loadFormModeIntoProfile;
+
+// ── Alert style / duration preferences ───────────────────────────────────
+
+const ALERT_STYLE_KEY    = () => `pref_${window.currentUser?.id||'local'}_alert_style`;
+const ALERT_DURATION_KEY = () => `pref_${window.currentUser?.id||'local'}_alert_duration`;
+const ALERT_SOUND_KEY    = () => `pref_${window.currentUser?.id||'local'}_alert_sound`;
+
+function getAlertStyle()    { try { return localStorage.getItem(ALERT_STYLE_KEY())    || 'toast'; } catch(_) { return 'toast'; } }
+function getAlertDuration() { try { return parseInt(localStorage.getItem(ALERT_DURATION_KEY()) || '3200', 10) || 3200; } catch(_) { return 3200; } }
+function getAlertSound()    { try { return localStorage.getItem(ALERT_SOUND_KEY()) === 'true'; } catch(_) { return false; } }
+
+function selectAlertStyle(style) {
+  const toastBtn = document.getElementById('alertStyleToastBtn');
+  const modalBtn = document.getElementById('alertStyleModalBtn');
+  const hidden   = document.getElementById('myProfileAlertStyle');
+  const durRow   = document.getElementById('alertToastDurationRow');
+  const accent   = '1.5px solid var(--accent)';
+  const neutral  = '1.5px solid var(--border)';
+  if (toastBtn) {
+    toastBtn.style.border     = style === 'toast' ? accent  : neutral;
+    toastBtn.style.background = style === 'toast' ? 'var(--accent-lt,#e8f2ee)' : 'transparent';
+    toastBtn.querySelector('div').style.color = style === 'toast' ? 'var(--accent)' : 'var(--text2)';
+  }
+  if (modalBtn) {
+    modalBtn.style.border     = style === 'modal' ? accent  : neutral;
+    modalBtn.style.background = style === 'modal' ? 'var(--accent-lt,#e8f2ee)' : 'transparent';
+    modalBtn.querySelector('div').style.color = style === 'modal' ? 'var(--accent)' : 'var(--text2)';
+  }
+  if (hidden)  hidden.value = style;
+  if (durRow)  durRow.style.display = style === 'toast' ? '' : 'none';
+}
+
+function selectAlertDuration(ms) {
+  const hidden = document.getElementById('myProfileAlertDuration');
+  if (hidden) hidden.value = String(ms);
+  document.querySelectorAll('input[name="alertDuration"]').forEach(r => {
+    r.checked = parseInt(r.value, 10) === ms;
+  });
+}
+
+function loadAlertPrefsIntoProfile() {
+  const style    = getAlertStyle();
+  const duration = getAlertDuration();
+  const sound    = getAlertSound();
+  selectAlertStyle(style);
+  selectAlertDuration(duration);
+  const soundEl = document.getElementById('myProfileAlertSound');
+  if (soundEl) soundEl.checked = sound;
+}
+
+function saveAlertPrefsFromProfile() {
+  const style    = document.getElementById('myProfileAlertStyle')?.value    || 'toast';
+  const duration = document.getElementById('myProfileAlertDuration')?.value || '3200';
+  const sound    = !!(document.getElementById('myProfileAlertSound')?.checked);
+  try {
+    localStorage.setItem(ALERT_STYLE_KEY(),    style);
+    localStorage.setItem(ALERT_DURATION_KEY(), duration);
+    localStorage.setItem(ALERT_SOUND_KEY(),    String(sound));
+  } catch(_) {}
+}
+
+// ── Override toast() to respect user alert style pref ─────────────────────
+// Wraps the global toast() from utils.js after page load
+(function _patchToast() {
+  function _patch() {
+    if (typeof window.toast !== 'function') return;
+    const _orig = window.toast;
+    window.toast = function(msg, type = 'info') {
+      const style = getAlertStyle();
+      if (style === 'modal') {
+        _showAlertModal(msg, type);
+      } else {
+        _showToastWithDuration(msg, type, getAlertDuration());
+      }
+      if (type === 'success' && getAlertSound()) _playAlertSound();
+    };
+    window._origToast = _orig;
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _patch);
+  } else {
+    // Defer slightly so utils.js toast is defined
+    setTimeout(_patch, 200);
+  }
+})();
+
+function _showToastWithDuration(msg, type, duration) {
+  if (typeof window._origToast === 'function') {
+    // Use original but with custom duration
+    const icons = { success:'✓', error:'✕', info:'i' };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span style="font-weight:700">${icons[type]||'i'}</span><span>${msg}</span>`;
+    const container = document.getElementById('toast-container');
+    if (container) container.appendChild(el);
+    const ms = (type === 'error') ? Math.max(duration, 4000) : duration;
+    setTimeout(() => {
+      el.style.opacity = '0'; el.style.transform = 'translateX(16px)'; el.style.transition = '.2s';
+      setTimeout(() => el.remove(), 200);
+    }, ms);
+  }
+}
+
+function _showAlertModal(msg, type) {
+  // Remove any existing
+  const existing = document.getElementById('alertModalOverlay');
+  if (existing) existing.remove();
+
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+  const overlay = document.createElement('div');
+  overlay.id = 'alertModalOverlay';
+  overlay.innerHTML = `
+    <div id="alertModalBox">
+      <div id="alertModalIcon">${icons[type] || 'ℹ️'}</div>
+      <div id="alertModalMsg">${msg}</div>
+      <button class="btn btn-primary btn-sm" id="alertModalBtn" onclick="document.getElementById('alertModalOverlay').remove()">OK</button>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('alertModalBtn')?.focus(), 50);
+}
+
+function _playAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.25);
+  } catch(_) {}
+}
+
+window.selectAlertStyle    = selectAlertStyle;
+window.selectAlertDuration = selectAlertDuration;
+window.loadAlertPrefsIntoProfile = loadAlertPrefsIntoProfile;
+window.saveAlertPrefsFromProfile = saveAlertPrefsFromProfile;
+window.getAlertStyle       = getAlertStyle;
+window.getAlertDuration    = getAlertDuration;

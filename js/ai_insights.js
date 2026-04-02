@@ -154,7 +154,7 @@ function _aiShowTab(tab) {
     const btn   = document.getElementById('aiTab-' + t);
     const panel = document.getElementById('aiPanel-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
-    if (panel) panel.style.display = t === tab ? '' : 'none';
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
   });
   if (tab === 'snapshots') {
     loadAiSnapshots().catch(err => console.warn('[AIInsights] snapshots tab refresh:', err?.message || err));
@@ -244,7 +244,7 @@ function _aiEnsureSnapshotScaffold() {
     const chatPanel = document.getElementById('aiPanel-chat');
     const panel = document.createElement('div');
     panel.id = 'aiPanel-snapshots';
-    panel.style.display = 'none';
+    panel.style.display = 'none'; /* will be set to 'block' by _aiShowTab */
     panel.innerHTML = `
       <div class="ai-snapshots-wrap">
         <div class="ai-snapshots-header card">
@@ -1541,22 +1541,22 @@ function _aiRenderAnalysis(r) {
     if (r.forecast?.risk_level === 'high')   healthScore = Math.max(0,   healthScore - 12);
     if (r.anomalies?.length > 2)             healthScore = Math.max(0,   healthScore - 6);
   }
-  const healthColor = healthScore >= 75 ? '#22c55e' : healthScore >= 50 ? '#f59e0b' : '#ef4444';
+  const healthColor = healthScore >= 75 ? '#2a6049' : healthScore >= 50 ? '#d97706' : '#dc2626';
   const healthLabel = healthScore >= 75 ? 'Saudável' : healthScore >= 50 ? 'Atenção' : 'Crítico';
   const healthEmoji = healthScore >= 75 ? '💚' : healthScore >= 50 ? '💛' : '❤️';
 
   // ── Trend icon & forecast ─────────────────────────────────────────────
   const trendDir = r.forecast?.trend || ctx?.financialProjection?.trend_direction || 'stable';
   const trendMeta = {
-    positive: { icon:'📈', label:'Tendência positiva', color:'#22c55e' },
-    negative: { icon:'📉', label:'Tendência negativa', color:'#ef4444' },
-    mixed:    { icon:'↕️', label:'Tendência mista',    color:'#f59e0b' },
-    stable:   { icon:'➡️', label:'Estável',            color:'#60a5fa' },
-  }[trendDir] || { icon:'📊', label:'Análise', color:'#60a5fa' };
+    positive: { icon:'📈', label:'Tendência positiva', color:'#2a6049' },
+    negative: { icon:'📉', label:'Tendência negativa', color:'#dc2626' },
+    mixed:    { icon:'↕️', label:'Tendência mista',    color:'#d97706' },
+    stable:   { icon:'➡️', label:'Estável',            color:'#2a6049' },
+  }[trendDir] || { icon:'📊', label:'Análise', color:'#2a6049' };
 
   // ── Hero card ─────────────────────────────────────────────────────────
   const net      = ctx?.summary?.netResult ?? 0;
-  const netColor = net >= 0 ? '#22c55e' : '#ef4444';
+  const netColor = net >= 0 ? '#2a6049' : '#dc2626';
   const netLabel = net >= 0 ? 'Superávit' : 'Déficit';
 
   const circleCircumference = 2 * Math.PI * 38; // r=38
@@ -1634,15 +1634,15 @@ function _aiRenderAnalysis(r) {
   if (fc || proj) {
     const riskLevel = fc?.risk_level || 'medium';
     const riskMeta = {
-      low:    { color:'#22c55e', bg:'#052e16', label:'Risco Baixo',  icon:'🛡️' },
-      medium: { color:'#f59e0b', bg:'#1c1001', label:'Risco Médio',  icon:'⚡' },
-      high:   { color:'#ef4444', bg:'#1c0000', label:'Risco Alto',   icon:'🔥' },
-    }[riskLevel] || { color:'#60a5fa', bg:'#0c1a2e', label:'', icon:'📊' };
+      low:    { color:'#2a6049', bg:'#0a1e12', label:'Risco Baixo',  icon:'🛡️' },
+      medium: { color:'#d97706', bg:'#1a1000', label:'Risco Médio',  icon:'⚡' },
+      high:   { color:'#dc2626', bg:'#190000', label:'Risco Alto',   icon:'🔥' },
+    }[riskLevel] || { color:'#2a6049', bg:'#0a1e12', label:'', icon:'📊' };
 
     // ── KPIs de compromissos recorrentes ─────────────────────────────
     let rcmKpis = '';
     if (rcm?.monthly_expense || rcm?.monthly_income) {
-      const rcmNetColor = rcm.monthly_net >= 0 ? '#22c55e' : '#ef4444';
+      const rcmNetColor = rcm.monthly_net >= 0 ? 'var(--accent)' : 'var(--red,#dc2626)';
       rcmKpis = `<div class="air-rcm-strip">
         <div class="air-rcm-kpi"><span>Receita recorrente/mês</span><strong class="air-green">${fmtN(rcm.monthly_income)}</strong></div>
         <div class="air-rcm-kpi"><span>Despesa recorrente/mês</span><strong class="air-red">${fmtN(rcm.monthly_expense)}</strong></div>
@@ -1666,7 +1666,7 @@ function _aiRenderAnalysis(r) {
           </span>
           <span class="air-proj-val air-green">${fmtN(m.projected_income)}</span>
           <span class="air-proj-val air-red">${fmtN(m.projected_expense)}</span>
-          <span class="air-proj-net" style="color:${isPos?'#22c55e':'#ef4444'}">${isPos?'+':''}${fmtN(m.projected_net)}</span>
+          <span class="air-proj-net" style="color:${isPos?'var(--accent)':'var(--red,#dc2626)'}">${isPos?'+':''}${fmtN(m.projected_net)}</span>
           <span class="air-proj-chevron" id="air-proj-chev-${m.month}">▼</span>
         </div>
         <div class="air-proj-detail" id="air-proj-detail-${m.month}" style="display:none">

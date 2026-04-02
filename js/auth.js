@@ -472,6 +472,12 @@ function showLoginScreen() {
   const ls = document.getElementById('loginScreen');
   if (ls) {
     ls.style.display = 'flex';
+    // FIX: Re-aplicar tema sempre que a tela for exibida (cobre logout, sessão expirada,
+    // e qualquer re-exibição posterior ao boot). Lê do cache em memória se disponível,
+    // senão do localStorage (sempre disponível, sem network).
+    try {
+      // Login theme removed — single unified design
+    } catch(_) {}
     // Re-apply access request visibility every time login screen is shown
     _applyAccessRequestVisibilityFromLocalStorage();
     // Fix logo: use same LOGO_URL used throughout the app
@@ -545,6 +551,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. Also fetch from Supabase anon (for mobile users who never set it locally)
   //    Uses a short timeout so it doesn't block anything
   _fetchAccessRequestSettingAnon();
+  // 3. FIX: Aplicar tema de login imediatamente do localStorage — sem network,
+  //    sem depender do boot. Garante que o usuário veja o tema correto desde o
+  //    primeiro frame, mesmo antes de qualquer sessão ser restaurada.
+  try {
+    // Login theme removed — single unified design
+  } catch(_) {}
 });
 
 async function _fetchAccessRequestSettingAnon() {
@@ -557,14 +569,16 @@ async function _fetchAccessRequestSettingAnon() {
       return; // localStorage is authoritative — skip DB fetch
     }
 
+    // No localStorage → keep hidden while we fetch (avoids flash)
+    _applyAccessRequestVisibility(false);
+
     // ── Step 2: No localStorage → fetch from DB (first-ever load or cleared) ──
     let attempts = 0;
     while (!window.sb && attempts++ < 30) {
       await new Promise(r => setTimeout(r, 100));
     }
     if (!window.sb) {
-      // No Supabase and no localStorage → show by default
-      _applyAccessRequestVisibility(true);
+      // No Supabase and no localStorage → keep hidden (safe default)
       return;
     }
 
@@ -597,22 +611,22 @@ async function _fetchAccessRequestSettingAnon() {
     if (found) {
       let val = raw;
       if (typeof val === 'string') { try { val = JSON.parse(val); } catch(_) {} }
-      const enabled = val === null || val === true || val === 'true' || val === 1 || val === '1';
+      const enabled = val === true || val === 'true' || val === 1 || val === '1';
       // Cache in localStorage for next visit
       try { localStorage.setItem('ft_show_access_request', enabled ? 'true' : 'false'); } catch(_) {}
       _applyAccessRequestVisibility(enabled);
     } else {
-      // Not in DB and no localStorage → default: show (backwards compatible)
-      _applyAccessRequestVisibility(true);
-      try { localStorage.setItem('ft_show_access_request', 'true'); } catch(_) {}
+      // Not in DB and no localStorage → default: hidden (admin must explicitly enable)
+      _applyAccessRequestVisibility(false);
+      try { localStorage.setItem('ft_show_access_request', 'false'); } catch(_) {}
     }
   } catch(_) {
-    _applyAccessRequestVisibility(true);
+    // On any error, keep hidden — safer than showing registration to wrong users
+    _applyAccessRequestVisibility(false);
   }
 }
 
 
-// ── Access request visibility — reads from DB only, never from localStorage ──
 function _applyAccessRequestVisibility(enabled) {
   try {
     const wrap = document.getElementById('loginRequestAccessWrap');
@@ -892,9 +906,50 @@ async function doChangeMyPwd() {
   } catch(e) { errEl.textContent = 'Erro: ' + (e?.message || e); errEl.style.display = ''; }
 }
 
+
+function _setLoginBusy(isBusy, label) {
+  try {
+    const btn = document.getElementById('loginBtn');
+    if (btn) {
+      btn.disabled = !!isBusy;
+      btn.dataset.originalHtml = btn.dataset.originalHtml || btn.innerHTML;
+      btn.innerHTML = isBusy ? `<span>${label || "A carregar..."}</span>` : (btn.dataset.originalHtml || btn.innerHTML);
+    }
+  } catch(_) {}
+}
+
+async function _bootIntoAppSafely(options = {}) {
+  const { allowFamilyWizard = true, busyLabel = 'A carregar...' } = options || {};
+  _setLoginBusy(true, busyLabel);
+  try {
+    updateUserUI();
+    if (!sb) throw new Error('Configure o Supabase primeiro.');
+
+    if (allowFamilyWizard && !currentUser?.family_id &&
+        currentUser?.role !== 'admin' &&
+        currentUser?.role !== 'owner') {
+      if (typeof enforceFirstLoginFamilyCreation === 'function') {
+        await enforceFirstLoginFamilyCreation();
+        return 'wizard';
+      }
+    }
+
+    await bootApp();
+    hideLoginScreen();
+    return 'booted';
+  } catch (e) {
+    console.error('[auth boot]', e);
+    showLoginScreen();
+    try { showLoginFormArea(); } catch(_) {}
+    try { showLoginErr('Erro ao carregar o aplicativo: ' + (e?.message || e)); } catch(_) {}
+    throw e;
+  } finally {
+    _setLoginBusy(false);
+  }
+}
+
 // ── On login success ──
 async function onLoginSuccess() {
-  updateUserUI();
   if (!sb) {
     toast('Configure o Supabase primeiro','error'); return;
   }
@@ -908,26 +963,17 @@ async function onLoginSuccess() {
     if (typeof Cursor !== 'undefined') Cursor.show('A carregar…');
   }
 
-  hideLoginScreen();
-
   // Check for new feedback reports (admin only)
   if (typeof _checkNewFeedbackOnLogin === 'function') _checkNewFeedbackOnLogin().catch(()=>{});
 
   // Apply access request visibility based on admin setting
-  if (typeof initAccessRequestVisibility === 'function') initAccessRequestVisibility().catch(()=>{});
+  if (typeof initAccessRequestVisibility === 'function') Promise.resolve(initAccessRequestVisibility()).catch(()=>{});
 
-  // If the user has no family_id and is not a global admin/owner,
-  // launch the wizard so they can create their own family as Owner.
-  if (!currentUser?.family_id &&
-      currentUser?.role !== 'admin' &&
-      currentUser?.role !== 'owner') {
-    if (typeof enforceFirstLoginFamilyCreation === 'function') {
-      await enforceFirstLoginFamilyCreation();
-      return; // wizard's _wzFinish() calls bootApp() when done
-    }
+  try {
+    await _bootIntoAppSafely({ allowFamilyWizard: true, busyLabel: 'A carregar…' });
+  } finally {
+    if (!platformInfo.isWindows && typeof Cursor !== 'undefined') Cursor.hide();
   }
-  await bootApp();
-  if (!platformInfo.isWindows && typeof Cursor !== 'undefined') Cursor.hide();
 }
 
 // ── Magic-link post-auth gate ─────────────────────────────────────────────
@@ -985,6 +1031,25 @@ function _registerMagicLinkGate() {
 }
 
 // ── Update UI with current user ──
+// ── Atualiza KPI pills no header do modal de administração ──────────────────
+function _uamUpdateHeaderKpis() {
+  try {
+    const uCount = document.querySelectorAll('#usersList .uam-user-row').length;
+    const fCount = (_families || []).length;
+    const pBadge = document.getElementById('uaPendingBadge');
+    const pCount = pBadge ? (parseInt(pBadge.textContent) || 0) : 0;
+    const uEl = document.getElementById('uamKpiUsers');
+    const fEl = document.getElementById('uamKpiFamilies');
+    const pPill = document.getElementById('uamKpiPendingPill');
+    const pEl  = document.getElementById('uamKpiPending');
+    if (uEl) uEl.textContent = uCount + ' usuário' + (uCount !== 1 ? 's' : '');
+    if (fEl) fEl.textContent = fCount + ' família' + (fCount !== 1 ? 's' : '');
+    if (pEl) pEl.textContent = pCount;
+    if (pPill) pPill.style.display = pCount > 0 ? '' : 'none';
+  } catch(_) {}
+}
+window._uamUpdateHeaderKpis = _uamUpdateHeaderKpis;
+
 function updateUserUI() {
   if (!currentUser) return;
   const nameEl  = document.getElementById('currentUserName');
@@ -1028,6 +1093,12 @@ function updateUserUI() {
       }
     });
   });
+  // Elementos genéricos admin-visible (ex: botões em relatórios)
+  document.querySelectorAll('.admin-visible').forEach(el => {
+    if (!el.id || (!el.id.includes('Topbar') && !el.id.includes('Nav'))) {
+      el.style.display = isAdmin ? '' : 'none';
+    }
+  });
   // Audit: sempre visível — apenas garante que não esteja escondido
   document.querySelectorAll('[data-nav="audit"]').forEach(el => {
     el.style.display = '';
@@ -1054,6 +1125,9 @@ function updateUserUI() {
 
   // Show feedback button only for regular users (hidden for admin/owner)
   if (typeof _updateFeedbackBtnVisibility === 'function') _updateFeedbackBtnVisibility();
+
+  // Aplica visibilidade dos canais de notificação (WA/Telegram on/off globalmente)
+  if (typeof applyNotifChannelVisibility === 'function') applyNotifChannelVisibility();
 
   // Apply permission restrictions
   applyPermissions();
@@ -1099,9 +1173,9 @@ if (!p.can_admin) {
 }
 
   // Módulos por família: visibilidade depende de feature flag
-  if (typeof applyPricesFeature === 'function') applyPricesFeature().catch(() => {});
-  if (typeof applyGroceryFeature === 'function') applyGroceryFeature().catch(() => {});
-  if (typeof applyAiInsightsFeature === 'function') applyAiInsightsFeature().catch(() => {});
+  if (typeof applyPricesFeature === 'function') Promise.resolve(applyPricesFeature()).catch(() => {}); // safe: undefined ou Promise
+  if (typeof applyGroceryFeature === 'function') Promise.resolve(applyGroceryFeature()).catch(() => {}); // safe: undefined ou Promise
+  if (typeof applyAiInsightsFeature === 'function') Promise.resolve(applyAiInsightsFeature()).catch(() => {}); // safe: undefined ou Promise
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1163,6 +1237,14 @@ function toggleUserMenu(e) {
   dd.style.top  = top  + 'px';
   dd.style.left = left + 'px';
 
+  // FIX: Sync dark mode toggle state whenever menu opens (handles race with app.js patch)
+  requestAnimationFrame(function() {
+    try {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      if (typeof _syncAppThemeToggleUI === 'function') _syncAppThemeToggleUI(currentTheme);
+    } catch(_) {}
+  });
+
   // Close on outside click
   setTimeout(() => document.addEventListener('click', _closeUserMenuOutside), 10);
 }
@@ -1221,6 +1303,7 @@ function openMyProfile() {
 
   // --- Notification defaults ---
   if (typeof loadFormModeIntoProfile === 'function') loadFormModeIntoProfile();
+  if (typeof loadAlertPrefsIntoProfile === 'function') loadAlertPrefsIntoProfile();
   const waEl = document.getElementById('myProfileWhatsappNumber');
   const tgEl = document.getElementById('myProfileTelegramChatId');
   if (waEl) waEl.value = currentUser?.whatsapp_number || '';
@@ -1293,6 +1376,12 @@ function openMyProfile() {
 
   openModal('myProfileModal');
   setTimeout(() => document.getElementById('myProfilePwd1')?.focus(), 200);
+  // Pré-renderiza o link getUpdates se o bot token já estiver configurado
+  if (typeof _initTgGetUpdatesHintOnProfileOpen === 'function') {
+    _initTgGetUpdatesHintOnProfileOpen().catch(() => {});
+  }
+  // Reaplicar visibilidade de canais (WA/Telegram) ao abrir o perfil
+  if (typeof applyNotifChannelVisibility === 'function') applyNotifChannelVisibility();
 }
 
 function previewMyProfileAvatar(input) {
@@ -1575,6 +1664,7 @@ async function saveMyProfile() {
 
     toast(t('profile.updated'), 'success');
     if (typeof _saveFormModeFromProfile === 'function') _saveFormModeFromProfile();
+    if (typeof saveAlertPrefsFromProfile === 'function') saveAlertPrefsFromProfile();
     closeModal('myProfileModal');
   } catch(e) {
     if (errEl) { errEl.textContent = 'Erro: ' + (e.message || e); errEl.style.display = ''; }
@@ -1760,25 +1850,94 @@ async function doRegister() {
     // Capture preferred language from register form (if present)
     const regLang = document.getElementById('regLanguage')?.value || 'pt';
 
-    // Insert pending record via SECURITY DEFINER RPC — bypasses RLS for anon users.
-    // The direct sb.from('app_users').insert() fails with RLS when the user is not
-    // authenticated yet. The RPC runs with definer privileges so anon can call it.
-    const { error: insErr } = await sb.rpc('register_pending_user', {
-      p_name:          name,
-      p_email:         email,
-      p_password_hash: pwdHash,
-      p_lang:          regLang,
-    });
-    if (insErr) throw insErr;
+    // Verificar se há um convite pendente para este e-mail
+    const pendingInvite = window._pendingInvite;
+    const hasValidInvite = pendingInvite && pendingInvite.email === email.toLowerCase();
 
-    // Notificar admin por e-mail via EmailJS (best-effort)
-    await _notifyAdminNewRegistration(name, email).catch(e =>
-      console.warn('[register] email admin falhou:', e.message)
-    );
+    if (hasValidInvite) {
+      // ── Fluxo de convite: registrar já aprovado e vincular à família ──────
+      const { data: newUser, error: insErr } = await sb.rpc('register_pending_user', {
+        p_name:          name,
+        p_email:         email,
+        p_password_hash: pwdHash,
+        p_lang:          regLang,
+      });
+      if (insErr) throw insErr;
 
-    // Show pending screen
-    document.getElementById('registerFormArea').style.display = 'none';
-    document.getElementById('pendingApprovalArea').style.display = '';
+      // Buscar o ID do usuário recém-criado
+      let userId = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise(r => setTimeout(r, 300));
+        const { data: u } = await sb.from('app_users').select('id').eq('email', email).maybeSingle();
+        if (u?.id) { userId = u.id; break; }
+      }
+
+      if (userId) {
+        // Aprovar diretamente (usar RPC se disponível, senão update direto)
+        try {
+          await sb.rpc('approve_user', {
+            p_user_id:  userId,
+            p_family_id: pendingInvite.familyId,
+          });
+        } catch(rpcErr) {
+          // Fallback: update direto
+          await sb.from('app_users').update({
+            approved: true,
+            active:   true,
+            must_change_pwd: false,
+            family_id: pendingInvite.familyId,
+          }).eq('id', userId);
+          await sb.from('family_members').upsert(
+            { user_id: userId, family_id: pendingInvite.familyId, role: pendingInvite.role },
+            { onConflict: 'user_id,family_id' }
+          );
+        }
+
+        // Marcar o convite como usado
+        try {
+          await sb.from('family_invites').update({
+            used:    true,
+            used_at: new Date().toISOString(),
+          }).eq('token', pendingInvite.token);
+        } catch(e) { console.warn('[invite] marcar usado:', e.message); }
+
+        window._pendingInvite = null;
+      }
+
+      // Fazer login automático
+      btn.textContent = '✅ Conta criada! Entrando...';
+      await new Promise(r => setTimeout(r, 800));
+
+      // Tentar login com as credenciais recém-criadas
+      const emailEl2 = document.getElementById('loginEmail');
+      const passEl2  = document.getElementById('loginPassword');
+      if (emailEl2) emailEl2.value = email;
+      if (passEl2)  passEl2.value  = pwd;
+      await doLogin();
+      return;
+
+    } else {
+      // ── Fluxo normal: registro pendente de aprovação ──────────────────────
+      // Insert pending record via SECURITY DEFINER RPC — bypasses RLS for anon users.
+      // The direct sb.from('app_users').insert() fails with RLS when the user is not
+      // authenticated yet. The RPC runs with definer privileges so anon can call it.
+      const { error: insErr } = await sb.rpc('register_pending_user', {
+        p_name:          name,
+        p_email:         email,
+        p_password_hash: pwdHash,
+        p_lang:          regLang,
+      });
+      if (insErr) throw insErr;
+
+      // Notificar admin por e-mail via EmailJS (best-effort)
+      await _notifyAdminNewRegistration(name, email).catch(e =>
+        console.warn('[register] email admin falhou:', e.message)
+      );
+
+      // Show pending screen
+      document.getElementById('registerFormArea').style.display = 'none';
+      document.getElementById('pendingApprovalArea').style.display = '';
+    }
 
   } catch(e) {
     errEl.textContent = 'Erro: ' + (e?.message || e);
@@ -1823,6 +1982,9 @@ async function openUserAdmin() {
 
   await loadFamiliesList();
   openModal('userAdminModal');
+
+  // Atualizar KPIs do header após dados carregados
+  if (typeof _uamUpdateHeaderKpis === 'function') setTimeout(_uamUpdateHeaderKpis, 300);
 
   // Abas Pendentes e Usuários: apenas admin global
   const tabPending = document.getElementById('uaTabPending');
@@ -2507,6 +2669,7 @@ async function loadFamiliesList() {
     const _pricesOn      = !!(_fc['prices_enabled_'      + fid]);
     const _investmentsOn = !!(_fc['investments_enabled_' + fid]);
     const _aiInsightsOn  = !!(_fc['ai_insights_enabled_' + fid]);
+    const _dreamsOn      = !!(_fc['dreams_enabled_'      + fid]);
     const isOwner    = isGlobalAdmin || members.some(m => m.user_id === currentUser?.id && m.member_role === 'owner');
 
     const membersHtml = members.length
@@ -2571,6 +2734,11 @@ async function loadFamiliesList() {
             class="fam-mod-chip${_aiInsightsOn?' active':''}"
             onclick="_famToggleModule('${fid}','ai_insights_enabled_','famAiInsightsBtn-${fid}','applyAiInsightsFeature')">
             🤖 AI Insights <span class="fam-mod-dot">${_aiInsightsOn?'●':'○'}</span>
+          </button>
+          <button id="famDreamsBtn-${fid}"
+            class="fam-mod-chip${_dreamsOn?' active':''}"
+            onclick="_famToggleModule('${fid}','dreams_enabled_','famDreamsBtn-${fid}','applyDreamsFeature')">
+            🌟 Sonhos <span class="fam-mod-dot">${_dreamsOn?'●':'○'}</span>
           </button>
         </div>
       </div>`;
@@ -2892,6 +3060,13 @@ async function wipeFamilyData(id, name) {
   }
 }
 
+// ── Sistema de convite com token ──────────────────────────────────────────
+// Fluxo:
+// 1. Owner clica "Convidar" → cria token na tabela family_invites + envia e-mail
+// 2. Convidado clica no link (?invite=TOKEN) → tela de registro pré-preenchida
+// 3. Convidado se cadastra → é automaticamente aprovado e vinculado à família
+// ──────────────────────────────────────────────────────────────────────────
+
 async function inviteToFamily(familyId, familyName) {
   const emailEl = document.getElementById(`inviteEmail-${familyId}`);
   const roleEl  = document.getElementById(`inviteRole-${familyId}`);
@@ -2910,63 +3085,266 @@ async function inviteToFamily(familyId, familyName) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
 
   try {
-    // Verificar se já é usuário cadastrado
-    const { data: existing } = await sb.from('app_users').select('id,name,approved,active').eq('email', email).maybeSingle();
+    // ── Verificar se já é usuário cadastrado ──────────────────────────────
+    const { data: existing } = await sb.from('app_users')
+      .select('id,name,approved,active').eq('email', email).maybeSingle();
 
     if (existing) {
-      // Usuário já existe: adicionar diretamente à família
+      // Usuário já existe: adicionar diretamente à família (sem token)
       const { error } = await sb.from('family_members').upsert(
         { user_id: existing.id, family_id: familyId, role },
         { onConflict: 'user_id,family_id' }
       );
       if (error) throw new Error(error.message);
-      toast(`✓ ${email} adicionado à família como ${role}`, 'success');
-    } else {
-      // Usuário novo: criar registro pendente com vínculo à família
-      const { data: newUser, error: insErr } = await sb.from('app_users').insert({
-        email,
-        name:       email.split('@')[0],
-        role:       'user',
-        approved:   false,
-        active:     false,
-        family_id:  familyId,
-        must_change_pwd: true,
-      }).select().single();
-      if (insErr) throw new Error(insErr.message);
-
-      // Adicionar em family_members com role escolhido
-      await sb.from('family_members').insert({ user_id: newUser.id, family_id: familyId, role });
-
-      // Enviar e-mail de convite via EmailJS
-      await _sendInviteEmail(email, familyName, currentUser.name || currentUser.email);
-      toast(`✓ Convite enviado para ${email}`, 'success');
+      // Sincronizar family_id legacy
+      await sb.from('app_users').update({ family_id: familyId }).eq('id', existing.id);
+      toast(`✓ ${existing.name || email} adicionado à família como ${role}`, 'success');
+      if (emailEl) emailEl.value = '';
+      await loadFamiliesList();
+      return;
     }
 
+    // ── Usuário novo: criar token de convite ──────────────────────────────
+    // Gerar token único
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map(b => b.toString(16).padStart(2,'0')).join('');
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // expira em 7 dias
+
+    // Salvar o convite na tabela family_invites
+    // A tabela precisa existir — ver SQL abaixo (INVITE_SETUP_SQL)
+    const { error: invErr } = await sb.from('family_invites').insert({
+      token,
+      email,
+      family_id:  familyId,
+      role,
+      invited_by: currentUser?.app_user_id || currentUser?.id || null,
+      expires_at: expiresAt.toISOString(),
+      used:       false,
+    });
+
+    if (invErr) {
+      // Tabela não existe ainda — mostrar instruções para o admin criar
+      if (invErr.message?.includes('does not exist') || invErr.code === '42P01') {
+        _showInviteSetupRequired();
+        return;
+      }
+      throw new Error(invErr.message);
+    }
+
+    // Construir URL de convite
+    const appUrl = typeof getAppBaseUrl === 'function'
+      ? getAppBaseUrl()
+      : (window.location.origin + window.location.pathname);
+    const inviteUrl = `${appUrl}?invite=${token}`;
+
+    // Enviar e-mail com o link
+    await _sendInviteEmail(email, familyName, currentUser.name || currentUser.email, inviteUrl);
+
+    toast(`✅ Convite enviado para ${email}. O link expira em 7 dias.`, 'success');
     if (emailEl) emailEl.value = '';
     await loadFamiliesList();
+
   } catch(e) {
-    toast('Erro ao convidar: ' + e.message, 'error');
+    toast('Erro ao convidar: ' + (e.message || e), 'error');
+    console.error('[inviteToFamily]', e);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📨 Convidar'; }
   }
 }
 
-async function _sendInviteEmail(toEmail, familyName, inviterName) {
+/** Mostra modal com o SQL necessário para criar a tabela family_invites */
+function _showInviteSetupRequired() {
+  const sql = INVITE_SETUP_SQL;
+  let m = document.getElementById('_inviteSetupModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = '_inviteSetupModal';
+    m.className = 'modal-overlay';
+    m.onclick = e => { if (e.target === m) m.remove(); };
+    document.body.appendChild(m);
+  }
+  m.innerHTML = `<div class="modal" style="max-width:560px">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">⚙️ Configuração necessária</span>
+      <button class="modal-close" onclick="document.getElementById('_inviteSetupModal').remove()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.85rem;margin-bottom:12px">Para ativar o sistema de convites, execute o SQL abaixo no <strong>Supabase SQL Editor</strong>:</p>
+      <pre style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:.74rem;overflow-x:auto;white-space:pre-wrap">${esc(sql)}</pre>
+      <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="navigator.clipboard.writeText(${JSON.stringify(sql)}).then(()=>toast('SQL copiado!','success'))">
+        📋 Copiar SQL
+      </button>
+    </div>
+  </div>`;
+  m.classList.add('open');
+}
+
+/** Verifica se a URL contém um token de convite e processa */
+async function _checkInviteToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('invite');
+  if (!token) return false;
+
+  // Limpar da URL imediatamente
+  history.replaceState(null, '', window.location.pathname);
+
+  try {
+    // Buscar o convite (pode usar anon pois a política permite SELECT em family_invites)
+    const { data: invite, error } = await sb.from('family_invites')
+      .select('id,email,family_id,role,expires_at,used,families(name)')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (error || !invite) {
+      _showInviteError('Link de convite inválido ou expirado.');
+      return true;
+    }
+    if (invite.used) {
+      _showInviteError('Este convite já foi utilizado.');
+      return true;
+    }
+    if (new Date(invite.expires_at) < new Date()) {
+      _showInviteError('Este convite expirou. Peça ao owner da família um novo convite.');
+      return true;
+    }
+
+    // Guardar dados do convite para usar no registro
+    window._pendingInvite = {
+      token,
+      email:      invite.email,
+      familyId:   invite.family_id,
+      familyName: invite.families?.name || 'sua família',
+      role:       invite.role,
+      inviteId:   invite.id,
+    };
+
+    // Mostrar tela de registro pré-preenchida
+    _showInviteRegisterForm(window._pendingInvite);
+    return true;
+
+  } catch(e) {
+    console.warn('[invite]', e.message);
+    return false;
+  }
+}
+window._checkInviteToken = _checkInviteToken;
+
+/** Mostra tela de registro pré-preenchida com dados do convite */
+function _showInviteRegisterForm(invite) {
+  // Garantir que a tela de login está visível
+  const ls = document.getElementById('loginScreen');
+  if (ls) ls.style.display = 'flex';
+
+  // Ir para a área de registro
+  showRegisterArea?.();
+
+  setTimeout(() => {
+    // Pré-preencher e bloquear e-mail
+    const emailEl = document.getElementById('regEmail');
+    if (emailEl) {
+      emailEl.value    = invite.email;
+      emailEl.readOnly = true;
+      emailEl.style.background = 'var(--surface2)';
+      emailEl.style.color      = 'var(--muted)';
+    }
+
+    // Adicionar banner de boas-vindas acima do formulário
+    const formArea = document.getElementById('registerFormArea');
+    if (formArea && !document.getElementById('_inviteBanner')) {
+      const banner = document.createElement('div');
+      banner.id = '_inviteBanner';
+      banner.style.cssText = `
+        background: var(--accent-lt);
+        border: 1.5px solid var(--accent);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 20px;
+        font-size: .82rem;
+        color: var(--text);
+        line-height: 1.5;
+      `;
+      banner.innerHTML = `
+        <div style="font-weight:700;margin-bottom:4px;color:var(--accent)">
+          🎉 Você foi convidado!
+        </div>
+        <div>Crie sua senha para entrar na família <strong>${esc(invite.familyName)}</strong>. Seu e-mail já está pré-preenchido.</div>
+      `;
+      formArea.insertBefore(banner, formArea.firstChild);
+
+      // Alterar texto do botão
+      const regBtn = document.getElementById('regBtn');
+      if (regBtn) regBtn.querySelector('span').textContent = 'Criar conta e entrar';
+    }
+
+    // Focar no campo nome
+    document.getElementById('regName')?.focus();
+  }, 100);
+}
+
+/** Mostra erro de convite na tela de login */
+function _showInviteError(msg) {
+  const ls = document.getElementById('loginScreen');
+  if (ls) ls.style.display = 'flex';
+
+  const errBanner = document.createElement('div');
+  errBanner.style.cssText = `
+    position:fixed; top:24px; left:50%; transform:translateX(-50%);
+    background:#fef2f2; border:1.5px solid #fecaca; border-radius:12px;
+    padding:14px 20px; font-size:.85rem; color:#dc2626; z-index:99999;
+    box-shadow:0 8px 32px rgba(220,38,38,.15); max-width:420px; width:90%;
+    text-align:center;
+  `;
+  errBanner.innerHTML = `⚠️ <strong>Convite inválido</strong><br><span style="font-size:.78rem">${esc(msg)}</span>`;
+  document.body.appendChild(errBanner);
+  setTimeout(() => errBanner.remove(), 6000);
+}
+
+/** SQL para criar a tabela family_invites */
+const INVITE_SETUP_SQL = `-- Tabela de convites de família
+CREATE TABLE IF NOT EXISTS family_invites (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  token       TEXT NOT NULL UNIQUE,
+  email       TEXT NOT NULL,
+  family_id   UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL DEFAULT 'user',
+  invited_by  UUID REFERENCES app_users(id),
+  expires_at  TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+  used        BOOLEAN NOT NULL DEFAULT false,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Política RLS: owner pode criar e ler convites da sua família
+ALTER TABLE family_invites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow select on own token" ON family_invites
+  FOR SELECT USING (true);
+CREATE POLICY "Allow insert for authenticated" ON family_invites
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow update for token owner" ON family_invites
+  FOR UPDATE USING (true);`;
+
+async function _sendInviteEmail(toEmail, familyName, inviterName, inviteUrl) {
   try {
     const { autoCheckConfig } = await _getAutoCheckConfig();
     const serviceId  = autoCheckConfig?.emailServiceId  || 'service_8e4rkde';
     const publicKey  = autoCheckConfig?.emailPublicKey  || 'wwnXjEFDaVY7K-qIjwX0H';
     const templateId = autoCheckConfig?.emailTemplateId || 'template_fla7gdi';
-    const appUrl     = typeof getAppBaseUrl === 'function' ? getAppBaseUrl() : (window.location.origin + window.location.pathname);
+
+    const linkText = inviteUrl
+      ? `\n\nClique no link abaixo para criar sua conta e entrar diretamente na família:\n${inviteUrl}\n\nO link expira em 7 dias.`
+      : '';
 
     await emailjs.send(serviceId, templateId, {
       to_email:       toEmail,
       report_subject: `[Family FinTrack] Convite para a família "${familyName}"`,
       subject:        `[Family FinTrack] Convite para a família "${familyName}"`,
-      message:        `Você foi convidado por ${inviterName} para participar da família "${familyName}" no FinTrack.\n\nAcesse ${appUrl} e solicite acesso com este e-mail (${toEmail}).\n\nSeu acesso será aprovado automaticamente após o login.`,
+      message:        `Olá!\n\nVocê foi convidado(a) por ${inviterName} para participar da família "${familyName}" no Family FinTrack.${linkText}\n\nSe tiver dúvidas, entre em contato com ${inviterName}.`,
       family_name:    familyName,
       inviter:        inviterName,
-      app_url:        appUrl,
+      app_url:        inviteUrl || '',
     }, publicKey);
   } catch(e) {
     console.warn('[InviteEmail]', e.message);
@@ -3048,131 +3426,137 @@ async function updateMemberRole(selectEl) {
 // ── USERS ─────────────────────────────────────────────────────────
 
 async function loadUsersList() {
-  if (currentUser?.role !== 'admin') return; // apenas admin lista todos os usuários
-  // Usar RPC get_all_users() (SECURITY DEFINER) para evitar problemas de RLS.
-  // Fallback para select direto se a função ainda não foi criada.
-  let users, error;
+  if (currentUser?.role !== 'admin') return;
+  let users;
   const { data: rpcData, error: rpcErr } = await sb.rpc('get_all_users');
   if (rpcErr) {
-    console.warn('[loadUsersList] RPC get_all_users indisponível:', rpcErr.message);
-    // Fallback: select direto — funciona se RLS permitir ou não estiver ativa
-    ({ data: users, error } = await sb.from('app_users').select('*').order('created_at'));
-    if (error) {
+    const { data: direct, error: dirErr } = await sb.from('app_users').select('*').order('created_at');
+    if (dirErr) {
       const el = document.getElementById('usersList');
-      if (el) el.innerHTML = '<div style="padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;font-size:.82rem;color:#991b1b">'
-        + '<strong>⚠️ Não foi possível carregar a lista de usuários.</strong><br><br>'
-        + 'Execute <code>migration_approval_rls.sql</code> no Supabase para habilitar o gerenciamento completo.<br><br>'
-        + '<span style="color:#6b7280">Erro técnico: ' + error.message + '</span></div>';
+      if (el) el.innerHTML = '<div class="uam-empty-state"><div class="uam-empty-icon">⚠️</div>Não foi possível carregar usuários.<br><small>Execute migration_approval_rls.sql no Supabase.</small></div>';
       return;
     }
-    // Se o fallback retornou só 1 usuário (próprio admin por RLS), avisar
-    if (users && users.length <= 1) {
-      const el = document.getElementById('usersList');
-      if (el && users.length <= 1) {
-        const hint = document.createElement('div');
-        hint.style.cssText = 'padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:.78rem;color:#c2410c;margin-bottom:12px';
-        hint.innerHTML = '⚠️ Execute <code>migration_approval_rls.sql</code> no Supabase para exibir todos os usuários (RLS limitando visualização).';
-        el.prepend(hint);
-      }
-    }
+    users = direct;
   } else {
     users = rpcData;
   }
+
   const el = document.getElementById('usersList');
   const countEl = document.getElementById('userAdminCount');
-  if (countEl) countEl.textContent = `${users?.length||0} usuários cadastrados`;
-  if (!users?.length) { el.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted)">Nenhum usuário.</div>'; return; }
-  const pendingUsers = users.filter(u => !u.approved);
-  const activeUsers  = users.filter(u => u.approved);
+  if (!el) return;
 
-  // Build family name lookup
-  const famById = {};
-  _families.forEach(f => famById[f.id] = f.name);
+  if (!users?.length) {
+    el.innerHTML = '<div class="uam-empty-state"><div class="uam-empty-icon">👤</div>Nenhum usuário cadastrado.</div>';
+    if (countEl) countEl.textContent = '0 usuários';
+    return;
+  }
 
-  // Load family memberships for all users
+  if (countEl) countEl.textContent = users.length + ' usuário' + (users.length !== 1 ? 's' : '');
+
+  // Membros de famílias para mapear vínculos
   let allMembers = [];
-  try {
-    const { data: rpcData } = await sb.rpc('get_all_family_members');
-    allMembers = rpcData || [];
-  } catch(_) {}
+  try { const { data: md } = await sb.rpc('get_all_family_members'); allMembers = md || []; } catch(_) {}
+
+  const famById = {};
+  (_families || []).forEach(f => { famById[f.id] = f.name; });
+
+  const pending = users.filter(u => !u.approved);
+  const active  = users.filter(u =>  u.approved);
+
+  const roleStyles = {
+    owner:  { bg: '#fef3c7', color: '#92400e', border: '#f59e0b', icon: '👑' },
+    admin:  { bg: '#fef9c3', color: '#713f12', border: '#eab308', icon: '🔧' },
+    viewer: { bg: '#f0f9ff', color: '#0369a1', border: '#38bdf8', icon: '👁' },
+    user:   { bg: 'var(--accent-lt,#e8f2ee)', color: 'var(--accent)', border: 'var(--accent)', icon: '👤' },
+    member: { bg: 'var(--accent-lt,#e8f2ee)', color: 'var(--accent)', border: 'var(--accent)', icon: '👤' },
+  };
 
   let html = '';
 
-  if (pendingUsers.length) {
-    html += `<div style="background:linear-gradient(135deg,#fef3c7,#fef9e8);border:1.5px solid #f59e0b;border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px">
-      <div style="font-size:1.6rem;flex-shrink:0">⏳</div>
+  // ── Seção pendentes ──────────────────────────────────────────────────────
+  if (pending.length) {
+    html += `<div class="uam-pending-banner">
+      <div style="font-size:1.5rem;flex-shrink:0">⏳</div>
       <div style="flex:1">
-        <div style="font-weight:700;font-size:.92rem;color:#92400e;margin-bottom:2px">${pendingUsers.length} solicitação(ões) aguardando aprovação</div>
-        <div style="font-size:.78rem;color:#b45309">Novos usuários não têm acesso até você aprovar.</div>
+        <div style="font-weight:700;font-size:.88rem;color:#92400e">
+          ${pending.length} solicitação${pending.length > 1 ? 'ões' : ''} aguardando aprovação
+        </div>
+        <div style="font-size:.74rem;color:#b45309;margin-top:2px">
+          Novos usuários não têm acesso até você aprovar.
+        </div>
       </div>
     </div>`;
-    html += '<div class="table-wrap" style="margin-bottom:20px;border-radius:var(--r);overflow:hidden;border:1.5px solid #f59e0b"><table><thead><tr style="background:#fef3c7"><th>Solicitante</th><th>E-mail</th><th>Aguardando</th><th style="text-align:center">Ações</th></tr></thead><tbody>';
-    html += pendingUsers.map(u => {
-      const daysAgo = Math.floor((Date.now() - new Date(u.created_at)) / 86400000);
-      const ageLabel = daysAgo === 0 ? 'Hoje' : daysAgo === 1 ? '1 dia' : (daysAgo + ' dias');
-      const ageStyle = daysAgo >= 3 ? 'color:#dc2626;font-weight:600' : 'color:var(--muted)';
-      const initials = (u.name || u.email || '?').slice(0, 2).toUpperCase();
-      return '<tr style="background:#fffbeb">' +
-        '<td><div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:32px;height:32px;border-radius:50%;background:#fef3c7;border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem;color:#92400e;flex-shrink:0">' + initials + '</div>' +
-        '<strong>' + esc(u.name||'—') + '</strong></div></td>' +
-        '<td style="font-size:.82rem">' + esc(u.email) + '</td>' +
-        '<td><span style="' + ageStyle + '">' + ageLabel + '</span></td>' +
-        '<td style="text-align:center;white-space:nowrap">' +
-        '<button class="btn btn-primary btn-sm" onclick="approveUser(' + "'" + u.id + "','" + esc(u.name||u.email) + "')" + ' style="background:#16a34a;margin-right:4px">✅ Aprovar</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="rejectUser(' + "'" + u.id + "','" + esc(u.name||u.email) + "')" + ' style="color:#dc2626">✕ Rejeitar</button>' +
-        '</td></tr>';
-    }).join('');
-    html += '</tbody></table></div>';
-    html += '<div style="font-weight:600;font-size:.82rem;margin-bottom:10px;color:var(--muted)">Usuários ativos</div>';
+
+    pending.forEach(u => {
+      const daysAgo  = Math.floor((Date.now() - new Date(u.created_at)) / 86400000);
+      const ageLabel = daysAgo === 0 ? 'Hoje' : daysAgo + (daysAgo === 1 ? ' dia' : ' dias');
+      const ageColor = daysAgo >= 3 ? '#dc2626' : '#b45309';
+      html += `<div class="uam-user-row" style="border-color:#f59e0b;background:#fffbeb" onclick="approveUser('${u.id}','${esc(u.name||u.email)}')">
+        ${_userAvatarHtml(u, 36)}
+        <div class="uam-user-info">
+          <div class="uam-user-name">${esc(u.name || '—')}</div>
+          <div class="uam-user-email">${esc(u.email)}</div>
+          <div class="uam-user-meta">
+            <span style="font-size:.7rem;color:${ageColor};font-weight:600">${ageLabel}</span>
+            <span style="font-size:.68rem;color:var(--muted)">· aguardando</span>
+          </div>
+        </div>
+        <div class="uam-user-actions" onclick="event.stopPropagation()">
+          <button class="uam-user-action-btn" style="background:#16a34a;color:#fff;border-color:#16a34a"
+            onclick="approveUser('${u.id}','${esc(u.name||u.email)}')" title="Aprovar">✓</button>
+          <button class="uam-user-action-btn danger"
+            onclick="rejectUser('${u.id}','${esc(u.name||u.email)}')" title="Rejeitar">✕</button>
+        </div>
+      </div>`;
+    });
+
+    if (active.length) {
+      html += '<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;padding:10px 0 6px;border-top:1px solid var(--border);margin-top:6px">Usuários ativos</div>';
+    }
   }
 
-  if (!activeUsers.length) {
-    html += '<div style="text-align:center;padding:20px;color:var(--muted)">Nenhum usuário ativo.</div>';
-  } else {
-    html += '<div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Família</th><th>Status</th><th style="width:80px"></th></tr></thead><tbody>';
-    html += activeUsers.map(u => {
-      const avatarHtml = _userAvatarHtml(u, 34);
-      const roleBadge = u.role==='owner'
-        ? '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;font-size:.7rem">👑 Owner</span>'
-        : u.role==='admin'
-        ? '<span class="badge badge-amber" style="font-size:.7rem">🔧 Admin</span>'
-        : u.role==='viewer'
-        ? '<span class="badge badge-muted" style="font-size:.7rem">👁 Viewer</span>'
-        : '<span class="badge badge-blue" style="font-size:.7rem">👤 Usuário</span>';
-      return `<tr onclick="editUser('${u.id}')" style="cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-        <td>
-          <div style="display:flex;align-items:center;gap:10px">
-            ${avatarHtml}
-            <div>
-              <div style="font-weight:600;font-size:.875rem">${esc(u.name||'—')}</div>
-              <div style="font-size:.72rem;color:var(--muted)">${esc(u.email)}</div>
-            </div>
-          </div>
-        </td>
-        <td>${roleBadge}</td>
-        <td style="font-size:.78rem;color:var(--text2)">
-          ${(() => {
-            const userFams = (allMembers||[]).filter(m => m.user_id === u.id);
-            if (!userFams.length) return '<span style="color:var(--muted)">—</span>';
-            return userFams.map(m => {
-              const roleIcon = {owner:'👑',admin:'🔧',user:'👤',viewer:'👁'}[m.member_role]||'👤';
-              const fName = m.family_name || famById[m.family_id] || m.family_id?.slice(0,8) || '—';
-              return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--accent-lt);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:.7rem;margin:1px">${roleIcon} ${esc(fName)}</span>`;
-            }).join('');
-          })()}
-        </td>
-        <td><span style="font-size:.75rem;color:${u.active?'var(--green)':'var(--red)'}">● ${u.active?'Ativo':'Inativo'}</span></td>
-        <td style="white-space:nowrap" onclick="event.stopPropagation()">
-          ${u.id !== currentUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="toggleUserActive('${u.id}',${u.active})" style="padding:3px 8px;font-size:.73rem" title="${u.active?'Desativar':'Ativar'}">${u.active?'🚫':'✅'}</button>` : ''}
-          ${u.id !== currentUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="resetUserPwd('${u.id}','${esc(u.name||u.email)}')" style="padding:3px 8px;font-size:.73rem" title="Redefinir senha">🔑</button>` : ''}
-        </td>
-      </tr>`;
+  // ── Seção ativos ─────────────────────────────────────────────────────────
+  active.forEach(u => {
+    const rs = roleStyles[u.role] || roleStyles.user;
+    const userFams = (allMembers || []).filter(m => m.user_id === u.id);
+    const famTags = userFams.slice(0, 3).map(m => {
+      const ri = {owner:'👑',admin:'🔧',user:'👤',viewer:'👁'}[m.member_role] || '👤';
+      const fn = m.family_name || famById[m.family_id] || '—';
+      return `<span class="uam-family-tag">${ri} ${esc(fn)}</span>`;
     }).join('');
-    html += '</tbody></table></div>';
-  }
+
+    html += `<div class="uam-user-row" onclick="editUser('${u.id}')">
+      ${_userAvatarHtml(u, 36)}
+      <div class="uam-user-info">
+        <div class="uam-user-name">${esc(u.name || '—')}</div>
+        <div class="uam-user-email">${esc(u.email)}</div>
+        <div class="uam-user-meta">
+          <span class="uam-role-badge" style="background:${rs.bg};color:${rs.color};border-color:${rs.border}">
+            ${rs.icon} ${u.role || 'user'}
+          </span>
+          <span class="uam-status-dot" style="background:${u.active ? '#16a34a' : '#dc2626'}" title="${u.active ? 'Ativo' : 'Inativo'}"></span>
+          ${famTags || '<span style="font-size:.68rem;color:var(--muted)">Sem família</span>'}
+        </div>
+      </div>
+      <div class="uam-user-actions" onclick="event.stopPropagation()">
+        ${u.id !== currentUser?.id ? `
+          <button class="uam-user-action-btn ${u.active ? 'danger' : ''}"
+            onclick="toggleUserActive('${u.id}',${u.active})"
+            title="${u.active ? 'Desativar' : 'Ativar'}">${u.active ? '🚫' : '✅'}</button>
+          <button class="uam-user-action-btn"
+            onclick="resetUserPwd('${u.id}','${esc(u.name||u.email)}')"
+            title="Redefinir senha">🔑</button>
+        ` : '<span style="font-size:.68rem;color:var(--muted);padding:0 4px">você</span>'}
+      </div>
+    </div>`;
+  });
+
   el.innerHTML = html;
+
+  // Atualizar KPIs do header
+  if (typeof _uamUpdateHeaderKpis === 'function') setTimeout(_uamUpdateHeaderKpis, 50);
 }
+
 
 function showNewUserForm() {
   const formArea = document.getElementById('userFormArea');
@@ -3971,7 +4355,17 @@ async function ensureMasterAdmin() {
   } catch(e) { console.warn('ensureMasterAdmin:', e.message); }
 }
 
-tryAutoConnect();
+if (!window.__FT_AUTH_BOOT_WIRED__) {
+  window.__FT_AUTH_BOOT_WIRED__ = true;
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.__FT_AUTH_BOOT_STARTED__) return;
+    window.__FT_AUTH_BOOT_STARTED__ = true;
+    Promise.resolve(typeof tryAutoConnect === 'function' ? tryAutoConnect() : false).catch(err => {
+      console.warn('[auth] tryAutoConnect failed:', err?.message || err);
+      try { showLoginScreen(); } catch(_) {}
+    });
+  }, { once: true });
+}
 
 /* ══════════════════════════════════════════════════════════════════
    AUTO-REGISTER ENGINE — Transações Programadas Automáticas
@@ -4088,9 +4482,8 @@ async function doRecoveryPwd() {
 
     // Load context and enter the app
     await _loadCurrentUserContext();
-    document.getElementById('loginScreen').style.display = 'none';
     toast('✓ Senha redefinida com sucesso! Bem-vindo(a).', 'success');
-    await bootApp();
+    await _bootIntoAppSafely({ allowFamilyWizard: true, busyLabel: 'A carregar…' });
   } catch(e) {
     errEl.textContent = 'Erro: ' + (e?.message || e);
     errEl.style.display = '';
@@ -4215,6 +4608,7 @@ async function switchFamily(familyId) {
   try { if (typeof applyGroceryFeature === 'function')     await applyGroceryFeature();     } catch(e) {}
   try { if (typeof applyInvestmentsFeature === 'function') await applyInvestmentsFeature(); } catch(e) {}
   try { if (typeof applyAiInsightsFeature === 'function')  await applyAiInsightsFeature();  } catch(e) {}
+  try { if (typeof applyDreamsFeature === 'function')      await applyDreamsFeature();      } catch(e) {}
 
   // ── 8. Repopular todos os selects com dados da nova família ───────────────
   try { populateSelects(); } catch(e) {}
@@ -4639,6 +5033,7 @@ function _mfmRenderFeatures(famId) {
     { key: 'investments_enabled_' + famId, label: 'Investimentos',emoji: '📈', desc: 'Carteira de ativos',    applyFn: 'applyInvestmentsFeature' },
     { key: 'ai_insights_enabled_' + famId, label: 'AI Insights',  emoji: '🤖', desc: 'Análise com IA',        applyFn: 'applyAiInsightsFeature' },
     { key: 'debts_enabled_'       + famId, label: 'Dívidas',      emoji: '💳', desc: 'Controle de dívidas',   applyFn: 'applyDebtsFeature' },
+    { key: 'dreams_enabled_'      + famId, label: 'Sonhos',       emoji: '🌟', desc: 'GPS financeiro com IA', applyFn: 'applyDreamsFeature' },
     { key: 'backup_enabled_'      + famId, label: 'Backup',       emoji: '☁️', desc: 'Backup automático',     applyFn: null },
     { key: 'snapshot_enabled_'    + famId, label: 'Snapshot',     emoji: '📸', desc: 'Snapshots periódicos',  applyFn: null },
   ];
@@ -4732,7 +5127,7 @@ async function _mfmToggleFeature(key, famId, label, applyFn) {
 
   // Aplica feature imediatamente (UI responsiva, sem aguardar DB)
   if (applyFn && typeof window[applyFn] === 'function') {
-    window[applyFn]().catch(() => {});
+    Promise.resolve(window[applyFn]()).catch(() => {}); // safe: undefined ou Promise
   }
   toast(nowOn ? `✓ ${label} ativado` : `${label} desativado`, 'success');
   _mfmRenderFeatures(famId);
@@ -4906,39 +5301,70 @@ async function mfmInvite() {
   _mfmMsg('', '');
 
   try {
-    // Check if user already exists
-    const { data: existing } = await sb.from('app_users').select('id,name,approved,active').eq('email', email).maybeSingle();
+    // ── Verificar se usuário já existe ────────────────────────────────────
+    const { data: existing } = await sb.from('app_users')
+      .select('id,name,approved,active').eq('email', email).maybeSingle();
 
     if (existing) {
-      // Already registered — add directly to family
+      // Já cadastrado — adicionar diretamente à família
       const { error } = await sb.from('family_members').upsert(
         { user_id: existing.id, family_id: famId, role },
         { onConflict: 'user_id,family_id' }
       );
       if (error) throw new Error(error.message);
-      _mfmMsg(`✓ ${email} já estava cadastrado e foi adicionado à família.`, 'success');
-    } else {
-      // New user — create pending record
-      const { data: newUser, error: insErr } = await sb.from('app_users').insert({
-        email,
-        name:            email.split('@')[0],
-        role:            'user',
-        approved:        false,
-        active:          false,
-        family_id:       famId,
-        must_change_pwd: true,
-      }).select().single();
-      if (insErr) throw new Error(insErr.message);
-
-      try { await sb.from('family_members').insert({ user_id: newUser.id, family_id: famId, role }); } catch (_) {}
-      await _sendInviteEmail(email, fam.name, currentUser.name || currentUser.email);
-      _mfmMsg(`✓ Convite enviado para ${email}. O acesso será liberado após aprovação.`, 'success');
+      await sb.from('app_users').update({ family_id: famId }).eq('id', existing.id);
+      _mfmMsg(`✓ ${existing.name || email} já estava cadastrado e foi adicionado à família.`, 'success');
+      await _mfmRenderMembros(famId);
+      return;
     }
 
+    // ── Usuário novo: criar token de convite ──────────────────────────────
+    // NÃO fazer INSERT direto em app_users — password_hash é NOT NULL
+    // Usar tabela family_invites com token temporário
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map(b => b.toString(16).padStart(2,'0')).join('');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const { error: invErr } = await sb.from('family_invites').insert({
+      token,
+      email,
+      family_id:  famId,
+      role,
+      invited_by: currentUser?.app_user_id || currentUser?.id || null,
+      expires_at: expiresAt.toISOString(),
+      used:       false,
+    });
+
+    if (invErr) {
+      // Tabela não existe ainda — mostrar SQL de criação
+      if (invErr.message?.includes('does not exist') || invErr.code === '42P01') {
+        if (typeof _showInviteSetupRequired === 'function') {
+          _showInviteSetupRequired();
+        } else {
+          _mfmMsg('Tabela family_invites não existe. Execute o SQL de configuração no Supabase.', 'error');
+        }
+        return;
+      }
+      throw new Error(invErr.message);
+    }
+
+    // Construir URL de convite
+    const appUrl = typeof getAppBaseUrl === 'function'
+      ? getAppBaseUrl()
+      : (window.location.origin + window.location.pathname);
+    const inviteUrl = `${appUrl}?invite=${token}`;
+
+    // Enviar e-mail com o link
+    await _sendInviteEmail(email, fam.name, currentUser?.name || currentUser?.email, inviteUrl);
+
+    _mfmMsg(`✅ Convite enviado para ${email}. Link válido por 7 dias.`, 'success');
     if (emailEl) emailEl.value = '';
-    await _mfmRenderMembros(_mfmActiveFamilyId);
+    await _mfmRenderMembros(famId);
+
   } catch(e) {
-    _mfmMsg('Erro: ' + e.message, 'error');
+    _mfmMsg('Erro: ' + (e.message || e), 'error');
+    console.error('[mfmInvite]', e);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📨 Convidar'; }
   }

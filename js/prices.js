@@ -294,7 +294,7 @@ async function isPricesEnabled() {
 function _syncModulesSection() {
   const sec = document.getElementById('modulesNavSection');
   if (!sec) return;
-  const anyOn = ['groceryNav','pricesNav','investmentsNav','aiInsightsNav','debtsNav'].some(id => {
+  const anyOn = ['groceryNav','pricesNav','investmentsNav','aiInsightsNav','debtsNav','dreamsNav'].some(id => {
     const el = document.getElementById(id);
     return el && el.style.display !== 'none';
   });

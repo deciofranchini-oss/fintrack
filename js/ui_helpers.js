@@ -156,7 +156,7 @@ function buildCatPicker(typeFilter, ctx) {
   // ── Search input (sticky, top of dropdown) ───────────────────────────────
   const searchId = _catSearchId(ctx);
   let html = '<div class="cat-search-wrap">' +
-    '<span class="cat-search-icon">&#128269;</span>' +
+    '<svg class="cat-search-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
     '<input type="text" id="' + searchId + '" class="cat-search-input"' +
     ' placeholder="Buscar categoria..." autocomplete="off" autocorrect="off" spellcheck="false"' +
     ' oninput="_catPickerFilter(\'' + ctx + '\', this.value)"' +
@@ -165,6 +165,26 @@ function buildCatPicker(typeFilter, ctx) {
     '<button type="button" class="cat-search-clear" id="' + searchId + 'Clear"' +
     ' onclick="event.stopPropagation();_catPickerClearSearch(\'' + ctx + '\')" tabindex="-1" aria-label="Limpar">&#10005;</button>' +
     '</div>';
+
+  // ── Chips de categorias recentes (últimas 5 usadas nas transações) ────────
+  var recentCatIds = _catPickerGetRecents(ctx, typeFilter);
+  if (recentCatIds.length > 0) {
+    html += '<div class="cat-recent-wrap" id="catRecentWrap-' + ctx + '">' +
+      '<div class="cat-recent-lbl">Usadas recentemente</div>' +
+      '<div class="cat-recent-chips">';
+    recentCatIds.forEach(function(catId) {
+      var cat = allCats.find(function(x){ return x.id === catId; });
+      if (!cat) return;
+      var parent = cat.parent_id ? allCats.find(function(x){ return x.id === cat.parent_id; }) : null;
+      var label = parent ? (parent.icon||'') + ' ' + cat.name : (cat.icon||'📦') + ' ' + cat.name;
+      var color = cat.color || 'var(--accent)';
+      html += '<button type="button" class="cat-recent-chip" onclick="event.stopPropagation();setCatPickerValue(\'' + catId + '\', \'' + ctx + '\')" title="' + esc(parent ? parent.name + ' > ' + cat.name : cat.name) + '">' +
+        '<span class="cat-recent-chip-dot" style="background:' + color + '"></span>' +
+        esc(label) +
+        '</button>';
+    });
+    html += '</div></div>';
+  }
 
   // ── "Sem categoria" option ────────────────────────────────────────────────
   html += '<div class="cat-none-option" onclick="setCatPickerValue(null, \'' + ctx + '\')">' +
@@ -358,6 +378,32 @@ function toggleCatGroup(parentId) {
   if (arrow) arrow.classList.toggle('open', isOpen);
 }
 
+function _positionCatPicker(ctx) {
+  ctx = ctx || 'tx';
+  var c = _catCtx(ctx);
+  var dd = document.getElementById(c.ddId);
+  var btn = document.getElementById(c.btnId);
+  if (!dd || !btn) return;
+
+  dd.classList.remove('open-up');
+  var rect = btn.getBoundingClientRect();
+  var vh = window.innerHeight || document.documentElement.clientHeight || 800;
+  var spaceBelow = vh - rect.bottom - 16;
+  var spaceAbove = rect.top - 16;
+
+  if (spaceBelow < 260 && spaceAbove > spaceBelow) {
+    dd.classList.add('open-up');
+    dd.style.maxHeight = Math.max(180, Math.min(340, spaceAbove - 12)) + 'px';
+  } else {
+    dd.style.maxHeight = Math.max(180, Math.min(340, spaceBelow - 12)) + 'px';
+  }
+
+  var group = document.getElementById(ctx === 'sc' ? 'scCategoryGroup' : 'txCategoryGroup');
+  if (group && typeof group.scrollIntoView === 'function') {
+    try { group.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+  }
+}
+
 function toggleCatPicker(ctx) {
   ctx = ctx || 'tx';
   var c = _catCtx(ctx);
@@ -370,6 +416,7 @@ function toggleCatPicker(ctx) {
   _catPickerCtx = ctx;
   dd.classList.add('open');
   btn.classList.add('open');
+  _positionCatPicker(ctx);
   // Auto-expand group of currently selected category
   var currentId = document.getElementById(c.inputId) ? document.getElementById(c.inputId).value : '';
   if (currentId) {
@@ -382,6 +429,7 @@ function toggleCatPicker(ctx) {
   }
   // Focus the search input after a short delay (allows dropdown animation to start)
   setTimeout(function() {
+    _positionCatPicker(ctx);
     var inp = document.getElementById(_catSearchId(ctx));
     if (inp) inp.focus();
   }, 60);
@@ -403,7 +451,11 @@ function _closeCatPickerByCtx(ctx) {
   var c = _catCtx(ctx);
   var dd  = document.getElementById(c.ddId);
   var btn = document.getElementById(c.btnId);
-  if (dd)  dd.classList.remove('open');
+  if (dd)  {
+    dd.classList.remove('open');
+    dd.classList.remove('open-up');
+    dd.style.maxHeight = '';
+  }
   if (btn) btn.classList.remove('open');
   // Clear search so next open starts fresh
   var inp = document.getElementById(_catSearchId(ctx));

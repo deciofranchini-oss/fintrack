@@ -45,6 +45,15 @@ async function loadAuditLogs() {
   if (body)  body.innerHTML  = `<tr><td colspan="8" style="padding:0">${loading}</td></tr>`;
   if (cards) cards.innerHTML = loading;
 
+  // FIX: ensure currentUser is available before calling famQ()
+  if (!currentUser) {
+    const noUser = `<div style="text-align:center;padding:36px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔐</div><div style="font-size:.85rem">Sessão não iniciada. Faça login novamente.</div></div>`;
+    if (body)  body.innerHTML  = `<tr><td colspan="8" style="padding:0">${noUser}</td></tr>`;
+    if (cards) cards.innerHTML = noUser;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
   try {
     if (!sb) { toast('Sem conexão com o banco', 'error'); return; }
 
@@ -387,3 +396,6 @@ function getPeriodColor(period) {
     default: return '#1F6B4F';
   }
 }
+
+window.loadAuditLogs = loadAuditLogs;
+window.filterAuditLogs = filterAuditLogs;

@@ -8,7 +8,7 @@ function cfgShowPane(paneId) {
   const tab = paneId.replace('pane-', '');
   const btn = document.getElementById('cfgNavBtn-' + tab);
   if (btn) btn.classList.add('active');
-  if (paneId === 'pane-avancado' && typeof initTranslationsAdmin === 'function') {
+  if ((paneId === 'pane-avancado' || paneId === 'pane-traducoes') && typeof initTranslationsAdmin === 'function') {
     initTranslationsAdmin();
   }
   if (paneId === 'pane-feedbacks' && typeof loadFeedbackReports === 'function') {
@@ -22,7 +22,7 @@ window.cfgShowPane = cfgShowPane;
 function _cfgApplyAdminNav() {
   const role = (typeof currentUser !== 'undefined') ? currentUser?.role : null;
   const isAdmin = role === 'admin' || role === 'owner';
-  ['cfgNavBtn-familia','cfgNavBtn-aparencia','cfgNavBtn-avancado','cfgNavBtn-feedbacks'].forEach(id => {
+  ['cfgNavBtn-familia','cfgNavBtn-aparencia','cfgNavBtn-avancado','cfgNavBtn-traducoes','cfgNavBtn-feedbacks'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? '' : 'none';
   });
@@ -79,6 +79,17 @@ async function loadAppSettings() {
     // Apply logo override (if any)
     const logo = _appSettingsCache['app_logo_url'] || '';
     if (typeof setAppLogo === 'function') setAppLogo(logo);
+    // Login theme removed — single unified design
+
+    // Sincroniza canais de notificação do DB → localStorage
+    const _notifKeys = ['notif_channel_email_enabled','notif_channel_wa_enabled','notif_channel_tg_enabled'];
+    _notifKeys.forEach(k => {
+      if (k in _appSettingsCache) {
+        try { localStorage.setItem(k, String(_appSettingsCache[k] === true || _appSettingsCache[k] === 'true')); } catch(_) {}
+      }
+    });
+    // Aplica visibilidade assim que o cache está disponível
+    if (typeof applyNotifChannelVisibility === 'function') applyNotifChannelVisibility();
 
     // Apply menu visibility (if configured)
     try { applyMenuVisibility(_getMenuVisibilityFromCache()); } catch {}
@@ -140,6 +151,116 @@ async function saveAppSetting(key, value) {
     console.warn('saveAppSetting DB error (saved locally):', e.message);
   }
 }
+
+
+
+
+// ── Chaves de configuração dos canais de notificação ──────────────────────────
+const NOTIF_CHANNEL_KEYS = {
+  email:    'notif_channel_email_enabled',
+  whatsapp: 'notif_channel_wa_enabled',
+  telegram: 'notif_channel_tg_enabled',
+};
+
+/**
+ * Salva o estado ativo/inativo de um canal de notificação.
+ * Persiste em localStorage (instantâneo) + banco (assíncrono).
+ * Após salvar aplica a visibilidade em toda a UI.
+ */
+async function saveNotifChannelSetting(channel, enabled) {
+  const key = NOTIF_CHANNEL_KEYS[channel];
+  if (!key) return;
+  try { localStorage.setItem(key, String(enabled)); } catch(_) {}
+  try { await saveAppSetting(key, enabled); } catch(_) {}
+  applyNotifChannelVisibility();
+  const label = { email:'E-mail', whatsapp:'WhatsApp', telegram:'Telegram' }[channel] || channel;
+  toast(label + (enabled ? ' ativado' : ' desativado'), 'success');
+}
+window.saveNotifChannelSetting = saveNotifChannelSetting;
+
+/**
+ * Lê o estado salvo de um canal. Default: email=true, wa/tg=false.
+ */
+function getNotifChannelEnabled(channel) {
+  const key = NOTIF_CHANNEL_KEYS[channel];
+  if (!key) return true;
+  // Lê do cache em memória primeiro (mais rápido)
+  if (window._appSettingsCache && key in window._appSettingsCache) {
+    const v = window._appSettingsCache[key];
+    return v === true || v === 'true';
+  }
+  // Fallback localStorage
+  try {
+    const v = localStorage.getItem(key);
+    if (v !== null) return v === 'true';
+  } catch(_) {}
+  // Default: email sim, WhatsApp/Telegram não (evita aparecer sem configuração)
+  return channel === 'email';
+}
+window.getNotifChannelEnabled = getNotifChannelEnabled;
+
+/**
+ * Aplica a visibilidade dos canais em todos os pontos da UI:
+ *  - Toggles no painel Configurações (checkboxes)
+ *  - Campos de WhatsApp e Telegram no modal de Perfil
+ *  - Cards de WhatsApp e Telegram no modal de Programados
+ */
+function applyNotifChannelVisibility() {
+  const waOn = getNotifChannelEnabled('whatsapp');
+  const tgOn = getNotifChannelEnabled('telegram');
+
+  // ── Painel de Configurações: sincronizar checkboxes ──────────────────────
+  const cfgWa = document.getElementById('cfgChannelWaEnabled');
+  const cfgTg = document.getElementById('cfgChannelTgEnabled');
+  if (cfgWa) cfgWa.checked = waOn;
+  if (cfgTg) cfgTg.checked = tgOn;
+
+  // ── Modal de Perfil: campos WhatsApp e Telegram ──────────────────────────
+  const profWaWrap  = document.getElementById('profWaChannelWrap');
+  const profTgWrap  = document.getElementById('profTgChannelWrap');
+  const profTxWaRow = document.getElementById('profTxNotifWaRow');
+  const profTxTgRow = document.getElementById('profTxNotifTgRow');
+  if (profWaWrap)  profWaWrap.style.display  = waOn ? '' : 'none';
+  if (profTgWrap)  profTgWrap.style.display  = tgOn ? '' : 'none';
+  if (profTxWaRow) profTxWaRow.style.display = waOn ? '' : 'none';
+  if (profTxTgRow) profTxTgRow.style.display = tgOn ? '' : 'none';
+
+  // ── Modal de Programados: cards dos canais ───────────────────────────────
+  const scWaCard = document.getElementById('scWaChannelCard');
+  const scTgCard = document.getElementById('scTgChannelCard');
+  if (scWaCard) scWaCard.style.display = waOn ? '' : 'none';
+  if (scTgCard) scTgCard.style.display = tgOn ? '' : 'none';
+}
+window.applyNotifChannelVisibility = applyNotifChannelVisibility;
+
+/**
+ * Carrega os estados dos canais do banco/localStorage e atualiza a UI.
+ * Chamado em loadSettings() e logo após o login.
+ */
+async function loadNotifChannelSettings() {
+  // Tenta ler do cache (já populado por loadAppSettings)
+  // Se cache ainda não está pronto, lê do localStorage
+  const cfgEmail = document.getElementById('cfgChannelEmailEnabled');
+  if (cfgEmail) cfgEmail.checked = getNotifChannelEnabled('email');
+  applyNotifChannelVisibility();
+
+  // Sincroniza com o banco em background (sem bloquear a UI)
+  if (sb) {
+    try {
+      const keys = Object.values(NOTIF_CHANNEL_KEYS);
+      const { data } = await sb.from('app_settings').select('key,value').in('key', keys);
+      (data || []).forEach(row => {
+        try { localStorage.setItem(row.key, String(row.value === true || row.value === 'true')); } catch(_) {}
+        if (window._appSettingsCache) window._appSettingsCache[row.key] = (row.value === true || row.value === 'true');
+      });
+      applyNotifChannelVisibility();
+    } catch(_) {}
+  }
+}
+window.loadNotifChannelSettings = loadNotifChannelSettings;
+
+
+
 
 async function getAppSetting(key, defaultValue = null) {
   if (_appSettingsCache && key in _appSettingsCache) return _appSettingsCache[key];
@@ -232,6 +353,7 @@ async function forceActivateModule(modKey, enabled, label) {
     investments:  'applyInvestmentsFeature',
     ai_insights:  'applyAiInsightsFeature',
     debts:        'applyDebtsFeature',
+    dreams:       'applyDreamsFeature',
   };
   const applyFn = applyMap[modKey];
   if (applyFn && typeof window[applyFn] === 'function') {
@@ -631,6 +753,9 @@ function loadSettings() {
   // Telegram bot token
   if (typeof loadTelegramBotTokenUI === 'function') loadTelegramBotTokenUI();
 
+  // Canais de notificação (WhatsApp / Telegram on/off)
+  if (typeof loadNotifChannelSettings === 'function') loadNotifChannelSettings();
+
 
 
 
@@ -649,6 +774,8 @@ function loadSettings() {
     // Admin: inicializar formulários das novas seções
     initSettingsVisibilityForm();
     initServiceRoleKeySection();
+    // Login theme selector
+
     try { _loadNormalizeNamesInfo().catch(()=>{}); } catch {}
     // Translations admin (admin only)
     if (typeof initTranslationsAdmin === 'function') {
@@ -1150,6 +1277,7 @@ function initFamModulesStandalone() {
     { key: 'investments_enabled_' + famId, label: 'Investimentos',    emoji: '📈', applyFn: 'applyInvestmentsFeature',  desc: 'Carteira de investimentos (requer conta do tipo Investimentos)' },
     { key: 'ai_insights_enabled_' + famId, label: 'AI Insights',      emoji: '🤖', applyFn: 'applyAiInsightsFeature',   desc: 'Análise financeira e chat com IA Gemini (requer chave API)' },
     { key: 'debts_enabled_'       + famId, label: 'Dívidas',          emoji: '💳', applyFn: 'applyDebtsFeature',        desc: 'Controle e evolução de dívidas' },
+    { key: 'dreams_enabled_'      + famId, label: 'Sonhos',           emoji: '🌟', applyFn: 'applyDreamsFeature',       desc: 'GPS financeiro — transforme objetivos em metas com IA' },
     { key: 'backup_enabled_'      + famId, label: 'Backup',           emoji: '☁️', applyFn: null,                       desc: 'Backup automático de dados' },
     { key: 'snapshot_enabled_'    + famId, label: 'Snapshot',         emoji: '📸', applyFn: null,                       desc: 'Snapshots periódicos do estado financeiro' },
   ];
@@ -1326,7 +1454,7 @@ async function _cfgToggleModule(key, famId, label, applyFn) {
 
   // Aplica imediatamente sem esperar DB (UX responsivo)
   if (applyFn && typeof window[applyFn] === 'function') {
-    window[applyFn]().catch(() => {});
+    Promise.resolve(window[applyFn]()).catch(() => {}); // safe: undefined ou Promise
   }
   toast(nowOn ? `✓ ${label} ativado` : `${label} desativado`, 'success');
 
@@ -1589,8 +1717,22 @@ const _telDash = {
 
 // ── Entry point chamado pelo navigate() ──────────────────────────────────────
 async function loadTelemetryDashboard() {
-  if (!currentUser?.can_admin) return;
-  if (typeof sb === 'undefined' || !sb) return;
+  // FIX: show error instead of silently returning when user is not admin/not loaded
+  if (!currentUser) {
+    const kpiEl = document.getElementById('telKpis');
+    if (kpiEl) kpiEl.innerHTML = '<div style="grid-column:1/-1" class="tel-empty"><div class="tel-empty-icon">🔐</div><div class="tel-empty-text">Sessão não iniciada. Faça login novamente.</div></div>';
+    return;
+  }
+  if (!currentUser.can_admin) {
+    const kpiEl = document.getElementById('telKpis');
+    if (kpiEl) kpiEl.innerHTML = '<div style="grid-column:1/-1" class="tel-empty"><div class="tel-empty-icon">🚫</div><div class="tel-empty-text">Acesso restrito a administradores.</div></div>';
+    return;
+  }
+  if (typeof sb === 'undefined' || !sb) {
+    const kpiEl = document.getElementById('telKpis');
+    if (kpiEl) kpiEl.innerHTML = '<div style="grid-column:1/-1" class="tel-empty"><div class="tel-empty-icon">⚠️</div><div class="tel-empty-text">Sem conexão com o banco de dados.</div></div>';
+    return;
+  }
 
   const days   = parseInt(document.getElementById('telPeriod')?.value || '30', 10);
   const cutoff = new Date();

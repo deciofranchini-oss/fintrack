@@ -1,22 +1,222 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   INVESTMENTS MODULE — v1
+   INVESTMENTS MODULE — v2
    Tables: investment_positions, investment_transactions, investment_price_history
    Price API: brapi.dev (B3/FIIs/BDRs/Crypto) + Yahoo Finance fallback (US stocks)
+             + B3/Tesouro Direto API + BCB (CDI/Selic)
    Activation: investments_enabled_{family_id} in app_settings
    Balance: account.balance += SUM(position.quantity × current_price_brl)
+   Extended: Tesouro Direto (PU via B3 API) + Fundos CDI (auto-yield via BCB)
+             Metadata stored in notes column as JSON — zero migration needed.
 ═══════════════════════════════════════════════════════════════════════ */
 
 const ASSET_TYPES = [
-  { value: 'acao_br',    label: 'Ação BR',       emoji: '🇧🇷', hint: 'Ex: PETR4, VALE3'    },
-  { value: 'fii',        label: 'FII',           emoji: '🏢', hint: 'Ex: KNRI11, HGLG11'  },
-  { value: 'etf_br',     label: 'ETF BR',        emoji: '📊', hint: 'Ex: BOVA11, IVVB11'  },
-  { value: 'acao_us',    label: 'Ação US',       emoji: '🇺🇸', hint: 'Ex: AAPL, GOOGL'    },
-  { value: 'etf_us',     label: 'ETF US',        emoji: '📈', hint: 'Ex: SPY, QQQ'        },
-  { value: 'bdr',        label: 'BDR',           emoji: '🌐', hint: 'Ex: AAPL34, AMZO34'  },
-  { value: 'crypto',     label: 'Criptomoeda',   emoji: '₿',  hint: 'Ex: BTC, ETH'        },
-  { value: 'renda_fixa', label: 'Renda Fixa',    emoji: '💰', hint: 'CDB, LCI, Tesouro'   },
-  { value: 'outro',      label: 'Outro',         emoji: '📌', hint: 'Qualquer ativo'       },
+  { value: 'acao_br',       label: 'Ação BR',            emoji: '🇧🇷', hint: 'Ex: PETR4, VALE3'       },
+  { value: 'fii',           label: 'FII',                emoji: '🏢', hint: 'Ex: KNRI11, HGLG11'     },
+  { value: 'etf_br',        label: 'ETF BR',             emoji: '📊', hint: 'Ex: BOVA11, IVVB11'     },
+  { value: 'acao_us',       label: 'Ação US',            emoji: '🇺🇸', hint: 'Ex: AAPL, GOOGL'       },
+  { value: 'etf_us',        label: 'ETF US',             emoji: '📈', hint: 'Ex: SPY, QQQ'           },
+  { value: 'bdr',           label: 'BDR',                emoji: '🌐', hint: 'Ex: AAPL34, AMZO34'     },
+  { value: 'crypto',        label: 'Criptomoeda',        emoji: '₿',  hint: 'Ex: BTC, ETH'           },
+  { value: 'tesouro_direto',label: 'Tesouro Direto',     emoji: '🏛️', hint: 'Selic, IPCA+, Prefixado' },
+  { value: 'fundo_investimento', label: 'Fundo de Investimento', emoji: '🏦', hint: 'CDI, Prefixado, IPCA' },
+  { value: 'renda_fixa',    label: 'Renda Fixa',         emoji: '💰', hint: 'CDB, LCI, LCA'          },
+  { value: 'outro',         label: 'Outro',              emoji: '📌', hint: 'Qualquer ativo'          },
 ];
+
+// ── Tesouro Direto subtypes ──────────────────────────────────────────────────
+const TD_SUBTYPES = [
+  { value: 'LFT',     label: 'Tesouro Selic',              index: 'selic',    hint: 'Rende a taxa Selic Over' },
+  { value: 'LTN',     label: 'Tesouro Prefixado',          index: 'prefixado', hint: 'Taxa definida na compra, sem juros semestrais' },
+  { value: 'NTN-F',   label: 'Tesouro Prefixado c/ Juros', index: 'prefixado', hint: 'Taxa prefixada + juros semestrais' },
+  { value: 'NTN-B',   label: 'Tesouro IPCA+',              index: 'ipca',     hint: 'IPCA + taxa prefixada, sem cupom' },
+  { value: 'NTN-B_P', label: 'Tesouro IPCA+ c/ Juros',     index: 'ipca',     hint: 'IPCA + taxa prefixada + cupons semestrais' },
+  { value: 'NTN-C',   label: 'Tesouro IGP-M+',             index: 'igpm',     hint: 'IGP-M + taxa prefixada' },
+];
+
+// ── Fundo indexers ───────────────────────────────────────────────────────────
+const FUND_INDEXERS = [
+  { value: 'cdi',       label: '% do CDI',        hint: 'Ex: 110% do CDI' },
+  { value: 'prefixado', label: 'Prefixado (% a.a.)', hint: 'Ex: 12,5% a.a.' },
+  { value: 'ipca',      label: 'IPCA + (% a.a.)', hint: 'Ex: IPCA + 5%' },
+  { value: 'selic',     label: '% da Selic',      hint: 'Ex: 100% da Selic' },
+];
+
+// ── notes JSON helpers (zero-migration metadata storage) ────────────────────
+function _invGetMeta(pos) {
+  if (!pos?.notes) return {};
+  try { return typeof pos.notes === 'object' ? pos.notes : JSON.parse(pos.notes); }
+  catch(_) { return {}; }
+}
+function _invMetaStr(meta) {
+  return JSON.stringify(meta);
+}
+function _invIsTD(pos)   { return pos?.asset_type === 'tesouro_direto'; }
+function _invIsFund(pos) { return pos?.asset_type === 'fundo_investimento'; }
+function _invIsAutoYield(pos) { return _invIsTD(pos) || _invIsFund(pos); }
+
+// ── BCB/B3 API helpers ───────────────────────────────────────────────────────
+
+/** Busca CDI anual atual via BCB (série 4389 = CDI Over anualizado) */
+async function _fetchCDIAnual() {
+  // Tenta série 4389 (CDI anualizado % a.a.)
+  try {
+    const r = await fetch(
+      'https://api.bcb.gov.br/dados/serie/bcdata.sgs.4389/dados/ultimos/1?formato=json',
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const val = parseFloat((d[0]?.valor || '').replace(',', '.'));
+      if (val > 0) return val;
+    }
+  } catch(_) {}
+  // Fallback: série 12 (CDI diário) → anualizar
+  try {
+    const r = await fetch(
+      'https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json',
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const daily = parseFloat((d[0]?.valor || '').replace(',', '.'));
+      if (daily > 0) return (Math.pow(1 + daily / 100, 252) - 1) * 100;
+    }
+  } catch(_) {}
+  // Fallback: brapi prime rate
+  try {
+    const r = await fetch('https://brapi.dev/api/v2/prime-rate?token=anonymous', { signal: AbortSignal.timeout(6000) });
+    if (r.ok) {
+      const d = await r.json();
+      const selic = d?.prime_rate?.[0]?.value || d?.prime_rate?.value;
+      if (selic) return parseFloat(selic);
+    }
+  } catch(_) {}
+  return null;
+}
+
+/** Busca IPCA acumulado 12 meses via BCB (série 13522) */
+async function _fetchIPCA12m() {
+  try {
+    const r = await fetch(
+      'https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/12?formato=json',
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      // Produto acumulado dos últimos 12 meses
+      const acum = (d || []).reduce((acc, x) => {
+        const v = parseFloat((x.valor || '0').replace(',', '.'));
+        return acc * (1 + v / 100);
+      }, 1);
+      return (acum - 1) * 100;
+    }
+  } catch(_) {}
+  return null;
+}
+
+/** Busca preços do Tesouro Direto via API oficial B3 */
+async function _fetchTDPrices() {
+  try {
+    const r = await fetch(
+      'https://www.tesourodireto.com.br/json/br/com/b3/tesourodireto/component/publicado/titulo/component.json',
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const list = d?.response?.TrsrBdTradgList || d?.Titulo || [];
+    // Normaliza campos (a API usa campos aninhados no formato real)
+    return list.map(item => {
+      const t = item?.TrsrBd || item;
+      return {
+        name:       t?.nm || t?.TipoTitulo || '',
+        maturity:   t?.mtrtyDt || t?.DataVencimento || '',
+        buyPrice:   +(t?.minRedVal || t?.PUCompra  || 0),
+        sellPrice:  +(t?.untrRedVal|| t?.PUVenda   || 0),
+        basePrice:  +(t?.isinCd   || t?.PUBase     || 0),
+        buyRate:    +(t?.anulInvstmtRate || t?.TaxaCompra || 0),
+        sellRate:   +(t?.anulRedRate     || t?.TaxaVenda  || 0),
+      };
+    }).filter(t => t.name);
+  } catch(e) {
+    console.warn('[inv] TD API error:', e.message);
+    return [];
+  }
+}
+
+/** Compara dois nomes de título TD (tolerante a variações de escrita) */
+function _tdMatchName(apiName, meta) {
+  if (!apiName || !meta) return false;
+  const n = apiName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const subtype = (meta.td_subtype || '').toLowerCase();
+  const maturity = (meta.td_maturity || '').replace(/-/g, '/').slice(0, 7); // YYYY-MM
+  // Match por código + vencimento aproximado
+  const codeMap = { lft:'selic', ltn:'prefixado', 'ntn-f':'prefixado com juros', 'ntn-b':'ipca', 'ntn-b_p':'ipca com juros', 'ntn-c':'igpm' };
+  const kw = codeMap[subtype] || subtype;
+  return n.includes(kw.replace('-','').split(' ')[0]);
+}
+
+/** Calcula PU estimado para Tesouro Prefixado (LTN) */
+function _calcLTNPrice(taxa, diasUteisPorVencer) {
+  // PU = 1000 / (1 + taxa/100)^(du/252)
+  return 1000 / Math.pow(1 + taxa / 100, diasUteisPorVencer / 252);
+}
+
+/** Dias corridos entre duas datas */
+function _daysBetween(d1, d2) {
+  return Math.round((new Date(d2) - new Date(d1)) / 86400000);
+}
+
+/** Dias úteis aproximados entre duas datas (252/ano) */
+function _busyDays(d1, d2) {
+  return Math.round(_daysBetween(d1, d2) * 252 / 365);
+}
+
+/**
+ * Calcula rendimento estimado de um fundo/TD desde a última atualização.
+ * Retorna { newPrice, gain, pct } onde newPrice é o novo current_price por unidade.
+ */
+function _calcFundYield(pos, cdiAnual) {
+  const meta    = _invGetMeta(pos);
+  const today   = new Date().toISOString().slice(0, 10);
+  const lastUpd = meta.fund_last_update || pos.created_at?.slice(0, 10) || today;
+  const dias    = Math.max(0, _daysBetween(lastUpd, today));
+  if (dias === 0) return null;
+
+  const currentPrice = +(pos.current_price) || +(pos.avg_cost) || 0;
+  const qty          = +(pos.quantity) || 1;
+  const currentValue = currentPrice * qty;
+
+  let newValue = currentValue;
+
+  if (meta.fund_index === 'cdi' || !meta.fund_index) {
+    const pct = +(meta.fund_cdi_pct) || 100;
+    const cdi = cdiAnual || +(meta.fund_last_cdi) || 10.5;
+    const rateEfetivo = cdi * pct / 100;
+    const dailyRate   = Math.pow(1 + rateEfetivo / 100, 1 / 252) - 1;
+    newValue = currentValue * Math.pow(1 + dailyRate, dias);
+  } else if (meta.fund_index === 'prefixado') {
+    const rate      = +(meta.fund_rate) || 0;
+    const dailyRate = Math.pow(1 + rate / 100, 1 / 252) - 1;
+    newValue = currentValue * Math.pow(1 + dailyRate, dias);
+  } else if (meta.fund_index === 'ipca') {
+    const spread    = +(meta.fund_rate) || 0;
+    const ipca      = +(meta.fund_last_ipca) || 4.5;
+    const rate      = ipca + spread;
+    const dailyRate = Math.pow(1 + rate / 100, 1 / 365) - 1;
+    newValue = currentValue * Math.pow(1 + dailyRate, dias);
+  } else if (meta.fund_index === 'selic') {
+    const pct       = +(meta.fund_cdi_pct) || 100;
+    const selic     = cdiAnual || +(meta.fund_last_cdi) || 10.5;
+    const rate      = selic * pct / 100;
+    const dailyRate = Math.pow(1 + rate / 100, 1 / 252) - 1;
+    newValue = currentValue * Math.pow(1 + dailyRate, dias);
+  }
+
+  const gain     = newValue - currentValue;
+  const newPrice = qty > 0 ? newValue / qty : newValue;
+  const pct      = currentValue > 0 ? gain / currentValue * 100 : 0;
+  return { newValue, newPrice, gain, pct, dias };
+}
 
 // Module state
 const _inv = {
@@ -163,7 +363,7 @@ function _renderInvestmentsPage() {
     .map(([k,v])=>{
       const t = _invAssetType(k);
       const pct = (v/totalMV*100).toFixed(1);
-      const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',outro:'#94a3b8'};
+      const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',tesouro_direto:'#1d4ed8',fundo_investimento:'#7e22ce',outro:'#94a3b8'};
       const col = colors[k]||'#94a3b8';
       return `<div title="${t.emoji} ${t.label}: ${pct}% (${fmt(v)})" style="flex:${pct};background:${col};min-width:3px"></div>`;
     }).join('') : '';
@@ -201,7 +401,7 @@ function _renderInvestmentsPage() {
           ${Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{
             const t = _invAssetType(k);
             const pct = (v/totalMV*100).toFixed(1);
-            const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',outro:'#94a3b8'};
+            const colors = {acao_br:'#2a6049',fii:'#7c3aed',etf_br:'#0891b2',acao_us:'#dc2626',etf_us:'#ea580c',bdr:'#d97706',crypto:'#f59e0b',renda_fixa:'#16a34a',tesouro_direto:'#1d4ed8',fundo_investimento:'#7e22ce',outro:'#94a3b8'};
             return `<span class="inv-legend-item"><span style="background:${colors[k]||'#94a3b8'}"></span>${t.emoji} ${t.label} ${pct}%</span>`;
           }).join('')}
         </div>
@@ -359,10 +559,12 @@ async function updateAllPrices() {
   }
 
   // Group by API to use
-  const brapi   = positions.filter(p => ['acao_br','fii','etf_br','bdr'].includes(p.asset_type));
-  const usStocks= positions.filter(p => ['acao_us','etf_us'].includes(p.asset_type));
-  const crypto  = positions.filter(p => p.asset_type === 'crypto');
-  const manual  = positions.filter(p => p.asset_type === 'renda_fixa' || p.asset_type === 'outro');
+  const brapi    = positions.filter(p => ['acao_br','fii','etf_br','bdr'].includes(p.asset_type));
+  const usStocks = positions.filter(p => ['acao_us','etf_us'].includes(p.asset_type));
+  const crypto   = positions.filter(p => p.asset_type === 'crypto');
+  const manual   = positions.filter(p => p.asset_type === 'renda_fixa' || p.asset_type === 'outro');
+  // Tesouro Direto e Fundos: motor de auto-yield dedicado
+  const autoYield = positions.filter(p => _invIsAutoYield(p));
 
   let updated = 0, failed = 0;
   const today = new Date().toISOString().slice(0, 10);
@@ -428,6 +630,17 @@ async function updateAllPrices() {
   // 4 — Manual / renda fixa: show count
   if (manual.length) {
     if (status) status.textContent = `${manual.length} ativo(s) precisam de atualização manual.`;
+  }
+
+  // 5 — Tesouro Direto & Fundos: motor de auto-yield
+  if (autoYield.length) {
+    if (status) status.textContent = `Atualizando ${autoYield.length} TD/Fundo(s)…`;
+    try {
+      await _invRunAutoYield(autoYield);
+      updated += autoYield.length;
+    } catch(e) {
+      console.warn('[inv] auto-yield batch error:', e.message);
+    }
   }
 
   // Persist to DB + reload
@@ -519,24 +732,90 @@ function openInvTransactionModal(accountId = null, positionId = null) {
           <label>Código do Ativo *</label>
           <input type="text" id="invTxTicker" placeholder="Ex: PETR4, BTC, AAPL"
             value="${pos ? pos.ticker : ''}"
-            oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase">
+            oninput="this.value=this.value.toUpperCase();_invOnTickerInput()" style="text-transform:uppercase">
         </div>
         <div class="form-group" id="invTxTypeGroup" ${pos ? 'style="display:none"' : ''}>
           <label>Tipo de Ativo *</label>
-          <select id="invTxAssetType">${typeOpts}</select>
+          <select id="invTxAssetType" onchange="_invOnAssetTypeChange()">${typeOpts}</select>
         </div>
         <div class="form-group">
           <label>Nome / Descrição</label>
           <input type="text" id="invTxName" placeholder="Nome do ativo (opcional)"
             value="${pos ? esc(pos.name || '') : ''}">
         </div>
-        <div class="form-group">
-          <label>Quantidade *</label>
+
+        <!-- ── Tesouro Direto: campos extras ─────────────────────────── -->
+        <div id="invTxTDFields" class="form-group full" style="display:none">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:.78rem;font-weight:700;color:var(--accent);margin-bottom:2px">🏛️ Dados do Tesouro Direto</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div>
+                <label style="font-size:.75rem">Tipo de Título *</label>
+                <select id="invTxTDSubtype" onchange="_invOnTDSubtypeChange()" style="font-size:.82rem;width:100%">
+                  ${TD_SUBTYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label style="font-size:.75rem">Vencimento *</label>
+                <input type="date" id="invTxTDMaturity" style="font-size:.82rem;width:100%">
+              </div>
+              <div>
+                <label style="font-size:.75rem" id="invTxTDRateLabel">Taxa Contratada (% a.a.)</label>
+                <input type="text" id="invTxTDRate" inputmode="decimal" placeholder="Ex: 12,75"
+                  style="font-size:.82rem;width:100%" oninput="_invCalcTDTotal()">
+              </div>
+              <div>
+                <label style="font-size:.75rem">Preço por Título (R$)</label>
+                <input type="text" id="invTxTDPurchasePrice" inputmode="decimal" placeholder="Preço unitário"
+                  style="font-size:.82rem;width:100%" oninput="_invCalcTDTotal()">
+                <div style="font-size:.68rem;color:var(--muted);margin-top:2px">Mínimo: 0,01 título</div>
+              </div>
+            </div>
+            <div id="invTxTDRateHint" style="font-size:.72rem;color:var(--muted);padding:6px 8px;background:rgba(42,96,73,.07);border-radius:6px"></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button type="button" class="btn btn-ghost btn-sm" style="font-size:.72rem" onclick="_invFetchTDPriceForForm()">
+                🔄 Buscar PU Atual na B3
+              </button>
+              <span id="invTxTDFetchStatus" style="font-size:.72rem;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Fundo de Investimento: campos extras ───────────────────── -->
+        <div id="invTxFundFields" class="form-group full" style="display:none">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:.78rem;font-weight:700;color:var(--accent);margin-bottom:2px">🏦 Parâmetros do Fundo</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="form-group" style="margin:0">
+                <label style="font-size:.75rem">Indexador *</label>
+                <select id="invTxFundIndex" onchange="_invOnFundIndexChange()" style="font-size:.82rem;width:100%">
+                  ${FUND_INDEXERS.map(f => `<option value="${f.value}">${f.label}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="margin:0" id="invTxFundCdiPctGroup">
+                <label style="font-size:.75rem" id="invTxFundRateLabel">% do CDI *</label>
+                <input type="text" id="invTxFundRate" inputmode="decimal" placeholder="Ex: 110"
+                  style="font-size:.82rem;width:100%">
+              </div>
+            </div>
+            <div id="invTxFundHint" style="font-size:.72rem;color:var(--muted);padding:6px 8px;background:rgba(42,96,73,.07);border-radius:6px">
+              A aplicação buscará o CDI via Banco Central e calculará o rendimento automaticamente.
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:.72rem;color:var(--muted)">CDI atual:</span>
+              <span id="invTxCDIDisplay" style="font-size:.78rem;font-weight:700;color:var(--accent)">—</span>
+              <button type="button" class="btn btn-ghost btn-sm" style="font-size:.72rem" onclick="_invFetchCDIForForm()">🔄 Atualizar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" id="invTxQtyGroup">
+          <label id="invTxQtyLabel">Quantidade *</label>
           <input type="text" id="invTxQty" inputmode="decimal" placeholder="0"
             oninput="_invCalcTotal()">
         </div>
-        <div class="form-group">
-          <label>Preço Unitário (BRL) *</label>
+        <div class="form-group" id="invTxPriceGroup">
+          <label id="invTxPriceLabel">Preço Unitário (BRL) *</label>
           <div class="amt-wrap">
             <input type="text" id="invTxPrice" inputmode="decimal" placeholder="0,00"
               oninput="_invCalcTotal()">
@@ -586,6 +865,138 @@ function _invSetTxType(type) {
   _invCalcTotal();
 }
 
+function _invOnTickerInput() {
+  // Auto-select type when common patterns are detected
+}
+
+function _invOnAssetTypeChange() {
+  const v = document.getElementById('invTxAssetType')?.value;
+  const tdFields   = document.getElementById('invTxTDFields');
+  const fundFields = document.getElementById('invTxFundFields');
+  const qtyGroup   = document.getElementById('invTxQtyGroup');
+  const priceGroup = document.getElementById('invTxPriceGroup');
+  const qtyLabel   = document.getElementById('invTxQtyLabel');
+  const priceLabel = document.getElementById('invTxPriceLabel');
+  const ticker     = document.getElementById('invTxTicker');
+
+  if (tdFields)   tdFields.style.display   = (v === 'tesouro_direto')      ? '' : 'none';
+  if (fundFields) fundFields.style.display = (v === 'fundo_investimento')   ? '' : 'none';
+
+  if (v === 'tesouro_direto') {
+    if (ticker) { ticker.placeholder = 'Ex: TD-SELIC-2029'; }
+    if (qtyLabel) qtyLabel.textContent = 'Quantidade de Títulos *';
+    if (priceLabel) priceLabel.textContent = 'Preço por Título (R$) *';
+    if (priceGroup) priceGroup.style.display = 'none'; // preço vem do campo TD
+    _invOnTDSubtypeChange();
+  } else if (v === 'fundo_investimento') {
+    if (ticker) { ticker.placeholder = 'Nome/código do fundo'; }
+    if (qtyLabel) qtyLabel.textContent = 'Valor Aplicado (R$) *';
+    if (priceLabel) priceLabel.textContent = 'Cota Inicial (R$)';
+    if (priceGroup) priceGroup.style.display = 'none'; // fundo usa 1 unidade = valor total
+    if (qtyGroup) qtyGroup.style.display = ''; // mostra campo de valor
+    _invOnFundIndexChange();
+    _invFetchCDIForForm();
+  } else {
+    if (ticker) { ticker.placeholder = 'Ex: PETR4, BTC, AAPL'; }
+    if (qtyLabel) qtyLabel.textContent = 'Quantidade *';
+    if (priceLabel) priceLabel.textContent = 'Preço Unitário (BRL) *';
+    if (priceGroup) priceGroup.style.display = '';
+    if (qtyGroup) qtyGroup.style.display = '';
+  }
+}
+
+function _invOnTDSubtypeChange() {
+  const sub = document.getElementById('invTxTDSubtype')?.value;
+  const hint = document.getElementById('invTxTDRateHint');
+  const rateLabel = document.getElementById('invTxTDRateLabel');
+  const t = TD_SUBTYPES.find(x => x.value === sub);
+  if (!t) return;
+  if (rateLabel) {
+    rateLabel.textContent = sub === 'LFT'
+      ? 'Spread sobre Selic (% a.a.) — normalmente 0'
+      : 'Taxa Contratada (% a.a.) *';
+  }
+  if (hint) {
+    const hints = {
+      LFT:     '💡 Tesouro Selic: rende a Selic Over. O preço é atualizado automaticamente via API B3.',
+      LTN:     '💡 Tesouro Prefixado: taxa definida na compra. Valor de face = R$ 1.000 no vencimento.',
+      'NTN-F': '💡 Prefixado com juros semestrais. Cupons de 10% a.a. pagos a cada 6 meses.',
+      'NTN-B': '💡 IPCA+ sem cupom. Acompanha IPCA + taxa contratada. Preço via API B3.',
+      'NTN-B_P':'💡 IPCA+ com cupons semestrais de 6% a.a. + IPCA.',
+      'NTN-C': '💡 IGP-M+ com cupons. Indexado ao IGP-M + taxa prefixada.',
+    };
+    hint.textContent = hints[sub] || '';
+  }
+}
+
+function _invOnFundIndexChange() {
+  const idx = document.getElementById('invTxFundIndex')?.value;
+  const rateLabel = document.getElementById('invTxFundRateLabel');
+  const hint = document.getElementById('invTxFundHint');
+  const labels = {
+    cdi:       '% do CDI *',
+    prefixado: 'Taxa Prefixada (% a.a.) *',
+    ipca:      'Spread sobre IPCA (% a.a.) *',
+    selic:     '% da Selic *',
+  };
+  const hints = {
+    cdi:       'O rendimento será calculado como X% do CDI anual. O CDI é buscado automaticamente no Banco Central.',
+    prefixado: 'Rendimento prefixado. A aplicação crescerá à taxa informada, composta diariamente.',
+    ipca:      'IPCA + spread prefixado. O IPCA dos últimos 12 meses é buscado no Banco Central.',
+    selic:     'Rendimento como % da Selic Over. A Selic é buscada automaticamente.',
+  };
+  if (rateLabel) rateLabel.textContent = labels[idx] || '% *';
+  if (hint) hint.textContent = hints[idx] || '';
+}
+
+async function _invFetchCDIForForm() {
+  const display = document.getElementById('invTxCDIDisplay');
+  if (display) display.textContent = '⏳';
+  const cdi = await _fetchCDIAnual().catch(() => null);
+  if (display) display.textContent = cdi ? cdi.toFixed(2) + '% a.a.' : 'Indisponível';
+  window._invLastCDI = cdi;
+  return cdi;
+}
+
+async function _invFetchTDPriceForForm() {
+  const statusEl  = document.getElementById('invTxTDFetchStatus');
+  const priceEl   = document.getElementById('invTxTDPurchasePrice');
+  const sub       = document.getElementById('invTxTDSubtype')?.value;
+  const maturity  = document.getElementById('invTxTDMaturity')?.value;
+  if (statusEl) statusEl.textContent = '⏳ Buscando…';
+  try {
+    const list = await _fetchTDPrices();
+    if (!list.length) throw new Error('API B3 indisponível');
+    // Match pelo subtipo e vencimento
+    const codeMap = { LFT:'selic', LTN:'prefixado', 'NTN-F':'prefixado', 'NTN-B':'ipca', 'NTN-B_P':'ipca', 'NTN-C':'igpm' };
+    const kw = (codeMap[sub] || '').toLowerCase();
+    let best = list.find(t => t.name.toLowerCase().includes(kw));
+    if (!best && list.length) best = list[0];
+    if (best?.buyPrice) {
+      if (priceEl) priceEl.value = best.buyPrice.toFixed(2).replace('.', ',');
+      const rateEl = document.getElementById('invTxTDRate');
+      if (rateEl && !rateEl.value && best.buyRate) rateEl.value = best.buyRate.toFixed(2).replace('.', ',');
+      if (statusEl) statusEl.textContent = '✅ PU ' + fmt(best.buyPrice);
+      _invCalcTDTotal();
+    } else {
+      if (statusEl) statusEl.textContent = '⚠️ Título não encontrado na API';
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ ' + e.message;
+  }
+}
+
+function _invCalcTDTotal() {
+  const qty   = parseFloat(document.getElementById('invTxQty')?.value?.replace(',', '.')) || 0;
+  const price = parseFloat(document.getElementById('invTxTDPurchasePrice')?.value?.replace(',', '.')) || 0;
+  const total = qty * price;
+  const el = document.getElementById('invTxTotal');
+  if (el) el.textContent = fmt(total);
+  // Sync hidden price field
+  const priceEl = document.getElementById('invTxPrice');
+  if (priceEl) priceEl.value = price.toFixed(2).replace('.', ',');
+}
+
 function _invOnAccountChange() {
   _invCalcTotal();
 }
@@ -609,28 +1020,77 @@ function _invCalcTotal() {
 }
 
 async function saveInvTransaction() {
-  const btn     = document.getElementById('invTxSaveBtn');
-  const errEl   = document.getElementById('invTxError');
-  const type    = document.getElementById('invTxType').value;
-  const accId   = document.getElementById('invTxAccount').value;
-  const date    = document.getElementById('invTxDate').value;
-  const ticker  = document.getElementById('invTxTicker').value.trim().toUpperCase();
-  const assetT  = document.getElementById('invTxAssetType').value;
-  const name    = document.getElementById('invTxName').value.trim();
-  const qtyRaw  = parseFloat(document.getElementById('invTxQty').value.replace(',','.'));
-  const priceRaw= parseFloat(document.getElementById('invTxPrice').value.replace(',','.'));
-  const notes   = document.getElementById('invTxNotes').value.trim();
-  const posId   = document.getElementById('invTxPositionId').value;
+  const btn    = document.getElementById('invTxSaveBtn');
+  const errEl  = document.getElementById('invTxError');
+  const type   = document.getElementById('invTxType').value;
+  const accId  = document.getElementById('invTxAccount').value;
+  const date   = document.getElementById('invTxDate').value;
+  const assetT = document.getElementById('invTxAssetType').value;
+  const name   = document.getElementById('invTxName').value.trim();
+  const notes  = document.getElementById('invTxNotes').value.trim();
+  const posId  = document.getElementById('invTxPositionId').value;
 
   if (errEl) errEl.style.display = 'none';
+  if (!accId) { _invShowErr('Selecione a conta'); return; }
+  if (!date)  { _invShowErr('Informe a data'); return; }
 
-  if (!accId)          { _invShowErr('Selecione a conta'); return; }
-  if (!date)           { _invShowErr('Informe a data'); return; }
-  if (!ticker)         { _invShowErr('Informe o código do ativo'); return; }
-  if (!qtyRaw || qtyRaw <= 0)   { _invShowErr('Informe a quantidade'); return; }
-  if (!priceRaw|| priceRaw <= 0){ _invShowErr('Informe o preço unitário'); return; }
+  // ── Coleta metadata de TD / Fundo ─────────────────────────────────────────
+  let metaJson = {};
 
-  const total = qtyRaw * priceRaw;
+  if (assetT === 'tesouro_direto') {
+    const sub      = document.getElementById('invTxTDSubtype')?.value || 'LFT';
+    const maturity = document.getElementById('invTxTDMaturity')?.value || '';
+    const tdRate   = parseFloat((document.getElementById('invTxTDRate')?.value || '').replace(',', '.')) || 0;
+    const tdPrice  = parseFloat((document.getElementById('invTxTDPurchasePrice')?.value || '').replace(',', '.')) || 0;
+    if (!maturity) { _invShowErr('Informe o vencimento do título'); return; }
+    if (!tdPrice)  { _invShowErr('Informe o preço por título'); return; }
+    const t = TD_SUBTYPES.find(x => x.value === sub);
+    metaJson = { td_subtype: sub, td_maturity: maturity, td_rate: tdRate,
+                 td_index: t?.index || 'selic', td_purchase_price: tdPrice, last_update: date };
+    // Gera ticker padronizado: TD-SELIC-2029
+    const yr = maturity.slice(0, 4);
+    const codeLabel = { LFT:'SELIC', LTN:'PRE', 'NTN-F':'PREF', 'NTN-B':'IPCA', 'NTN-B_P':'IPCAJ', 'NTN-C':'IGPM' };
+    const generatedTicker = 'TD-' + (codeLabel[sub] || sub) + '-' + yr;
+    const tickerEl = document.getElementById('invTxTicker');
+    if (tickerEl && !tickerEl.value.startsWith('TD-')) tickerEl.value = generatedTicker;
+  }
+
+  if (assetT === 'fundo_investimento') {
+    const fundIdx  = document.getElementById('invTxFundIndex')?.value || 'cdi';
+    const fundRate = parseFloat((document.getElementById('invTxFundRate')?.value || '').replace(',', '.')) || 0;
+    if (!fundRate) { _invShowErr('Informe o ' + (fundIdx === 'cdi' ? '% do CDI' : 'taxa % a.a.')); return; }
+    const cdiAtual = window._invLastCDI || null;
+    metaJson = { fund_index: fundIdx,
+                 fund_cdi_pct: fundIdx === 'cdi' ? fundRate : null,
+                 fund_rate: fundIdx !== 'cdi' ? fundRate : null,
+                 fund_last_cdi: cdiAtual, fund_last_update: date };
+  }
+
+  // ── Lê ticker final ────────────────────────────────────────────────────────
+  const ticker = (document.getElementById('invTxTicker')?.value || '').trim().toUpperCase();
+  if (!ticker) { _invShowErr('Informe o código do ativo'); return; }
+
+  // ── Lê quantidade e preço por tipo de ativo ────────────────────────────────
+  let qtyRaw, priceRaw;
+  if (assetT === 'fundo_investimento') {
+    qtyRaw   = parseFloat((document.getElementById('invTxQty')?.value || '').replace(',', '.')) || 0;
+    priceRaw = 1;
+    if (!qtyRaw || qtyRaw <= 0) { _invShowErr('Informe o valor aplicado'); return; }
+  } else if (assetT === 'tesouro_direto') {
+    qtyRaw   = parseFloat((document.getElementById('invTxQty')?.value || '').replace(',', '.')) || 0;
+    priceRaw = parseFloat((document.getElementById('invTxTDPurchasePrice')?.value || '').replace(',', '.')) || 0;
+    if (!qtyRaw || qtyRaw <= 0)    { _invShowErr('Informe a quantidade de títulos (mín: 0,01)'); return; }
+    if (!priceRaw || priceRaw <= 0){ _invShowErr('Informe o preço por título'); return; }
+  } else {
+    qtyRaw   = parseFloat((document.getElementById('invTxQty')?.value || '').replace(',', '.')) || 0;
+    priceRaw = parseFloat((document.getElementById('invTxPrice')?.value || '').replace(',', '.')) || 0;
+    if (!qtyRaw || qtyRaw <= 0)    { _invShowErr('Informe a quantidade'); return; }
+    if (!priceRaw || priceRaw <= 0){ _invShowErr('Informe o preço unitário'); return; }
+  }
+
+  const total    = qtyRaw * priceRaw;
+  const notesStr = Object.keys(metaJson).length ? _invMetaStr(metaJson) : (notes || null);
+
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando…'; }
 
   try {
@@ -640,52 +1100,59 @@ async function saveInvTransaction() {
       : _inv.positions.find(p => p.account_id === accId && p.ticker === ticker);
 
     if (!position) {
-      // New position
       const { data: newPos, error: posErr } = await sb.from('investment_positions').insert({
-        family_id:   famId(),
-        account_id:  accId,
+        family_id:     famId(),
+        account_id:    accId,
         ticker,
-        asset_type:  assetT,
-        name:        name || ticker,
-        quantity:    0,
-        avg_cost:    0,
-        currency:    ['acao_us','etf_us'].includes(assetT) ? 'USD' : 'BRL',
+        asset_type:    assetT,
+        name:          name || ticker,
+        quantity:      0,
+        avg_cost:      0,
+        current_price: priceRaw,
+        currency:      ['acao_us','etf_us'].includes(assetT) ? 'USD' : 'BRL',
+        notes:         notesStr,
       }).select().single();
       if (posErr) throw posErr;
       position = newPos;
       _inv.positions.push(position);
+    } else if (Object.keys(metaJson).length) {
+      await sb.from('investment_positions').update({ notes: notesStr }).eq('id', position.id);
+      position.notes = notesStr;
     }
 
-    // 2. Update avg_cost and quantity
-    const oldQty   = +(position.quantity) || 0;
-    const oldCost  = +(position.avg_cost)  || 0;
-    let   newQty, newAvgCost;
+    // 2. Atualiza qty e avg_cost
+    const oldQty  = +(position.quantity) || 0;
+    const oldCost = +(position.avg_cost)  || 0;
+    let newQty, newAvgCost;
 
     if (type === 'buy') {
       newQty     = oldQty + qtyRaw;
-      // Weighted average cost
-      newAvgCost = newQty > 0
-        ? (oldQty * oldCost + qtyRaw * priceRaw) / newQty
-        : priceRaw;
+      newAvgCost = newQty > 0 ? (oldQty * oldCost + qtyRaw * priceRaw) / newQty : priceRaw;
     } else {
-      // Sell — reduce qty, avg_cost unchanged (FIFO/average cost same result)
-      if (qtyRaw > oldQty + 0.00001) { _invShowErr(`Quantidade insuficiente (disponível: ${oldQty})`); return; }
+      if (qtyRaw > oldQty + 0.00001) { _invShowErr('Quantidade insuficiente (disponível: ' + oldQty + ')'); return; }
       newQty     = Math.max(0, oldQty - qtyRaw);
-      newAvgCost = oldCost; // avg_cost stays the same on sells
+      newAvgCost = oldCost;
     }
 
     const { error: updErr } = await sb.from('investment_positions').update({
-      quantity:   newQty,
-      avg_cost:   newAvgCost,
-      name:       name || position.name || ticker,
-      asset_type: assetT || position.asset_type,
-      updated_at: new Date().toISOString(),
+      quantity:      newQty,
+      avg_cost:      newAvgCost,
+      current_price: priceRaw,
+      name:          name || position.name || ticker,
+      asset_type:    assetT || position.asset_type,
+      updated_at:    new Date().toISOString(),
     }).eq('id', position.id);
     if (updErr) throw updErr;
+    Object.assign(position, { quantity: newQty, avg_cost: newAvgCost, current_price: priceRaw });
 
-    // 3. Create financial transaction (debit for buy, credit for sell)
+    // 3. Transação financeira na conta
     const txAmount = type === 'buy' ? -total : total;
-    const txDesc   = `${type === 'buy' ? 'Compra' : 'Venda'}: ${ticker} ${qtyRaw}x @ ${fmt(priceRaw)}`;
+    const txDesc   = assetT === 'tesouro_direto'
+      ? (type==='buy' ? 'Compra TD: ' : 'Venda TD: ') + ticker + ' ' + qtyRaw + ' título(s) @ ' + fmt(priceRaw)
+      : assetT === 'fundo_investimento'
+      ? (type==='buy' ? 'Aplicação Fundo: ' : 'Resgate Fundo: ') + ticker
+      : (type==='buy' ? 'Compra: ' : 'Venda: ') + ticker + ' ' + qtyRaw + 'x @ ' + fmt(priceRaw);
+
     const { data: txData, error: txErr } = await sb.from('transactions').insert({
       family_id:   famId(),
       account_id:  accId,
@@ -699,7 +1166,7 @@ async function saveInvTransaction() {
     }).select().single();
     if (txErr) throw txErr;
 
-    // 4. Record investment transaction
+    // 4. Registro na investment_transactions
     await sb.from('investment_transactions').insert({
       family_id:   famId(),
       position_id: position.id,
@@ -710,24 +1177,26 @@ async function saveInvTransaction() {
       unit_price:  priceRaw,
       total_brl:   total,
       date,
-      notes:       notes || null,
+      notes:       notesStr,
     });
 
-    // 5. Record price in history
+    // 5. Histórico de preço
     const today = new Date().toISOString().slice(0, 10);
     await sb.from('investment_price_history').upsert({
       position_id: position.id,
       family_id:   famId(),
       date:        date || today,
       price:       priceRaw,
-      currency:    position.currency || 'BRL',
+      currency:    'BRL',
       source:      'manual',
     }, { onConflict: 'position_id,date' });
 
-    toast(`✅ ${type === 'buy' ? 'Compra' : 'Venda'} de ${ticker} registrada!`, 'success');
+    const lbl = assetT==='fundo_investimento' ? (type==='buy'?'Aplicação':'Resgate')
+              : assetT==='tesouro_direto' ? (type==='buy'?'Compra TD':'Venda TD')
+              : (type==='buy'?'Compra':'Venda');
+    toast('✅ ' + lbl + ' de ' + ticker + ' registrada!', 'success');
     closeModal('invTxModal');
 
-    // Reload
     await loadInvestments(true);
     DB.accounts.bust();
     await DB.accounts.load(true);
@@ -738,7 +1207,7 @@ async function saveInvTransaction() {
 
   } catch(e) {
     _invShowErr(e.message || 'Erro ao salvar');
-    if (btn) { btn.disabled = false; btn.textContent = type === 'buy' ? '💾 Registrar Compra' : '💾 Registrar Venda'; }
+    if (btn) { btn.disabled = false; btn.textContent = type==='buy' ? '💾 Registrar Compra' : '💾 Registrar Venda'; }
   }
 }
 
@@ -746,6 +1215,459 @@ function _invShowErr(msg) {
   const errEl = document.getElementById('invTxError');
   if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTO-YIELD ENGINE — Tesouro Direto & Fundos CDI
+// Atualiza preços e registra movimentações de rendimento automaticamente.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Ponto de entrada do motor de rendimento.
+ * Chamado no _invUpdatePrices para posições de TD e Fundos.
+ */
+async function _invRunAutoYield(positions) {
+  const autoYield = positions.filter(p => _invIsAutoYield(p) && +(p.quantity) > 0);
+  if (!autoYield.length) return;
+
+  // Busca CDI e preços TD em paralelo
+  const [cdiAnual, tdPrices] = await Promise.all([
+    _fetchCDIAnual().catch(() => null),
+    _fetchTDPrices().catch(() => []),
+  ]);
+
+  // Armazena CDI em cache de sessão para uso nos formulários
+  if (cdiAnual) window._invLastCDI = cdiAnual;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const pos of autoYield) {
+    try {
+      if (_invIsTD(pos)) {
+        await _invUpdateTDPosition(pos, tdPrices, today);
+      } else if (_invIsFund(pos)) {
+        await _invUpdateFundPosition(pos, cdiAnual, today);
+      }
+    } catch(e) {
+      console.warn('[inv] auto-yield error for', pos.ticker, ':', e.message);
+    }
+  }
+}
+
+/**
+ * Atualiza posição de Tesouro Direto via API B3.
+ * Se a API não retornar dados, calcula estimativa local.
+ */
+async function _invUpdateTDPosition(pos, tdPrices, today) {
+  const meta    = _invGetMeta(pos);
+  const lastUpd = meta.last_update || pos.created_at?.slice(0,10) || today;
+  if (lastUpd === today) return; // já atualizado hoje
+
+  const sub      = meta.td_subtype || 'LFT';
+  const oldPrice = +(pos.current_price) || +(pos.avg_cost) || 0;
+  let   newPrice = oldPrice;
+
+  // Tenta achar o título na lista B3
+  const codeMap  = { LFT:'selic', LTN:'prefixado', 'NTN-F':'prefixado', 'NTN-B':'ipca', 'NTN-B_P':'ipca', 'NTN-C':'igpm' };
+  const kw       = (codeMap[sub] || '').toLowerCase();
+  const matYear  = (meta.td_maturity || '').slice(0,4);
+  const matched  = (tdPrices || []).find(t => {
+    const n = t.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    return n.includes(kw) && (!matYear || t.name.includes(matYear));
+  });
+
+  if (matched?.buyPrice && matched.buyPrice > 0) {
+    newPrice = matched.buyPrice;
+  } else if (sub === 'LTN' && meta.td_rate && meta.td_maturity) {
+    // Estimativa local para Prefixado quando API indisponível
+    const du = _busyDays(today, meta.td_maturity);
+    if (du > 0) newPrice = _calcLTNPrice(meta.td_rate, du);
+  }
+
+  if (newPrice <= 0 || Math.abs(newPrice - oldPrice) < 0.001) return;
+
+  const qty  = +(pos.quantity) || 0;
+  const gain = (newPrice - oldPrice) * qty;
+
+  await _invApplyYieldGain(pos, newPrice, gain, today, 'td_auto',
+    'Rendimento TD: ' + pos.ticker + ' — PU ' + fmt(oldPrice) + ' → ' + fmt(newPrice));
+
+  // Atualiza metadata com data de hoje
+  const newMeta = { ...meta, last_update: today };
+  await sb.from('investment_positions').update({ notes: _invMetaStr(newMeta) }).eq('id', pos.id);
+  pos.notes = _invMetaStr(newMeta);
+}
+
+/**
+ * Atualiza posição de Fundo de Investimento via CDI do BCB.
+ */
+async function _invUpdateFundPosition(pos, cdiAnual, today) {
+  const meta    = _invGetMeta(pos);
+  const lastUpd = meta.fund_last_update || pos.created_at?.slice(0,10) || today;
+  if (lastUpd === today) return;
+
+  const result = _calcFundYield(pos, cdiAnual);
+  if (!result || result.gain === 0 || Math.abs(result.gain) < 0.01) return;
+
+  const { newPrice, gain } = result;
+  const indexLabel = { cdi:'CDI', prefixado:'Prefixado', ipca:'IPCA+', selic:'Selic' }[meta.fund_index] || 'CDI';
+  const pctInfo = meta.fund_index === 'cdi'
+    ? meta.fund_cdi_pct + '% do CDI (' + (cdiAnual||0).toFixed(2) + '% a.a.)'
+    : meta.fund_rate + '% a.a. ' + indexLabel;
+
+  await _invApplyYieldGain(pos, newPrice, gain, today, 'fund_cdi',
+    'Rendimento Fundo: ' + pos.ticker + ' — ' + pctInfo + ' (' + result.dias + ' dias)');
+
+  // Atualiza metadata
+  const newMeta = { ...meta, fund_last_update: today, fund_last_cdi: cdiAnual || meta.fund_last_cdi };
+  await sb.from('investment_positions').update({ notes: _invMetaStr(newMeta) }).eq('id', pos.id);
+  pos.notes = _invMetaStr(newMeta);
+}
+
+/**
+ * Aplica o ganho/perda: atualiza current_price, grava histórico e
+ * registra movimentação de rendimento na investment_transactions e transactions.
+ */
+async function _invApplyYieldGain(pos, newPrice, gain, date, source, description) {
+  if (!pos?.id) return;
+
+  // 1. Atualiza current_price na posição
+  await sb.from('investment_positions').update({
+    current_price:    newPrice,
+    price_updated_at: new Date().toISOString(),
+    updated_at:       new Date().toISOString(),
+  }).eq('id', pos.id);
+  pos.current_price = newPrice;
+
+  // 2. Grava histórico de preço
+  await sb.from('investment_price_history').upsert({
+    position_id: pos.id,
+    family_id:   pos.family_id || famId(),
+    date,
+    price:       newPrice,
+    currency:    'BRL',
+    source,
+  }, { onConflict: 'position_id,date' });
+
+  // 3. Registra movimentação de rendimento na transactions principal
+  const { data: txData } = await sb.from('transactions').insert({
+    family_id:   pos.family_id || famId(),
+    account_id:  pos.account_id,
+    date,
+    description,
+    amount:      gain, // positivo = crédito na conta
+    category_id: null,
+    memo:        'Rendimento automático — ' + source,
+    status:      'confirmed',
+    is_transfer: false,
+  }).select('id').single();
+
+  // 4. Grava em investment_transactions com notes marcando como rendimento
+  if (txData?.id) {
+    await sb.from('investment_transactions').insert({
+      family_id:   pos.family_id || famId(),
+      position_id: pos.id,
+      account_id:  pos.account_id,
+      tx_id:       txData.id,
+      type:        gain >= 0 ? 'buy' : 'sell', // buy = ganho (aumenta posição), sell = perda
+      quantity:    0,  // rendimento não muda qty, apenas o preço
+      unit_price:  newPrice,
+      total_brl:   Math.abs(gain),
+      date,
+      notes:       _invMetaStr({ type: 'rendimento', source, gain }),
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PAINEL DE DETALHE ESTENDIDO para TD e Fundos
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Abre painel de atualização manual de rendimento para TD/Fundos.
+ * Permite ao usuário corrigir o valor manualmente.
+ */
+function openInvYieldEditPanel(positionId) {
+  const pos = _inv.positions.find(p => p.id === positionId);
+  if (!pos || !_invIsAutoYield(pos)) return;
+
+  document.getElementById('invYieldEditModal')?.remove();
+  const meta     = _invGetMeta(pos);
+  const isTD     = _invIsTD(pos);
+  const isFund   = _invIsFund(pos);
+  const curPrice = +(pos.current_price) || +(pos.avg_cost) || 0;
+  const qty      = +(pos.quantity) || 0;
+  const curValue = curPrice * qty;
+  const cost     = +(pos.avg_cost) * qty;
+  const pnl      = curValue - cost;
+
+  // Informações do indexador atual
+  let indexInfo = '';
+  if (isTD) {
+    const t = TD_SUBTYPES.find(x => x.value === meta.td_subtype) || {};
+    indexInfo = (t.label || 'Tesouro') + (meta.td_maturity ? ' · Vence ' + fmtDate(meta.td_maturity) : '')
+              + (meta.td_rate ? ' · ' + meta.td_rate + '% a.a.' : '');
+  }
+  if (isFund) {
+    const idx = FUND_INDEXERS.find(x => x.value === meta.fund_index) || {};
+    const rate = meta.fund_index === 'cdi' ? (meta.fund_cdi_pct + '% CDI') : (meta.fund_rate + '% a.a.');
+    indexInfo = idx.label + ' · ' + rate + (meta.fund_last_cdi ? ' · CDI ref: ' + (+meta.fund_last_cdi).toFixed(2) + '%' : '');
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay open';
+  modal.id = 'invYieldEditModal';
+  modal.style.zIndex = '10020';
+  modal.innerHTML = `
+  <div class="modal" style="max-width:480px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">✏️ Atualizar Rendimento — ${esc(pos.ticker)}</span>
+      <button class="modal-close" onclick="closeModal('invYieldEditModal')">✕</button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- KPIs atuais -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">Saldo Atual</div>
+          <div style="font-size:.9rem;font-weight:700">${fmt(curValue)}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">Custo Total</div>
+          <div style="font-size:.9rem;font-weight:700">${fmt(cost)}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">Resultado</div>
+          <div style="font-size:.9rem;font-weight:700;color:${pnl>=0?'var(--green)':'var(--danger)'}">
+            ${pnl>=0?'+':''}${fmt(pnl)}</div>
+        </div>
+      </div>
+
+      <!-- Parâmetros do indexador -->
+      <div style="font-size:.78rem;color:var(--muted);background:var(--surface2);border-radius:8px;padding:10px">
+        📐 ${esc(indexInfo)}
+      </div>
+
+      <!-- CDI atual (somente fundos) -->
+      ${isFund ? `
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:.82rem;flex:1">CDI atual (Banco Central):</span>
+        <span id="invYieldCDIVal" style="font-weight:700;color:var(--accent)">
+          ${window._invLastCDI ? (+window._invLastCDI).toFixed(2)+'% a.a.' : '—'}
+        </span>
+        <button type="button" class="btn btn-ghost btn-sm" style="font-size:.72rem"
+          onclick="_invYieldRefreshCDI()">🔄</button>
+      </div>` : ''}
+
+      <!-- Tipo de atualização -->
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="font-size:.78rem;font-weight:600">Tipo de atualização</label>
+        <div style="display:flex;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer">
+            <input type="radio" name="yieldUpdateType" value="auto" checked
+              onchange="_invYieldToggleMode(this.value)"> Auto (calcular)
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer">
+            <input type="radio" name="yieldUpdateType" value="manual"
+              onchange="_invYieldToggleMode(this.value)"> Manual (informar valor)
+          </label>
+        </div>
+      </div>
+
+      <!-- Modo auto -->
+      <div id="invYieldAutoMode">
+        <div style="font-size:.82rem;color:var(--muted);padding:8px 12px;background:rgba(42,96,73,.07);border-radius:8px">
+          🔄 Clique em <strong>Calcular e Aplicar</strong> para recalcular o rendimento
+          desde <strong>${fmtDate(meta.fund_last_update || meta.last_update || 'hoje')}</strong> usando os índices atuais.
+        </div>
+        <div id="invYieldPreview" style="display:none;margin-top:8px;padding:10px 12px;
+          background:var(--surface2);border-radius:8px;font-size:.82rem">
+        </div>
+      </div>
+
+      <!-- Modo manual -->
+      <div id="invYieldManualMode" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.75rem">Novo valor total (R$)</label>
+            <input type="text" id="invYieldNewValue" inputmode="decimal"
+              value="${curValue.toFixed(2).replace('.',',')}"
+              style="font-size:.9rem;font-weight:600"
+              oninput="_invYieldCalcManual()">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.75rem">Ganho / Perda</label>
+            <div id="invYieldGainDisplay" style="padding:8px 10px;border:1px solid var(--border);
+              border-radius:var(--r-sm);font-size:.9rem;font-weight:700;color:var(--muted)">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="invYieldError" style="display:none;color:var(--danger);font-size:.8rem;
+        padding:8px;background:#fef2f2;border-radius:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('invYieldEditModal')">Cancelar</button>
+      <button class="btn btn-primary" id="invYieldApplyBtn"
+        onclick="applyInvYield('${positionId}')">
+        🔄 Calcular e Aplicar
+      </button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(modal);
+  // Pré-calcula rendimento no modo auto
+  _invYieldPreviewAuto(positionId);
+}
+
+window.openInvYieldEditPanel = openInvYieldEditPanel;
+
+function _invYieldToggleMode(mode) {
+  const autoEl   = document.getElementById('invYieldAutoMode');
+  const manualEl = document.getElementById('invYieldManualMode');
+  const btn      = document.getElementById('invYieldApplyBtn');
+  if (autoEl)   autoEl.style.display   = mode === 'auto'   ? '' : 'none';
+  if (manualEl) manualEl.style.display = mode === 'manual' ? '' : 'none';
+  if (btn) btn.textContent = mode === 'auto' ? '🔄 Calcular e Aplicar' : '💾 Aplicar Valor Manual';
+}
+
+async function _invYieldRefreshCDI() {
+  const cdi = await _fetchCDIAnual().catch(() => null);
+  if (cdi) {
+    window._invLastCDI = cdi;
+    const el = document.getElementById('invYieldCDIVal');
+    if (el) el.textContent = cdi.toFixed(2) + '% a.a.';
+  }
+}
+
+async function _invYieldPreviewAuto(positionId) {
+  const pos  = _inv.positions.find(p => p.id === positionId);
+  if (!pos) return;
+  const cdi  = window._invLastCDI || await _fetchCDIAnual().catch(() => null);
+  const prev = document.getElementById('invYieldPreview');
+  if (!prev) return;
+
+  if (_invIsTD(pos)) {
+    const meta = _invGetMeta(pos);
+    const tdP  = await _fetchTDPrices().catch(() => []);
+    const sub  = meta.td_subtype || 'LFT';
+    const codeMap = { LFT:'selic',LTN:'prefixado','NTN-F':'prefixado','NTN-B':'ipca','NTN-B_P':'ipca','NTN-C':'igpm' };
+    const kw   = (codeMap[sub]||'').toLowerCase();
+    const mat  = (meta.td_maturity||'').slice(0,4);
+    const m    = tdP.find(t => t.name.toLowerCase().includes(kw) && (!mat || t.name.includes(mat)));
+    if (m?.buyPrice) {
+      const qty   = +(pos.quantity) || 0;
+      const oldP  = +(pos.current_price) || +(pos.avg_cost) || 0;
+      const gain  = (m.buyPrice - oldP) * qty;
+      prev.innerHTML = 'Novo PU: <strong>' + fmt(m.buyPrice) + '</strong> &nbsp;|&nbsp; Ganho: <strong style="color:' + (gain>=0?'var(--green)':'var(--danger)') + '">' + (gain>=0?'+':'') + fmt(gain) + '</strong>';
+      prev.style.display = '';
+    }
+  } else if (_invIsFund(pos)) {
+    const r = _calcFundYield(pos, cdi);
+    if (r) {
+      prev.innerHTML = 'Rendimento (' + r.dias + ' dias): <strong style="color:' + (r.gain>=0?'var(--green)':'var(--danger)') + '">' + (r.gain>=0?'+':'') + fmt(r.gain) + '</strong>'
+        + ' &nbsp;|&nbsp; ' + r.pct.toFixed(3) + '% &nbsp;|&nbsp; Novo saldo: <strong>' + fmt(r.newValue) + '</strong>';
+      prev.style.display = '';
+    }
+  }
+}
+
+function _invYieldCalcManual() {
+  const pos = _inv.positions.find(p => document.getElementById('invYieldNewValue'));
+  const newValEl = document.getElementById('invYieldNewValue');
+  const gainEl   = document.getElementById('invYieldGainDisplay');
+  if (!newValEl || !gainEl) return;
+  // Find position from modal context — read positionId from apply button
+  const applyBtn = document.getElementById('invYieldApplyBtn');
+  const pid = applyBtn?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+  const p   = pid ? _inv.positions.find(x => x.id === pid) : null;
+  if (!p) return;
+  const qty     = +(p.quantity) || 1;
+  const curVal  = (+(p.current_price) || +(p.avg_cost) || 0) * qty;
+  const newVal  = parseFloat(newValEl.value.replace(',','.')) || 0;
+  const gain    = newVal - curVal;
+  gainEl.textContent = (gain >= 0 ? '+' : '') + fmt(gain);
+  gainEl.style.color = gain >= 0 ? 'var(--green)' : 'var(--danger)';
+}
+
+async function applyInvYield(positionId) {
+  const pos    = _inv.positions.find(p => p.id === positionId);
+  const errEl  = document.getElementById('invYieldError');
+  const btn    = document.getElementById('invYieldApplyBtn');
+  if (!pos) return;
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Aplicando…'; }
+
+  const mode  = document.querySelector('input[name="yieldUpdateType"]:checked')?.value || 'auto';
+  const today = new Date().toISOString().slice(0, 10);
+  const qty   = +(pos.quantity) || 1;
+
+  try {
+    if (mode === 'auto') {
+      const cdi = window._invLastCDI || await _fetchCDIAnual().catch(() => null);
+
+      if (_invIsTD(pos)) {
+        const meta = _invGetMeta(pos);
+        const tdP  = await _fetchTDPrices().catch(() => []);
+        const sub  = meta.td_subtype || 'LFT';
+        const codeMap = { LFT:'selic',LTN:'prefixado','NTN-F':'prefixado','NTN-B':'ipca','NTN-B_P':'ipca','NTN-C':'igpm' };
+        const kw   = (codeMap[sub]||'').toLowerCase();
+        const mat  = (meta.td_maturity||'').slice(0,4);
+        const m    = tdP.find(t => t.name.toLowerCase().includes(kw) && (!mat || t.name.includes(mat)));
+        if (!m?.buyPrice) throw new Error('Preço do título não encontrado na API B3. Tente novamente mais tarde ou use o modo Manual.');
+        const gain = (m.buyPrice - (+(pos.current_price)||0)) * qty;
+        await _invApplyYieldGain(pos, m.buyPrice, gain, today, 'td_auto',
+          'Rendimento TD: ' + pos.ticker + ' — PU ' + fmt(pos.current_price) + ' → ' + fmt(m.buyPrice));
+        const newMeta = { ..._invGetMeta(pos), last_update: today };
+        await sb.from('investment_positions').update({ notes: _invMetaStr(newMeta) }).eq('id', pos.id);
+        pos.notes = _invMetaStr(newMeta);
+
+      } else if (_invIsFund(pos)) {
+        const r = _calcFundYield(pos, cdi);
+        if (!r || Math.abs(r.gain) < 0.01) throw new Error('Sem rendimento a aplicar (verificar datas ou taxa).');
+        const meta = _invGetMeta(pos);
+        const indexLabel = { cdi:'CDI', prefixado:'Prefixado', ipca:'IPCA+', selic:'Selic' }[meta.fund_index] || 'CDI';
+        await _invApplyYieldGain(pos, r.newPrice, r.gain, today, 'fund_cdi',
+          'Rendimento Fundo: ' + pos.ticker + ' — ' + (meta.fund_cdi_pct||meta.fund_rate) + '% ' + indexLabel + ' (' + r.dias + ' dias)');
+        const newMeta = { ...meta, fund_last_update: today, fund_last_cdi: cdi || meta.fund_last_cdi };
+        await sb.from('investment_positions').update({ notes: _invMetaStr(newMeta) }).eq('id', pos.id);
+        pos.notes = _invMetaStr(newMeta);
+      }
+
+    } else {
+      // Modo manual: usuário informa o novo valor total
+      const newTotal = parseFloat((document.getElementById('invYieldNewValue')?.value || '').replace(',','.'));
+      if (!newTotal || newTotal <= 0) throw new Error('Informe o novo valor total.');
+      const curTotal = (+(pos.current_price) || +(pos.avg_cost) || 0) * qty;
+      const gain     = newTotal - curTotal;
+      const newPrice = qty > 0 ? newTotal / qty : newTotal;
+      await _invApplyYieldGain(pos, newPrice, gain, today, 'manual',
+        'Atualização manual: ' + pos.ticker + ' — novo saldo ' + fmt(newTotal));
+      if (_invIsFund(pos)) {
+        const meta    = _invGetMeta(pos);
+        const newMeta = { ...meta, fund_last_update: today };
+        await sb.from('investment_positions').update({ notes: _invMetaStr(newMeta) }).eq('id', pos.id);
+        pos.notes = _invMetaStr(newMeta);
+      }
+    }
+
+    toast('✅ Rendimento de ' + pos.ticker + ' atualizado!', 'success');
+    closeModal('invYieldEditModal');
+    closeModal('invDetailModal');
+    await loadInvestments(true);
+    DB.accounts.bust();
+    await DB.accounts.load(true);
+    _invAugmentAccountBalances();
+    _renderInvestmentsPage();
+    if (state.currentPage === 'dashboard') loadDashboard?.();
+
+  } catch(e) {
+    if (errEl) { errEl.textContent = '❌ ' + (e.message || 'Erro'); errEl.style.display = ''; }
+    if (btn) { btn.disabled = false; btn.textContent = mode==='auto' ? '🔄 Calcular e Aplicar' : '💾 Aplicar Valor Manual'; }
+  }
+}
+window.applyInvYield = applyInvYield;
+
 
 // ── Position detail (history) ───────────────────────────────────────────────
 
@@ -806,7 +1728,46 @@ async function openInvPositionDetail(positionId) {
             ${pnl>=0?'+':''}${fmt(pnl)} (${ret.toFixed(2)}%)</div></div>
       </div>
 
-      <!-- Manual price update for renda_fixa / outro -->
+      <!-- ── Painel de rendimento automático (TD e Fundos) ─────────────── -->
+      ${_invIsAutoYield(pos) ? `
+      <div style="background:linear-gradient(135deg,rgba(42,96,73,.08),rgba(42,96,73,.04));
+        border:1px solid rgba(42,96,73,.25);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:.82rem;font-weight:700;color:var(--accent)">
+            ${_invIsTD(pos) ? '🏛️ Tesouro Direto' : '🏦 Fundo de Investimento'}
+          </div>
+          <button class="btn btn-primary btn-sm"
+            style="font-size:.72rem;padding:5px 12px"
+            onclick="openInvYieldEditPanel('${pos.id}')">
+            🔄 Atualizar Rendimento
+          </button>
+        </div>
+        ${(() => {
+          const meta = _invGetMeta(pos);
+          if (_invIsTD(pos)) {
+            const t = TD_SUBTYPES.find(x => x.value === meta.td_subtype) || {};
+            return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:.78rem">'
+              + '<div><div style="color:var(--muted);font-size:.68rem">Título</div><strong>' + esc(t.label||meta.td_subtype||'—') + '</strong></div>'
+              + '<div><div style="color:var(--muted);font-size:.68rem">Vencimento</div><strong>' + (meta.td_maturity ? fmtDate(meta.td_maturity) : '—') + '</strong></div>'
+              + '<div><div style="color:var(--muted);font-size:.68rem">Taxa</div><strong>' + (meta.td_rate ? meta.td_rate+'% a.a.' : '—') + '</strong></div>'
+              + '</div>';
+          } else {
+            const idx = FUND_INDEXERS.find(x => x.value === meta.fund_index) || {};
+            const rate = meta.fund_index === 'cdi' ? (meta.fund_cdi_pct + '% do CDI') : (meta.fund_rate + '% a.a.');
+            const cdiRef = meta.fund_last_cdi ? 'CDI ref: ' + (+meta.fund_last_cdi).toFixed(2)+'%' : '';
+            return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:.78rem">'
+              + '<div><div style="color:var(--muted);font-size:.68rem">Indexador</div><strong>' + esc(idx.label||meta.fund_index||'CDI') + '</strong></div>'
+              + '<div><div style="color:var(--muted);font-size:.68rem">Taxa</div><strong>' + esc(rate) + '</strong></div>'
+              + '<div><div style="color:var(--muted);font-size:.68rem">CDI Ref.</div><strong>' + esc(cdiRef||'—') + '</strong></div>'
+              + '</div>';
+          }
+        })()}
+        <div style="margin-top:8px;font-size:.7rem;color:var(--muted)">
+          Última atualização: <strong>${fmtDate((_invGetMeta(pos).fund_last_update || _invGetMeta(pos).last_update || pos.updated_at?.slice(0,10) || '—'))}</strong>
+        </div>
+      </div>` : ''}
+
+      <!-- Manual price update for renda_fixa / outro (mantido para compatibilidade) -->
       ${['renda_fixa','outro'].includes(pos.asset_type) ? `
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;
         padding:10px 14px;background:var(--surface2);border-radius:var(--r-sm)">
@@ -893,6 +1854,10 @@ async function applyInvestmentsFeature() {
   if (enabled) {
     await loadInvestments();
     _invAugmentAccountBalances();
+    // Refresh dashboard investment card if on dashboard
+    if (typeof _dashRenderInvestments === 'function') {
+      setTimeout(() => _dashRenderInvestments().catch(() => {}), 300);
+    }
   }
 }
 

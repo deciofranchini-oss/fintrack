@@ -15,24 +15,39 @@ function _drillOpen(opts) {
   const isMobile = window.innerWidth < 768;
 
   if (isMobile) {
-    // Mobile: show as centered modal popup
     _drillOpenModal(opts);
     return;
   }
 
-  // Desktop: inline panel with auto-scroll
   const panel = document.getElementById('rptDrillPanel');
   if (!panel) { _drillOpenModal(opts); return; }
 
   const { title='', subtitle='', txs=[], color='var(--accent)', onBack=null } = opts || {};
-  const rptPage = document.getElementById('page-reports') || document.querySelector('.content');
-  if (rptPage) rptPage.scrollTop = 0;
+
+  // Bootstrap panel HTML on first use
+  if (!panel.querySelector('.rpt-drill-inner')) {
+    panel.innerHTML = `
+      <div class="rpt-drill-inner" style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+        <div id="rptDrillAccent" style="height:3px;flex-shrink:0"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;flex-shrink:0;border-bottom:1px solid var(--border)">
+          <div style="min-width:0">
+            <div id="rptDrillTitle" style="font-size:.92rem;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+            <div id="rptDrillSubtitle" style="font-size:.7rem;color:var(--muted);margin-top:2px"></div>
+          </div>
+          <button onclick="_drillClose()" style="background:var(--surface2);border:1px solid var(--border);border-radius:50%;width:28px;height:28px;cursor:pointer;color:var(--muted);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;margin-left:10px">✕</button>
+        </div>
+        <div id="rptDrillList" style="flex:1;overflow-y:auto;padding:8px 0"></div>
+      </div>`;
+  }
 
   panel.style.display = 'flex';
   requestAnimationFrame(() => {
     panel.style.transform = 'translateX(0)';
     panel.style.opacity   = '1';
   });
+  // Show backdrop
+  const backdrop = document.getElementById('rptDrillBackdrop');
+  if (backdrop) backdrop.style.display = '';
 
   const title2El   = document.getElementById('rptDrillTitle');
   const subtEl     = document.getElementById('rptDrillSubtitle');
@@ -47,26 +62,21 @@ function _drillOpen(opts) {
 
   if (!listEl) return;
   if (!txs.length) {
-    listEl.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-size:.85rem">Nenhuma transação.</div>';
+    listEl.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-size:.85rem">Nenhuma transação encontrada para este filtro.</div>';
     return;
   }
   listEl.innerHTML = txs.map(t => {
     const isNeg = (parseFloat(t.amount)||0) < 0;
     const catColor = t.categories?.color || (isNeg ? 'var(--red)' : 'var(--green)');
-    return `<div class="drill-tx-row" onclick="if(typeof editTransaction==='function')editTransaction('${t.id||''}')">
-      <div class="drill-tx-dot" style="background:${catColor}"></div>
-      <div class="drill-tx-body">
-        <div class="drill-tx-desc">${esc2(t.description||'—')}</div>
-        <div class="drill-tx-meta">${t.date||''}${t.categories?.name?' · '+esc2(t.categories.name):''}${t.payees?.name?' · '+esc2(t.payees.name):''}</div>
+    return `<div class="drill-tx-row" style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onclick="if(typeof editTransaction==='function')editTransaction('${t.id||''}')" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc2(t.description||'—')}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:1px">${t.date||''}${t.categories?.name?' · '+esc2(t.categories.name):''}${t.payees?.name?' · '+esc2(t.payees.name):''}</div>
       </div>
-      <div class="drill-tx-amt ${isNeg?'neg':'pos'}">${isNeg?'−':'+'}${fmt2(Math.abs(parseFloat(t.amount)||0))}</div>
+      <div style="font-size:.82rem;font-weight:700;color:${isNeg?'var(--red)':'var(--green)'};flex-shrink:0">${isNeg?'−':'+'}${fmt2(Math.abs(parseFloat(t.amount)||0))}</div>
     </div>`;
   }).join('');
-
-  // Auto scroll to drill panel
-  setTimeout(() => {
-    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, 120);
 }
 
 function _drillOpenModal(opts) {
@@ -128,6 +138,8 @@ function _drillClose() {
   if (!panel) return;
   panel.style.transform = 'translateX(100%)';
   panel.style.opacity   = '0';
+  const backdrop = document.getElementById('rptDrillBackdrop');
+  if (backdrop) backdrop.style.display = 'none';
   setTimeout(() => { panel.style.display = 'none'; }, 260);
   if (_drillChart) { try { _drillChart.destroy(); } catch(_) {} _drillChart = null; }
 }
@@ -138,10 +150,13 @@ window._drillOpen  = _drillOpen;
 window._forecastDrillRow = function(dateStr, label) {
   const txSlice = (rptState.txData || []).filter(t => t.date === dateStr);
   if (!txSlice.length) {
-    // Try from forecast state
     const allTx = window._forecastTxCache || [];
     const fSlice = allTx.filter(t => t.date === dateStr);
     if (fSlice.length) {
+      if (typeof window._forecastOpenDayDrill === 'function') {
+        window._forecastOpenDayDrill(dateStr, label);
+        return;
+      }
       _drillOpen({ title: label || dateStr, subtitle: 'Transações previstas', txs: fSlice, color: 'var(--accent)' });
       return;
     }
@@ -149,6 +164,146 @@ window._forecastDrillRow = function(dateStr, label) {
     return;
   }
   _drillOpen({ title: label || dateStr, subtitle: 'Transações · ' + dateStr, txs: txSlice, color: 'var(--accent)' });
+};
+
+function _forecastEsc(s) {
+  return typeof esc === 'function'
+    ? esc(s)
+    : String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _forecastFmt(v, cur='BRL') {
+  return typeof fmt === 'function' ? fmt(v, cur) : String(Number(v||0).toFixed(2));
+}
+
+function _forecastOpenSharedModal(title, subtitle, bodyHtml, accent='var(--accent)') {
+  let modal = document.getElementById('forecastRichDetailModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'forecastRichDetailModal';
+    modal.className = 'modal-overlay';
+    modal.onclick = e => { if (e.target === modal) closeModal('forecastRichDetailModal'); };
+    modal.innerHTML = `<div class="modal" style="max-width:640px;max-height:84dvh;overflow:hidden;display:flex;flex-direction:column;padding:0">
+      <div class="modal-handle"></div>
+      <div id="forecastRichDetailAccent" style="height:3px;border-radius:2px 2px 0 0"></div>
+      <div style="padding:16px 18px 0;flex-shrink:0">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div>
+            <div id="forecastRichDetailTitle" style="font-size:.95rem;font-weight:800;color:var(--text)"></div>
+            <div id="forecastRichDetailSub" style="font-size:.72rem;color:var(--muted);margin-top:2px"></div>
+          </div>
+          <button onclick="closeModal('forecastRichDetailModal')" style="background:var(--surface2);border:1px solid var(--border);border-radius:50%;width:28px;height:28px;cursor:pointer;color:var(--muted);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.8rem">✕</button>
+        </div>
+      </div>
+      <div id="forecastRichDetailBody" style="overflow-y:auto;flex:1;padding:14px 18px 18px"></div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  const accentEl = document.getElementById('forecastRichDetailAccent');
+  if (accentEl) accentEl.style.background = accent;
+  const titleEl = document.getElementById('forecastRichDetailTitle');
+  if (titleEl) titleEl.textContent = title || 'Detalhes';
+  const subEl = document.getElementById('forecastRichDetailSub');
+  if (subEl) subEl.textContent = subtitle || '';
+  const bodyEl = document.getElementById('forecastRichDetailBody');
+  if (bodyEl) bodyEl.innerHTML = bodyHtml || '';
+  openModal('forecastRichDetailModal');
+}
+
+window._forecastOpenDayDrill = function(dateStr, label) {
+  const allTx = (window._forecastTxCache || []).filter(t => t.date === dateStr);
+  if (!allTx.length) {
+    toast('Sem transações nesta data', 'warning');
+    return;
+  }
+
+  const accountMap = new Map();
+  allTx.forEach(tx => {
+    const accountId = tx.account_id || 'na';
+    const stateAcc = (state.accounts || []).find(a => a.id === tx.account_id);
+    const accountName = tx.accounts?.name || stateAcc?.name || 'Conta';
+    const accountColor = tx.accounts?.color || stateAcc?.color || '#2a6049';
+    const accountCurrency = tx.accounts?.currency || tx.currency || stateAcc?.currency || 'BRL';
+    if (!accountMap.has(accountId)) {
+      accountMap.set(accountId, { id: accountId, name: accountName, color: accountColor, currency: accountCurrency, txs: [] });
+    }
+    accountMap.get(accountId).txs.push(tx);
+  });
+
+  const body = [...accountMap.values()].sort((a,b) => a.name.localeCompare(b.name,'pt-BR')).map(acc => {
+    const total = acc.txs.reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
+    const rows = acc.txs.map(tx => {
+      const uid = String(tx.__forecast_uid || '').replace(/'/g, "\'");
+      const amount = parseFloat(tx.amount) || 0;
+      const cat = tx.categories?.name ? ` · ${_forecastEsc(tx.categories.name)}` : '';
+      const payee = tx.payees?.name ? ` · ${_forecastEsc(tx.payees.name)}` : '';
+      return `<button type="button" onclick="if(typeof _forecastOpenItemDetail==='function')_forecastOpenItemDetail('${uid}')" style="width:100%;text-align:left;border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-top:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${tx.isScheduled ? '#1e5ba8' : (amount < 0 ? 'var(--red)' : 'var(--green)')};margin-top:7px;flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.83rem;font-weight:700;color:var(--text)">${_forecastEsc(tx.description || 'Transação')}</div>
+          <div style="font-size:.71rem;color:var(--muted);margin-top:2px">${tx.isScheduled ? 'Programada' : 'Lançada'}${cat}${payee}</div>
+        </div>
+        <div style="font-size:.83rem;font-weight:700;color:${amount < 0 ? 'var(--red)' : 'var(--green)'};white-space:nowrap">${amount < 0 ? '−' : '+'}${_forecastFmt(Math.abs(amount), acc.currency)}</div>
+      </button>`;
+    }).join('');
+
+    return `<section style="border:1px solid var(--border);border-radius:14px;padding:12px 12px 10px;margin-bottom:12px;background:var(--surface2)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="min-width:0">
+          <div style="font-size:.84rem;font-weight:800;color:var(--text)">${_forecastEsc(acc.name)}</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:2px">${acc.txs.length} item${acc.txs.length > 1 ? 's' : ''} nesta conta</div>
+        </div>
+        <div style="font-size:.82rem;font-weight:800;color:${total < 0 ? 'var(--red)' : 'var(--green)'};white-space:nowrap">${total < 0 ? '−' : '+'}${_forecastFmt(Math.abs(total), acc.currency)}</div>
+      </div>
+      <div style="height:2px;background:${acc.color || '#2a6049'}22;border-radius:999px;margin:10px 0 2px"></div>
+      ${rows}
+    </section>`;
+  }).join('');
+
+  _forecastOpenSharedModal(label || dateStr, 'Transações do dia separadas por conta', body, 'var(--accent)');
+};
+
+window._forecastOpenItemDetail = function(uid) {
+  const tx = (window._forecastTxCache || []).find(item => String(item.__forecast_uid) === String(uid));
+  if (!tx) {
+    toast('Detalhe da transação não encontrado', 'warning');
+    return;
+  }
+
+  const stateAcc = (state.accounts || []).find(a => a.id === tx.account_id);
+  const accountName = tx.accounts?.name || stateAcc?.name || 'Conta';
+  const currency = tx.accounts?.currency || tx.currency || stateAcc?.currency || 'BRL';
+  const amount = parseFloat(tx.amount) || 0;
+  const accent = tx.isScheduled ? '#1e5ba8' : 'var(--accent)';
+  const badge = tx.isScheduled
+    ? '<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:rgba(30,91,168,.12);color:#1e5ba8;font-size:.68rem;font-weight:700">Programada</span>'
+    : '<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:rgba(42,122,74,.12);color:var(--accent);font-size:.68rem;font-weight:700">Transação</span>';
+  const lines = [
+    ['Data', tx.date || '—'],
+    ['Conta', accountName],
+    ['Categoria', tx.categories?.name || '—'],
+    ['Beneficiário', tx.payees?.name || '—'],
+    ['Tipo', tx.type || (amount < 0 ? 'expense' : 'income')],
+  ];
+  if (tx.source_scheduled_id) lines.push(['Agendamento', tx.source_scheduled_id]);
+
+  const body = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
+      <div style="min-width:0">
+        <div style="font-size:.92rem;font-weight:800;color:var(--text)">${_forecastEsc(tx.description || 'Transação')}</div>
+        <div style="margin-top:8px">${badge}</div>
+      </div>
+      <div style="font-size:1rem;font-weight:800;color:${amount < 0 ? 'var(--red)' : 'var(--green)'};white-space:nowrap">${amount < 0 ? '−' : '+'}${_forecastFmt(Math.abs(amount), currency)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(110px,140px) 1fr;gap:8px 12px;font-size:.8rem">
+      ${lines.map(([k,v]) => `<div style="color:var(--muted);font-weight:600">${_forecastEsc(k)}</div><div style="color:var(--text)">${_forecastEsc(v)}</div>`).join('')}
+    </div>
+    ${tx.memo ? `<div style="margin-top:14px;padding:12px;border-radius:12px;background:var(--surface2);border:1px solid var(--border)"><div style="font-size:.72rem;color:var(--muted);font-weight:700;margin-bottom:6px">Observação</div><div style="font-size:.8rem;color:var(--text)">${_forecastEsc(tx.memo)}</div></div>` : ''}
+    ${tx.isScheduled && tx.source_scheduled_id ? `<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="closeModal('forecastRichDetailModal'); if (typeof openScheduledModal === 'function') openScheduledModal('${_forecastEsc(tx.source_scheduled_id)}');" style="border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:9px 12px;font-size:.78rem;font-weight:700;cursor:pointer;color:var(--text)">Abrir programação</button></div>` : ''}
+    ${!tx.isScheduled && tx.id ? `<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="closeModal('forecastRichDetailModal'); if (typeof editTransaction === 'function') editTransaction('${_forecastEsc(tx.id)}');" style="border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:9px 12px;font-size:.78rem;font-weight:700;cursor:pointer;color:var(--text)">Abrir transação</button></div>` : ''}
+  `;
+
+  _forecastOpenSharedModal('Detalhes da transação', tx.date || '', body, accent);
 };
 
 
@@ -401,7 +556,7 @@ async function fetchRptTransactions() {
   const relGroupV = document.getElementById('rptRelGroup')?.value  || '';
 
   let q = famQ(sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)'))
+    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,icon,type), payees(name)'))
     .gte('date',from).lte('date',to)
     .order('date',{ascending:false});
   if(accId) q = q.eq('account_id', accId);
@@ -731,19 +886,91 @@ function rptSortTx(field) {
 function renderReportTxTable(txs) {
   const total=txs.reduce((s,t)=>s+(typeof txToBRL==="function"?txToBRL(t):parseFloat(t.brl_amount??t.amount)??0),0);
   const countEl=document.getElementById('reportTxCount');
-  if(countEl) countEl.textContent=txs.length+' registros';
+  if(countEl) countEl.textContent=txs.length+' registro'+(txs.length!==1?'s':'');
   const totEl=document.getElementById('reportTxTotal');
   if(totEl){totEl.textContent=fmt(total);totEl.className=total>=0?'amount-pos':'amount-neg';}
-  document.getElementById('reportTxBody').innerHTML=txs.length
-    ? txs.map(t=>`<tr>
-        <td class="rpt-td-date">${fmtDate(t.date)}</td>
-        <td class="rpt-td-desc"><div class="rpt-desc-cell">${esc(t.description||'—')}</div></td>
-        <td class="rpt-td-acct">${esc(t.accounts?.name||'—')}</td>
-        <td class="rpt-td-cat">${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30;font-size:.68rem;white-space:nowrap">${esc(t.categories.name)}</span>`:'—'}</td>
-        <td class="rpt-td-pay">${esc(t.payees?.name||'—')}</td>
-        <td class="rpt-td-amt ${t.amount>=0?'amount-pos':'amount-neg'}">${fmt(t.amount)}</td>
-      </tr>`).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:28px">${t('tx.empty')}</td></tr>`;
+
+  if(!txs.length){
+    document.getElementById('reportTxBody').innerHTML=
+      `<tr><td colspan="6" class="rpt-empty-state">
+        <div class="rpt-empty-icon">🔍</div>
+        <div class="rpt-empty-title">Nenhuma transação encontrada</div>
+        <div class="rpt-empty-sub">Ajuste os filtros ou o período para ver resultados</div>
+      </td></tr>`;
+    return;
+  }
+
+  document.getElementById('reportTxBody').innerHTML = txs.map(tx => {
+    const isInc    = tx.amount >= 0;
+    const isCard   = !!tx.is_card_payment;
+    const isPend   = tx.status === 'pending';
+    const hasNotes = !!(tx.notes && tx.notes.trim());
+    const hasTags  = !!(tx.tags && tx.tags.length);
+    const catColor = tx.categories?.color || 'var(--muted)';
+    const catIcon  = tx.categories?.icon  || (isInc ? '📈' : '📉');
+    const catName  = tx.categories?.name  || '—';
+    const accColor = tx.accounts?.color   || 'var(--accent)';
+    const safeId   = (tx.id || '').replace(/'/g,"&#39;");
+
+    // Status dot
+    const statusDot = isPend
+      ? `<span class="rpt-row-pending" title="Pendente"></span>`
+      : '';
+
+    // Type chip (card payment or transfer)
+    const typeChip = isCard
+      ? `<span class="rpt-type-chip rpt-type-chip--card">💳</span>`
+      : '';
+
+    // Account dot
+    const accDot = `<span class="rpt-acct-dot" style="background:${accColor}"></span>`;
+
+    // Tags
+    const tagsHtml = hasTags
+      ? tx.tags.slice(0,2).map(tg=>`<span class="rpt-tag">${esc(tg)}</span>`).join('')
+      : '';
+
+    // Notes indicator
+    const notesIco = hasNotes
+      ? `<span class="rpt-notes-ico" title="${esc(tx.notes)}">📝</span>`
+      : '';
+
+    return `<tr class="rpt-tx-row" onclick="openTxDetail('${safeId}')" title="Clique para ver detalhes">
+      <td class="rpt-td-date">
+        <div class="rpt-date-main">${fmtDate(tx.date)}</div>
+        ${statusDot}
+      </td>
+      <td class="rpt-td-desc">
+        <div class="rpt-desc-top">
+          ${typeChip}
+          <span class="rpt-desc-text">${esc(tx.description||'—')}</span>
+          ${notesIco}
+        </div>
+        ${tagsHtml ? `<div class="rpt-desc-tags">${tagsHtml}</div>` : ''}
+      </td>
+      <td class="rpt-td-acct">
+        <div class="rpt-acct-cell">
+          ${accDot}
+          <span>${esc(tx.accounts?.name||'—')}</span>
+        </div>
+      </td>
+      <td class="rpt-td-cat">
+        ${tx.categories
+          ? `<span class="rpt-cat-badge" style="--cat-color:${catColor}">
+               <span class="rpt-cat-icon">${catIcon}</span>
+               <span class="rpt-cat-name">${esc(catName)}</span>
+             </span>`
+          : '<span class="rpt-td-muted">—</span>'}
+      </td>
+      <td class="rpt-td-pay">
+        <span class="rpt-pay-name">${esc(tx.payees?.name||'—')}</span>
+      </td>
+      <td class="rpt-td-amt ${isInc?'amount-pos':'amount-neg'}">
+        ${fmt(tx.amount)}
+        <span class="rpt-row-arrow">›</span>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 /* ═══ VIEW TOGGLE ═══ */

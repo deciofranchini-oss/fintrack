@@ -758,6 +758,16 @@ async function savePayee() {
   let err;
   if (id) { ({ error: err } = await sb.from('payees').update(data).eq('id', id)); }
   else    { ({ error: err } = await sb.from('payees').insert(data)); }
+
+  // Fallback: if avatar_url column doesn't exist yet, retry without it
+  if (err && err.message && err.message.includes('avatar_url')) {
+    const dataFallback = { ...data };
+    delete dataFallback.avatar_url;
+    if (id) { ({ error: err } = await sb.from('payees').update(dataFallback).eq('id', id)); }
+    else    { ({ error: err } = await sb.from('payees').insert(dataFallback)); }
+    if (!err) toast('Salvo! (ícone ignorado — execute a migration SQL para habilitar ícones)', 'info');
+  }
+
   if (err) { toast(err.message, 'error'); return; }
 
   const _pyNew = !id;

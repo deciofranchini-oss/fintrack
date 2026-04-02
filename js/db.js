@@ -151,7 +151,7 @@ const _payees = {
       const { data, error } = await famQ(
         sb.from('payees').select(
           'id,name,type,notes,default_category_id,address,city,state_uf,' +
-          'zip_code,phone,whatsapp,website,cnpj_cpf,family_id,categories(name)'
+          'zip_code,phone,whatsapp,website,cnpj_cpf,family_id,avatar_url,categories(name)'
         )
       ).order('name');
       if (error) throw error;

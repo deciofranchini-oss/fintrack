@@ -850,107 +850,114 @@ function toggleTxGroup(k) {
 }
 
 function changePage(dir){state.txPage+=dir;loadTransactions();}
+
+function _txModalEl(id){ return document.getElementById(id); }
+function _txModalSetValue(id, value){ const el = _txModalEl(id); if (el) el.value = value ?? ''; return el; }
+function _txModalSetText(id, text){ const el = _txModalEl(id); if (el) el.textContent = text ?? ''; return el; }
+function _txModalSafe(fn, label){ try { return fn(); } catch (e) { console.warn(`[txModal] ${label || 'non-critical'}:`, e); return null; } }
 async function openTransactionModal(id=''){
-  // Ensure family composition is loaded so the member picker renders with actual members
   if (typeof loadFamilyComposition === 'function' && typeof _fmc !== 'undefined' && !_fmc.loaded) {
     await loadFamilyComposition().catch(() => {});
   }
-  resetTxModal();
-  document.getElementById('txDate').value=new Date().toISOString().slice(0,10);
-  document.getElementById('txModalTitle').textContent='Nova Transação';
+  _txModalSafe(() => resetTxModal(), 'resetTxModal');
+  _txModalSetValue('txDate', new Date().toISOString().slice(0,10));
+  _txModalSetText('txModalTitle', 'Nova Transação');
   if(id) {
-    editTransaction(id);
-  } else {
-    // Pre-select the account that is currently filtered (single-account filter only)
-    const filteredAccId = state.txFilter?.account || '';
-    if (filteredAccId) {
-      const sel = document.getElementById('txAccountId');
-      if (sel) {
-        sel.value = filteredAccId;
-        // Trigger all side-effects: IOF check, currency panel, etc.
-        _onTxSourceAccountChange(filteredAccId);
-      }
-    }
-    openModal('txModal');
-  if (typeof initTxFormMode === 'function') initTxFormMode();
+    return editTransaction(id);
   }
+  const filteredAccId = state.txFilter?.account || '';
+  if (filteredAccId) {
+    const sel = _txModalEl('txAccountId');
+    if (sel) {
+      sel.value = filteredAccId;
+      _txModalSafe(() => _onTxSourceAccountChange(filteredAccId), '_onTxSourceAccountChange');
+    }
+  }
+  openModal('txModal');
+  _txModalSafe(() => { if (typeof initTxFormMode === 'function') initTxFormMode(); }, 'initTxFormMode');
 }
 function resetTxModal(){
-  ['txId','txDesc','txMemo','txTags'].forEach(f=>document.getElementById(f).value='');
-  const stEl=document.getElementById('txStatus'); if(stEl) stEl.value='confirmed';
-  setAmtField('txAmount', 0);
-  document.getElementById('txTypeField').value='expense';
-  _hideTxCurrencyPanel();
-  setTxType('expense');clearPayeeField('tx');hideCatSuggestion();setCatPickerValue(null);
-  // Always populate full currency list on open — user can pick currency before selecting account
-  _rebuildTxCurrencySelect('BRL', 'BRL');
-  // Reset attachment — clear pending file AND all UI state
+  ['txId','txDesc','txMemo','txTags'].forEach(f => _txModalSetValue(f, ''));
+  const stEl = _txModalSetValue('txStatus', 'confirmed'); if(stEl) stEl.value='confirmed';
+  _txModalSafe(() => setAmtField('txAmount', 0), 'setAmtField');
+  _txModalSetValue('txTypeField', 'expense');
+  _txModalSafe(() => _hideTxCurrencyPanel(), '_hideTxCurrencyPanel');
+  _txModalSafe(() => setTxType('expense'), 'setTxType');
+  _txModalSafe(() => clearPayeeField('tx'), 'clearPayeeField');
+  _txModalSafe(() => hideCatSuggestion(), 'hideCatSuggestion');
+  _txModalSafe(() => setCatPickerValue(null), 'setCatPickerValue');
+  _txModalSafe(() => _rebuildTxCurrencySelect('BRL', 'BRL'), '_rebuildTxCurrencySelect');
   window._txPendingFile = null;
   window._txPendingName = null;
-  document.getElementById('txAttachUrl').value = '';
-  document.getElementById('txAttachNameHidden').value = '';
-  try { document.getElementById('txAttachFile').value = ''; } catch(e) {}
-  document.getElementById('txAttachPreview').style.display = 'none';
-  document.getElementById('txAttachArea').style.display = '';
-  // Reset IA de recibo
-  if (typeof resetReceiptAI === 'function') resetReceiptAI();
-  const oldThumb = document.getElementById('txAttachThumb');
+  _txModalSetValue('txAttachUrl', '');
+  _txModalSetValue('txAttachNameHidden', '');
+  _txModalSafe(() => { const file = _txModalEl('txAttachFile'); if (file) file.value = ''; }, 'clear txAttachFile');
+  const preview = _txModalEl('txAttachPreview'); if (preview) preview.style.display = 'none';
+  const area = _txModalEl('txAttachArea'); if (area) area.style.display = '';
+  _txModalSafe(() => { if (typeof resetReceiptAI === 'function') resetReceiptAI(); }, 'resetReceiptAI');
+  const oldThumb = _txModalEl('txAttachThumb');
   if (oldThumb) oldThumb.remove();
-  // Reset IOF
-  const iofCb = document.getElementById('txIsInternational');
+  const iofCb = _txModalEl('txIsInternational');
   if(iofCb) iofCb.checked = false;
-  document.getElementById('txIofMirrorInfo').classList.remove('visible');
-  document.getElementById('txIofGroup').style.display='none';
-  // Render family member multi-picker (cleared state)
-  if (typeof renderFmcMultiPicker === 'function') {
-    renderFmcMultiPicker('txFamilyMemberPicker', { selected: [] });
-  }
-  // Reset AI payee suggestion
-  _dismissAiPayeeSuggestion();
-  _dismissAiAccountSuggestion();
-  _dismissAiMemberSuggestion();
+  const iofInfo = _txModalEl('txIofMirrorInfo'); if (iofInfo) iofInfo.classList.remove('visible');
+  const iofGroup = _txModalEl('txIofGroup'); if (iofGroup) iofGroup.style.display='none';
+  _txModalSafe(() => {
+    if (typeof renderFmcMultiPicker === 'function') {
+      renderFmcMultiPicker('txFamilyMemberPicker', { selected: [] });
+    }
+  }, 'renderFmcMultiPicker');
+  _txModalSafe(() => _dismissAiPayeeSuggestion(), '_dismissAiPayeeSuggestion');
+  _txModalSafe(() => _dismissAiAccountSuggestion(), '_dismissAiAccountSuggestion');
+  _txModalSafe(() => _dismissAiMemberSuggestion(), '_dismissAiMemberSuggestion');
 }
 async function editTransaction(id){
-  const{data,error}=await sb.from('transactions').select('*').eq('id',id).single();if(error){toast(error.message,'error');return;}
-  document.getElementById('txId').value=data.id;document.getElementById('txDate').value=data.date;setAmtField('txAmount', data.amount);document.getElementById('txDesc').value=data.description||'';document.getElementById('txAccountId').value=data.account_id||'';setCatPickerValue(data.category_id||null);document.getElementById('txMemo').value=data.memo||'';document.getElementById('txTags').value=(data.tags||[]).join(', ');setPayeeField(data.payee_id||null,'tx');
-  // Load attachment if exists
+  const { data, error } = await sb.from('transactions').select('*').eq('id',id).single();
+  if(error){toast(error.message,'error');return;}
+  _txModalSetValue('txId', data.id);
+  _txModalSetValue('txDate', data.date);
+  _txModalSafe(() => setAmtField('txAmount', data.amount), 'setAmtField(edit)');
+  _txModalSetValue('txDesc', data.description || '');
+  _txModalSetValue('txAccountId', data.account_id || '');
+  _txModalSafe(() => setCatPickerValue(data.category_id || null), 'setCatPickerValue(edit)');
+  _txModalSetValue('txMemo', data.memo || '');
+  _txModalSetValue('txTags', (data.tags || []).join(', '));
+  _txModalSafe(() => setPayeeField(data.payee_id || null,'tx'), 'setPayeeField(edit)');
   if (data.attachment_url) {
-    document.getElementById('txAttachUrl').value        = data.attachment_url;
-    document.getElementById('txAttachNameHidden').value = data.attachment_name || '';
-    showAttachmentPreview(data.attachment_url, data.attachment_name || 'Anexo');
+    _txModalSetValue('txAttachUrl', data.attachment_url);
+    _txModalSetValue('txAttachNameHidden', data.attachment_name || '');
+    _txModalSafe(() => showAttachmentPreview(data.attachment_url, data.attachment_name || 'Anexo'), 'showAttachmentPreview');
   }
-  // Check IOF config for account
-  setTimeout(()=>checkAccountIofConfig(data.account_id), 50);
-  const type=data.is_transfer?(data.is_card_payment?'card_payment':'transfer'):data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer'||type==='card_payment')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
-  document.getElementById('txModalTitle').textContent='Editar Transação';
-  // Render family member multi-picker
-  if (typeof renderFmcMultiPicker === 'function') {
-    const preselected = data?.family_member_ids?.length
-      ? data.family_member_ids
-      : (data?.family_member_id ? [data.family_member_id] : []);
-    renderFmcMultiPicker('txFamilyMemberPicker', { selected: preselected });
-  }
-  // Restore currency panel state after DOM settles
-  setTimeout(() => {
-    const type = document.getElementById('txTypeField').value;
-    const accId = document.getElementById('txAccountId').value;
-    if (type !== 'transfer' && type !== 'card_payment') {
-      _updateTxCurrencyPanel(accId);
-      // If the saved transaction had a currency rate, restore it
-      if (data.currency && data.currency !== 'BRL' && data.brl_amount) {
-        const impliedRate = Math.abs(data.brl_amount / (data.amount || 1));
-        const rateInput = document.getElementById('txCurrencyRate');
-        if (rateInput && impliedRate > 0) rateInput.value = impliedRate.toFixed(6);
-        updateTxCurrencyPreview();
-      }
+  setTimeout(() => _txModalSafe(() => checkAccountIofConfig(data.account_id), 'checkAccountIofConfig'), 50);
+  const type = data.is_transfer ? (data.is_card_payment ? 'card_payment' : 'transfer') : data.amount >= 0 ? 'income' : 'expense';
+  _txModalSafe(() => setTxType(type), 'setTxType(edit)');
+  if(type==='transfer'||type==='card_payment') _txModalSetValue('txTransferTo', data.transfer_to_account_id || '');
+  _txModalSetText('txModalTitle', 'Editar Transação');
+  _txModalSafe(() => {
+    if (typeof renderFmcMultiPicker === 'function') {
+      const preselected = data?.family_member_ids?.length ? data.family_member_ids : (data?.family_member_id ? [data.family_member_id] : []);
+      renderFmcMultiPicker('txFamilyMemberPicker', { selected: preselected });
     }
+  }, 'renderFmcMultiPicker(edit)');
+  setTimeout(() => {
+    _txModalSafe(() => {
+      const currentType = _txModalEl('txTypeField')?.value;
+      const accId = _txModalEl('txAccountId')?.value;
+      if (currentType !== 'transfer' && currentType !== 'card_payment') {
+        _updateTxCurrencyPanel(accId);
+        if (data.currency && data.currency !== 'BRL' && data.brl_amount) {
+          const impliedRate = Math.abs(data.brl_amount / (data.amount || 1));
+          const rateInput = _txModalEl('txCurrencyRate');
+          if (rateInput && impliedRate > 0) rateInput.value = impliedRate.toFixed(6);
+          updateTxCurrencyPreview();
+        }
+      }
+    }, 'restore currency panel');
   }, 80);
-  // Clear any pending debt amortization state from previous modal use
   window._pendingAmortDebtId = null;
-  const _dab = document.getElementById('debtAmortizationBanner');
+  const _dab = _txModalEl('debtAmortizationBanner');
   if (_dab) { _dab.style.display = 'none'; _dab.innerHTML = ''; }
   openModal('txModal');
-  if (typeof initTxFormMode === 'function') initTxFormMode();
+  _txModalSafe(() => { if (typeof initTxFormMode === 'function') initTxFormMode(); }, 'initTxFormMode(edit)');
 }
 function _filterTxAccountOrigin(excludeCreditCards) {
   const sel = document.getElementById('txAccountId');
@@ -992,6 +999,10 @@ function setTxType(type){
   _filterTxAccountOrigin(isCardPayment);
   // Rebuild category picker filtered by transaction type
   buildCatPicker();
+  // Auto-classify card_payment into "Cartão de Crédito" category
+  if (isCardPayment) {
+    _txAutoSetCardPaymentCategory();
+  }
   // Hide FX panel when switching away from transfer
   if(!isTransfer) {
     _hideFxPanel();
@@ -1002,6 +1013,94 @@ function setTxType(type){
     _hideTxCurrencyPanel();
   }
 }
+
+/**
+ * Auto-classifica pagamento de cartão na categoria "Cartão de Crédito".
+ * Se não existir, exibe banner pedindo que o usuário crie a categoria.
+ */
+function _txAutoSetCardPaymentCategory() {
+  const cats = state.categories || [];
+  // Procurar a categoria pelo nome (case-insensitive)
+  const CC_NAMES = ['cartão de crédito', 'cartao de credito', 'pagamento cartão', 'pagamento cartao', 'cartão'];
+  const ccCat = cats.find(c =>
+    CC_NAMES.some(n => c.name.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éê]/g,'e').replace(/[ó]/g,'o').replace(/[ç]/g,'c') === n)
+  );
+
+  // Remover banner anterior se existir
+  document.getElementById('_txCardPayCatBanner')?.remove();
+
+  if (ccCat) {
+    // Categoria encontrada — selecionar automaticamente
+    setCatPickerValue(ccCat.id, 'tx');
+    return;
+  }
+
+  // Categoria não encontrada — exibir banner para criar
+  const catGroup = document.getElementById('txCategoryGroup');
+  if (!catGroup) return;
+
+  // Limpar seleção atual
+  setCatPickerValue(null, 'tx');
+
+  const banner = document.createElement('div');
+  banner.id = '_txCardPayCatBanner';
+  banner.style.cssText = `
+    margin-top: 8px; padding: 11px 14px;
+    background: var(--amber-lt, #fffbeb);
+    border: 1.5px solid var(--amber, #b45309);
+    border-radius: 10px;
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: .80rem; color: #78350f; line-height: 1.5;
+  `;
+  banner.innerHTML = `
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px;color:#b45309"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;margin-bottom:3px">Categoria "Cartão de Crédito" não encontrada</div>
+      <div style="margin-bottom:8px">Para pagamentos de cartão, crie esta categoria uma vez para manter os relatórios organizados.</div>
+      <button type="button" onclick="_txCreateCardPaymentCategory()" style="
+        padding:6px 14px; background:var(--amber,#b45309); color:#fff; border:none;
+        border-radius:7px; font-size:.78rem; font-weight:700; cursor:pointer;
+        font-family:inherit; display:inline-flex; align-items:center; gap:5px;
+      ">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Criar categoria agora
+      </button>
+    </div>`;
+  catGroup.appendChild(banner);
+}
+
+/**
+ * Cria a categoria "Cartão de Crédito" do tipo despesa e a seleciona.
+ */
+async function _txCreateCardPaymentCategory() {
+  const btn = document.querySelector('#_txCardPayCatBanner button');
+  if (btn) { btn.disabled = true; btn.textContent = 'Criando…'; }
+  try {
+    const payload = {
+      family_id: famId(),
+      name: 'Cartão de Crédito',
+      type: 'despesa',
+      icon: '💳',
+      color: '#1d4ed8',
+      parent_id: null,
+      is_elastic: false,
+    };
+    const { data, error } = await famQ(sb.from('categories').insert(payload).select().single());
+    if (error) throw error;
+    // Adicionar ao state local
+    if (state.categories) state.categories.push(data);
+    // Reconstruir picker e selecionar
+    buildCatPicker();
+    setCatPickerValue(data.id, 'tx');
+    document.getElementById('_txCardPayCatBanner')?.remove();
+    toast('✅ Categoria "Cartão de Crédito" criada e selecionada!', 'success');
+  } catch(e) {
+    toast('Erro ao criar categoria: ' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Criar categoria agora'; }
+  }
+}
+window._txAutoSetCardPaymentCategory  = _txAutoSetCardPaymentCategory;
+window._txCreateCardPaymentCategory   = _txCreateCardPaymentCategory;
 
 // ── FX / Exchange-rate helpers ─────────────────────────────────────────────
 
@@ -2653,3 +2752,9 @@ function getPeriodColor(period) {
     default: return '#1F6B4F';
   }
 }
+
+
+// Expose tx modal functions for inline handlers and delegated page actions
+window.openTransactionModal = openTransactionModal;
+window.editTransaction = editTransaction;
+window.openTransactionEdit = editTransaction;

@@ -8,7 +8,7 @@
      • Apenas OWNER pode modificar — outros membros podem ler
 
    Módulos suportados:
-     ai_insights | ai_chat | debts | investments | grocery | prices
+     ai_insights | ai_chat | debts | investments | grocery | prices | dreams
 
    Preferências gerais:
      language | ui (estrutura extensível)
@@ -27,7 +27,7 @@
 ═══════════════════════════════════════════════════════════════════════════ */
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-const FP_MODULES = ['ai_insights', 'ai_chat', 'debts', 'investments', 'grocery', 'prices'];
+const FP_MODULES = ['ai_insights', 'ai_chat', 'debts', 'investments', 'grocery', 'prices', 'dreams'];
 const FP_CACHE_KEY = 'fintrack_fprefs_'; // + family_id
 const FP_CACHE_TTL = 10 * 60 * 1000;    // 10 min
 
@@ -108,7 +108,7 @@ async function updateFamilyPreferences(patch) {
 /**
  * Verifica se um módulo está ativo para a família atual (sync, usa cache).
  * Fallback seguro: retorna false se cache não disponível.
- * @param {'ai_insights'|'ai_chat'|'debts'|'investments'|'grocery'|'prices'} moduleName
+ * @param {'ai_insights'|'ai_chat'|'debts'|'investments'|'grocery'|'prices'|'dreams'} moduleName
  * @returns {boolean}
  */
 function isModuleEnabled(moduleName) {
@@ -175,6 +175,7 @@ function _fpDefaultPrefs(famId) {
       investments:  false,
       grocery:      false,
       prices:       false,
+      dreams:       false,
     },
     language: 'pt',
     ui: {},
@@ -240,6 +241,7 @@ function _fpRowToPrefs(row, famId) {
       investments:  !!(row.module_investments),
       grocery:      !!(row.module_grocery),
       prices:       !!(row.module_prices),
+      dreams:       !!(row.module_dreams),
     },
     language: row.language || 'pt',
     ui:       (typeof row.ui_settings === 'object' && row.ui_settings) ? row.ui_settings : {},
@@ -289,6 +291,7 @@ async function _fpSaveToDB(famId, prefs) {
       module_investments: !!(prefs.modules?.investments),
       module_grocery:     !!(prefs.modules?.grocery),
       module_prices:      !!(prefs.modules?.prices),
+      module_dreams:      !!(prefs.modules?.dreams),
       language:           prefs.language || 'pt',
       ui_settings:        prefs.ui || {},
       updated_at:         new Date().toISOString(),
@@ -395,6 +398,7 @@ function assertModuleEnabled(moduleName, label) {
 //   module_investments BOOLEAN DEFAULT FALSE,
 //   module_grocery     BOOLEAN DEFAULT FALSE,
 //   module_prices      BOOLEAN DEFAULT FALSE,
+//   module_dreams      BOOLEAN DEFAULT FALSE,
 //   language           TEXT DEFAULT 'pt',
 //   ui_settings        JSONB DEFAULT '{}',
 //   created_at         TIMESTAMPTZ DEFAULT NOW(),

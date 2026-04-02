@@ -235,7 +235,7 @@ async function handleWl(e) {
     const fn = name.split(' ')[0];
     const invMsg = document.getElementById('invMsg');
     if (invMsg && !invMsg.value) {
-      invMsg.value = `Olá! Acabei de entrar na lista de espera do Family FinTrack e quero te indicar também.\n\nÉ um app de gestão financeira familiar com Inteligência Artificial — ajuda a família toda a ter controle e planejamento financeiro de verdade.\n\nO acesso ainda é restrito (beta exclusivo), mas você pode se cadastrar gratuitamente na lista de espera e garantir sua posição.\n\nAcesse e cadastre-se: ${location.origin}\n\n${fn}`;
+      invMsg.value = `Olá! Acabei de entrar na lista de espera do Family FinTrack e quero te indicar também.\n\nÉ um app de gestão financeira familiar com Inteligência Artificial — ajuda a família toda a ter controle e planejamento financeiro de verdade.\n\nO acesso ainda é restrito (beta exclusivo), mas você pode se cadastrar gratuitamente na lista de espera e garantir sua posição.\n\nAcesse e cadastre-se: https://familyfintrack.app\n\n${fn}`;
     }
 
     // 4. Enviar email de confirmação
@@ -407,7 +407,7 @@ function buildInviteEmail(senderFirstName, senderEmail, recipientEmail, personal
   const safeMsg = personalMessage
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\n/g,'<br>');
-  const siteUrl = location.origin;
+  const siteUrl = 'https://familyfintrack.app';
 
   return `
 <div style="font-family:'Plus Jakarta Sans',Arial,sans-serif;background:#f4f8f2;padding:0;margin:0">

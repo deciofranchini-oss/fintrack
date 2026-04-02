@@ -882,6 +882,213 @@ window.loadTelegramBotTokenUI = async function() {
   }
 };
 
+/* ── Helpers: botão "Obtenha o Chat ID" no perfil do usuário ──────────────── */
+
+/**
+ * Extrai chat_id + info do usuário de qualquer tipo de Update do Telegram.
+ * Cobre: message, edited_message, channel_post, callback_query, my_chat_member.
+ */
+function _tgExtractChatInfo(update) {
+  const msg  = update?.message || update?.edited_message || update?.channel_post;
+  const from = msg?.from
+    || update?.callback_query?.from
+    || update?.my_chat_member?.from
+    || update?.chat_member?.from;
+  const chat = msg?.chat
+    || update?.callback_query?.message?.chat
+    || update?.my_chat_member?.chat
+    || update?.chat_member?.chat;
+
+  const id = chat?.id || from?.id || null;
+  if (!id) return null;
+
+  const firstName = from?.first_name || chat?.first_name || '';
+  const lastName  = from?.last_name  || chat?.last_name  || '';
+  const fullName  = [firstName, lastName].filter(Boolean).join(' ') || chat?.title || '';
+  const username  = from?.username || chat?.username || '';
+  const type      = chat?.type || 'private';
+
+  return { id, fullName, username, type };
+}
+
+/**
+ * Chama getUpdates via fetch() direto do browser.
+ * A Telegram Bot API não tem restrição CORS — funciona sem proxy.
+ * Retorna array de objetos { id, fullName, username, type } únicos por chat_id.
+ */
+async function _tgFetchChatIds(token) {
+  const url  = 'https://api.telegram.org/bot' + token +
+    '/getUpdates?limit=100&allowed_updates=%5B%22message%22%2C%22callback_query%22%2C%22my_chat_member%22%5D';
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.description || 'HTTP ' + resp.status);
+  }
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data?.description || 'Erro desconhecido na API do Telegram');
+
+  // Desduplicar por chat_id, manter o mais recente (array já vem em ordem crescente)
+  const seen = new Map();
+  (data.result || []).forEach(upd => {
+    const info = _tgExtractChatInfo(upd);
+    if (info?.id) seen.set(info.id, info);
+  });
+  return Array.from(seen.values());
+}
+
+/**
+ * Preenche o campo Chat ID no modal de perfil.
+ */
+function _tgFillChatIdField(chatId) {
+  const input = document.getElementById('myProfileTelegramChatId');
+  if (input) {
+    input.value = String(chatId);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  _tgSetHint(
+    '<span style="color:var(--accent);font-weight:600">✅ Chat ID ' + chatId + ' preenchido!</span>',
+    false
+  );
+}
+
+/**
+ * Exibe ou limpa a mensagem de hint abaixo do botão.
+ * @param {string}  html     — HTML a exibir
+ * @param {boolean} showLink — se true, adiciona link de fallback getUpdates
+ * @param {string}  token    — bot token para montar o link de fallback
+ */
+function _tgSetHint(html, showLink, token) {
+  const wrap = document.getElementById('myProfileTgGetUpdatesLinkWrap');
+  if (!wrap) return;
+  let content = html || '';
+  if (showLink && token) {
+    const url = 'https://api.telegram.org/bot' + token + '/getUpdates';
+    content += (content ? ' &mdash; ' : '') +
+      'ou <a href="' + url + '" target="_blank" rel="noopener noreferrer" ' +
+      'style="color:var(--accent);text-decoration:underline">abra o JSON manualmente</a>';
+  }
+  wrap.innerHTML = content;
+}
+
+/**
+ * Mostra um picker inline quando há múltiplos chat_ids nos updates.
+ */
+function _tgShowChatIdPicker(chats, token) {
+  const wrap = document.getElementById('myProfileTgGetUpdatesLinkWrap');
+  if (!wrap) return;
+
+  const typeLabel = function(t) {
+    return ({ private:'Privado', group:'Grupo', supergroup:'Grupo', channel:'Canal' })[t] || t;
+  };
+  const typeColor = function(t) {
+    return ({ private:'var(--accent)', group:'#7c3aed', channel:'#0369a1' })[t] || 'var(--muted)';
+  };
+
+  const rows = chats.map(function(c) {
+    const namePart     = c.fullName || '—';
+    const usernamePart = c.username
+      ? '<span style="color:var(--muted)">@' + c.username + '</span> '
+      : '';
+    const typePart =
+      '<span style="font-size:.65rem;padding:1px 6px;border-radius:20px;background:var(--bg2);' +
+      'color:' + typeColor(c.type) + ';border:1px solid currentColor">' +
+      typeLabel(c.type) + '</span>';
+
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;' +
+      'padding:6px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)">' +
+      '<div style="font-size:.75rem;min-width:0;flex:1">' +
+        namePart + ' ' + usernamePart + typePart +
+        '<div style="font-size:.7rem;color:var(--muted);font-family:monospace;margin-top:1px">' + c.id + '</div>' +
+      '</div>' +
+      '<button type="button" ' +
+        'style="flex-shrink:0;font-size:.72rem;padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent);' +
+        'background:var(--accent-lt,#e8f2ee);color:var(--accent);cursor:pointer;font-family:var(--font-sans);font-weight:700" ' +
+        'onclick="_tgFillChatIdField(' + c.id + ')">' +
+        'Usar' +
+      '</button>' +
+    '</div>';
+  }).join('');
+
+  const fallbackUrl = 'https://api.telegram.org/bot' + token + '/getUpdates';
+  wrap.innerHTML =
+    '<div style="width:100%;margin-top:4px">' +
+      '<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;font-weight:600">' +
+        'Encontramos ' + chats.length + ' conversas recentes. Escolha a sua:' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:5px">' + rows + '</div>' +
+      '<div style="margin-top:6px;font-size:.7rem;color:var(--muted)">' +
+        'Não encontrou? ' +
+        '<a href="' + fallbackUrl + '" target="_blank" rel="noopener noreferrer" ' +
+        'style="color:var(--accent);text-decoration:underline">Abra o JSON completo</a> ' +
+        'e envie mais uma mensagem para o bot.' +
+      '</div>' +
+    '</div>';
+}
+
+/**
+ * Botão principal "📬 Obtenha o Chat ID".
+ *
+ * Fluxo:
+ *  1. Verifica se o bot token está configurado.
+ *  2. Chama getUpdates via fetch() direto (sem abrir nova aba).
+ *  3a. 1 chat único  → preenche o campo automaticamente.
+ *  3b. Múltiplos     → exibe picker inline para o usuário escolher.
+ *  3c. Nenhum update → orienta a enviar /start pro bot e tentar de novo.
+ *  4. Erro de rede/token → mensagem com link de fallback.
+ */
+window._openTelegramGetUpdates = async function() {
+  const btn = document.querySelector('button[onclick="_openTelegramGetUpdates()"]');
+
+  _tgSetHint('<span style="color:var(--muted)">⏳ Buscando…</span>', false);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando…'; }
+
+  let token = '';
+  try { token = await ensureTelegramBotToken(); } catch(_) {}
+
+  if (!token) {
+    _tgSetHint(
+      '<span style="color:var(--danger)">⚠️ Bot token não configurado. ' +
+      'Acesse <strong>Configurações → Conexão → Telegram Bot Token</strong> e salve o token primeiro.</span>',
+      false
+    );
+    if (btn) { btn.disabled = false; btn.innerHTML = '📬 Obtenha o Chat ID'; }
+    return;
+  }
+
+  try {
+    const chats = await _tgFetchChatIds(token);
+
+    if (chats.length === 0) {
+      _tgSetHint(
+        '<span style="color:var(--amber,#b45309)">⚠️ Nenhuma mensagem encontrada. ' +
+        'Abra o Telegram, envie <strong>/start</strong> para o seu bot e clique novamente.</span>',
+        true, token
+      );
+    } else if (chats.length === 1) {
+      _tgFillChatIdField(chats[0].id);
+    } else {
+      _tgShowChatIdPicker(chats, token);
+    }
+  } catch(e) {
+    _tgSetHint(
+      '<span style="color:var(--danger)">❌ ' + (e.message || 'Erro ao contactar a API do Telegram') + '</span>',
+      true, token
+    );
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '📬 Obtenha o Chat ID'; }
+  }
+};
+
+/**
+ * Ao abrir o modal de perfil limpa o hint — será preenchido pelo botão.
+ */
+window._initTgGetUpdatesHintOnProfileOpen = function() {
+  const wrap = document.getElementById('myProfileTgGetUpdatesLinkWrap');
+  if (wrap) wrap.innerHTML = '';
+};
+
+/* ── /Helpers: botão "Obtenha o Chat ID" ─────────────────────────────────── */
+
 /* ── Notify on manual/auto transaction ────────────────────────────────────── */
 async function notifyOnTransaction(tx, sc = null) {
   try {

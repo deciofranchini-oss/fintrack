@@ -428,7 +428,6 @@ async function tryAutoConnect(){
     // Register magic-link gate to catch passwordless SIGNED_IN events
     if(typeof _registerMagicLinkGate === 'function') _registerMagicLinkGate();
     if(restored && currentUser){
-      hideLoginScreen?.();
       updateUserUI?.();
       // If user has no family_id, show family creation screen before app boots
       if (!currentUser.family_id && currentUser.role !== 'admin' && currentUser.role !== 'owner') {
@@ -438,6 +437,7 @@ async function tryAutoConnect(){
         }
       }
       await bootApp();
+      hideLoginScreen?.();
     } else {
       // Session restored but context failed (e.g. family_id null) → show login
       showLoginScreen();
@@ -454,11 +454,15 @@ async function tryAutoConnect(){
     ensureSupabaseClient();
     const restored = await tryRestoreSession().catch(()=>false);
     if(restored){
-      hideLoginScreen?.();
       updateUserUI?.();
       await bootApp();
+      hideLoginScreen?.();
     } else {
       showLoginScreen();
+      // Verificar token de convite após mostrar a tela de login
+      if (typeof _checkInviteToken === 'function') {
+        _checkInviteToken().catch(e => console.warn('[invite-boot]', e.message));
+      }
     }
   } else {
     const setup=document.getElementById('setupScreen');
@@ -499,10 +503,13 @@ function setAppLogo(url){
   const clean = (typeof url === 'string') ? url.trim() : '';
   APP_LOGO_URL = clean || DEFAULT_LOGO_URL;
 
-  ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','loginLogoImg','authLogoImg'].forEach(id=>{
+  ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','authLogoImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.src = APP_LOGO_URL;
   });
+  // loginLogoImg usa SEMPRE logo_glow_soft.png — nunca logo.jpg (fundo branco)
+  const _loginLogo = document.getElementById('loginLogoImg');
+  if (_loginLogo) _loginLogo.src = 'logo_glow_soft.png';
   // Wizard usa logo_wizard.png (versão para fundo escuro/verde)
   const wzEl = document.getElementById('wzLogoImg');
   if(wzEl) wzEl.src = 'logo_wizard.png';
@@ -562,7 +569,7 @@ async function bootApp(){
     ]);
   } catch(e) {
     toast(t('error.load_data')+' '+e.message,'error');
-    return;
+    throw e;
   }
   // Dados secundários em background — não bloqueiam o dashboard
   loadScheduled().then(() => {
@@ -592,6 +599,14 @@ async function bootApp(){
   state.txFilter.month=ym;
   // Navegar para dashboard
   navigate('dashboard');
+  try {
+    if (typeof loadDashboard === 'function') {
+      await loadDashboard();
+    }
+  } catch (e) {
+    console.error('[boot] dashboard initial load failed:', e);
+    throw e;
+  }
   // Notificações de login para o usuário (transações do dia + saúde financeira)
   // Notifications: run after loadScheduled resolves so data is ready
 
@@ -612,6 +627,7 @@ async function bootApp(){
   if (typeof applyInvestmentsFeature === 'function') applyInvestmentsFeature().catch(() => {});
   if (typeof applyAiInsightsFeature === 'function') applyAiInsightsFeature().catch(() => {});
   if (typeof applyDebtsFeature === 'function') applyDebtsFeature().catch(() => {});
+  if (typeof applyDreamsFeature === 'function') applyDreamsFeature().catch(() => {});
   // Setup wizard — shows for new users until accounts + categories + transactions exist
   if (typeof initWizard === 'function') setTimeout(() => initWizard().catch(()=>{}), 800);
 }
@@ -620,6 +636,7 @@ const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Co
   grocery:'Lista de Mercado',
   ai_insights:'AI Insights',
   debts:'Dívidas',
+  dreams:'Meus Sonhos',
   help:'Ajuda',
   audit:'Auditoria de Programadas',
   telemetry:'Telemetria',
@@ -644,6 +661,7 @@ const _pageIconsSVG = {
   audit:        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
   telemetry:    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><polyline points="22 20 2 20"/></svg>',
   privacy:      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  dreams:       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
 };
 async function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
@@ -891,8 +909,11 @@ function navigate(page){
   // Guard: settings/audit/telemetry são admin-only
   // Guard: settings/telemetry são admin-only; audit é acessível a todos
   if((page==='settings'||page==='telemetry') && currentUser?.role !== 'admin'){
-    toast(t('error.admin_only'),'warning');
-    return;
+    // FIX: if currentUser not loaded yet, don't block — let it through and page will show error
+    if (currentUser !== null) {
+      toast(t('error.admin_only'),'warning');
+      return;
+    }
   }
 
   // Track history — skip duplicate consecutive
@@ -940,6 +961,7 @@ function navigate(page){
       prices:       '',
       grocery:      '',
       ai_insights:  '',
+      dreams:       `<button class="page-header-action" onclick="openDreamWizard()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo Sonho</button>`,
       help:         '',
     };
     const bar = document.createElement('div');
@@ -965,7 +987,36 @@ function navigate(page){
   if (typeof i18nApplyToDOM === 'function') i18nApplyToDOM(document.getElementById('page-'+page));
   _scrollActivePageToTop(page);
   if(page==='dashboard' && sb) loadDashboard();
-  else if(page==='transactions'){if(state.reconcileMode && typeof exitReconcileMode==='function')exitReconcileMode(false);populateTxMonthFilter();if(typeof populateSelects==='function')populateSelects();loadTransactions();}
+  else if(page==='transactions'){
+    if(state.reconcileMode && typeof exitReconcileMode==='function') exitReconcileMode(false);
+    populateTxMonthFilter();
+    if(typeof populateSelects==='function') populateSelects();
+    // FIX: populateSelects reconstrói o innerHTML dos selects e apaga qualquer .value
+    // definido antes da navegação (ex: goToAccountTransactions). Restaurar do state.
+    const _tf = state.txFilter || {};
+    const _txAccEl = document.getElementById('txAccount');
+    if (_txAccEl && _tf.account) _txAccEl.value = _tf.account;
+    const _txMonthEl = document.getElementById('txMonth');
+    if (_txMonthEl && _tf.month) _txMonthEl.value = _tf.month;
+    const _txTypeEl = document.getElementById('txType');
+    if (_txTypeEl && _tf.type) _txTypeEl.value = _tf.type;
+    const _txCatEl = document.getElementById('txCategoryFilter');
+    if (_txCatEl && _tf.categoryId) _txCatEl.value = _tf.categoryId;
+    // Aplicar is-active em todos os chips — marca visualmente os filtros ativos
+    ['txMonth','txAccount','txType','txStatusFilter','txCategoryFilter','txReconcileFilter'].forEach(id => {
+      const _el = document.getElementById(id);
+      if (_el) _el.classList.toggle('is-active', !!_el.value);
+    });
+    // Se há filtro de conta/mês/tipo ativo, abrir o painel de filtros e atualizar badge
+    if (_tf.account || _tf.month || _tf.type || _tf.categoryId) {
+      const _panel = document.getElementById('tx-filters-panel');
+      const _btn   = document.getElementById('txFilterToggle');
+      if (_panel) _panel.classList.add('open');
+      if (_btn)   _btn.classList.add('active');
+      if (typeof _txUpdateFilterBadge === 'function') _txUpdateFilterBadge();
+    }
+    loadTransactions();
+  }
   else if(page==='accounts'){ if(typeof initAccountsPage==='function') initAccountsPage(); else renderAccounts(); }
   else if(page==='reports'){if(typeof populateSelects==='function')populateSelects();if(typeof populateReportFilters==='function')populateReportFilters();loadCurrentReport();}
   else if(page==='budgets')initBudgetsPage();
@@ -979,13 +1030,18 @@ function navigate(page){
     if (typeof _scCalMonth !== 'undefined') { window._scCalMonth = _now.getMonth(); }
     // Use the exposed setter so the module-scoped variable is actually set
     if (typeof window._setScCalSelDay === 'function') window._setScCalSelDay(_todayStr);
+
+    // FIX: Restaurar a view preferida ANTES do loadScheduled para evitar o flash
+    // list→calendar. A lista começa oculta (display:none no HTML) e a view correta
+    // é aplicada imediatamente antes de qualquer dado chegar.
+    const _savedView = currentUser?.preferred_sc_view ||
+                       localStorage.getItem('sc_view_pref') ||
+                       'calendar';
+    if (typeof setScView === 'function') setScView(_savedView);
+
     loadScheduled().then(() => {
-      if (typeof setScView === 'function') {
-        const savedView = currentUser?.preferred_sc_view ||
-                          localStorage.getItem('sc_view_pref') ||
-                          'calendar';
-        setScView(savedView);
-      }
+      // Após os dados carregarem, re-aplicar a view para re-renderizar o conteúdo
+      if (typeof setScView === 'function') setScView(_savedView);
       // Open upcoming panel if it has events, keep day groups collapsed per spec
       if (typeof _openUpcomingIfHasEvents === 'function') _openUpcomingIfHasEvents();
     });
@@ -999,6 +1055,7 @@ function navigate(page){
   else if(page==='prices')initPricesPage();
   else if(page==='grocery')initGroceryPage();
   else if(page==='ai_insights')initAiInsightsPage();
+  else if(page==='dreams')initDreamsPage?.();
   else if(page==='help'){if(typeof initHelpPage==='function')initHelpPage();}
   else if(page==='privacy'){if(typeof _prvInitPage==='function')_prvInitPage();}
 
@@ -1252,3 +1309,105 @@ function getPeriodColor(period) {
     default: return '#1F6B4F';
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   DARK / LIGHT MODE TOGGLE
+   Persiste em localStorage('app_theme') e data-theme no <html>.
+   Chamado pelo botão #umThemeToggle no user menu dropdown.
+══════════════════════════════════════════════════════════════════ */
+function toggleAppTheme() {
+  const html    = document.documentElement;
+  const current = html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next    = current === 'dark' ? 'light' : 'dark';
+
+  if (next === 'dark') {
+    html.setAttribute('data-theme', 'dark');
+    // Keep inline style in sync with anti-flash approach
+    html.style.background  = '#0f1410';
+    html.style.colorScheme = 'dark';
+  } else {
+    html.removeAttribute('data-theme');
+    html.style.background  = '#f7f6f3';
+    html.style.colorScheme = 'light';
+  }
+
+  try { localStorage.setItem('app_theme', next); } catch (_) {}
+
+  // Persist to Supabase asynchronously (best-effort, non-blocking)
+  if (typeof saveAppSetting === 'function') {
+    saveAppSetting('app_theme', next).catch(() => {});
+  }
+
+  _syncAppThemeToggleUI(next);
+}
+window.toggleAppTheme = toggleAppTheme;
+
+/**
+ * Atualiza o visual do toggle no user menu (ícone, label, switch pill)
+ * para refletir o tema atual.
+ * Deve ser chamado após toggleAppTheme() e sempre que o menu abre.
+ */
+function _syncAppThemeToggleUI(theme) {
+  const isDark  = (theme || document.documentElement.getAttribute('data-theme')) === 'dark';
+
+  const iconEl  = document.getElementById('umThemeIcon');
+  const labelEl = document.getElementById('umThemeLabel');
+  const sw      = document.getElementById('umThemeSwitch');
+  const pill    = document.getElementById('umThemePill');
+
+  if (iconEl)  iconEl.textContent  = isDark ? '☀️' : '🌙';
+  if (labelEl) labelEl.textContent = isDark ? 'Modo Claro' : 'Modo Escuro';
+
+  if (sw) {
+    sw.style.background = isDark ? 'var(--accent)' : 'var(--border2)';
+  }
+  if (pill) {
+    pill.style.transform = isDark ? 'translateX(16px)' : 'translateX(0)';
+  }
+}
+window._syncAppThemeToggleUI = _syncAppThemeToggleUI;
+
+// FIX: Replace fragile DOMContentLoaded patch with a robust wrapper that handles
+// script load order race conditions. We use a late-binding approach via window property
+// interception and a fallback polling mechanism.
+(function _installThemeSyncPatch() {
+  function _applyPatch() {
+    const _orig = window.toggleUserMenu;
+    if (typeof _orig === 'function' && !_orig.__themeSynced) {
+      window.toggleUserMenu = function(e) {
+        _orig.call(this, e);
+        requestAnimationFrame(function() {
+          const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+          if (typeof _syncAppThemeToggleUI === 'function') _syncAppThemeToggleUI(currentTheme);
+        });
+      };
+      window.toggleUserMenu.__themeSynced = true;
+    }
+  }
+
+  // Try immediately (if auth.js already loaded)
+  _applyPatch();
+
+  // Try again on DOMContentLoaded (covers normal load order)
+  document.addEventListener('DOMContentLoaded', function() {
+    _applyPatch();
+    const t = localStorage.getItem('app_theme') || 'light';
+    if (typeof _syncAppThemeToggleUI === 'function') _syncAppThemeToggleUI(t);
+  }, { once: true });
+
+  // Fallback: poll until toggleUserMenu is available (handles deferred script loading)
+  let _patchAttempts = 0;
+  const _patchInterval = setInterval(function() {
+    _applyPatch();
+    if (typeof window.toggleUserMenu === 'function' && window.toggleUserMenu.__themeSynced) {
+      clearInterval(_patchInterval);
+    }
+    if (++_patchAttempts > 30) clearInterval(_patchInterval);
+  }, 100);
+})();
+
+// Sync theme toggle UI on page load (anti-flash applied data-theme from localStorage)
+document.addEventListener('DOMContentLoaded', function() {
+  const t = localStorage.getItem('app_theme') || 'light';
+  if (typeof _syncAppThemeToggleUI === 'function') _syncAppThemeToggleUI(t);
+}, { once: true });

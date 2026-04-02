@@ -48,13 +48,28 @@ function _dreamStatusColor(s) { return { active:'var(--accent)', paused:'var(--w
 
 /* ── Feature flag ─────────────────────────────────────────────────── */
 async function isDreamsEnabled() {
-  const fid = famId(); if (!fid) return false;
+  const fid = famId();
+  if (!fid) return false;
+
+  // Fonte canônica atual: preferências da família.
+  if (typeof isModuleEnabled === 'function') {
+    try {
+      const byPrefs = isModuleEnabled('dreams');
+      if (byPrefs === true) return true;
+    } catch (_) {}
+  }
+
+  // Fallback legado: app_settings / cache antigo.
   const ck = 'dreams_enabled_' + fid;
   if (window._familyFeaturesCache && ck in window._familyFeaturesCache) return !!window._familyFeaturesCache[ck];
-  const raw = await getAppSetting(ck, false);
-  const on = raw === true || raw === 'true';
-  (window._familyFeaturesCache = window._familyFeaturesCache || {})[ck] = on;
-  return on;
+  try {
+    const raw = await getAppSetting(ck, false);
+    const on = raw === true || raw === 'true';
+    (window._familyFeaturesCache = window._familyFeaturesCache || {})[ck] = on;
+    return on;
+  } catch (_) {
+    return false;
+  }
 }
 async function applyDreamsFeature() {
   const fid = famId();
@@ -78,8 +93,21 @@ window.toggleFamilyDreams = toggleFamilyDreams;
 
 /* ── Page init ────────────────────────────────────────────────────── */
 async function initDreamsPage() {
-  if (!await isDreamsEnabled()) return;
-  await loadDreams(); renderDreamsPage();
+  const container = document.getElementById('dreams-list-container');
+  const enabled = await isDreamsEnabled();
+  if (!enabled) {
+    if (container) {
+      container.innerHTML = `
+        <div class="drm-empty-state">
+          <div class="drm-empty-icon">🌟</div>
+          <div class="drm-empty-title">Módulo de sonhos desativado</div>
+          <div class="drm-empty-text">Ative o módulo em Gestão da Família para voltar a usar esta área.</div>
+        </div>`;
+    }
+    return;
+  }
+  await loadDreams(true);
+  renderDreamsPage();
 }
 window.initDreamsPage = initDreamsPage;
 
@@ -204,6 +232,48 @@ function _dreamMonthlySaving(dream) {
   return Math.max(0,((parseFloat(dream.target_amount)||0)-_dreamAccumulated(dream))/m);
 }
 
+/* ── Member helpers ───────────────────────────────────────────────── */
+/**
+ * Extrai os IDs de membros armazenados em ai_generated_fields_json.__members.
+ * Retorna array vazio (= família geral) se não houver membros específicos.
+ */
+function _drmGetMemberIds(dream) {
+  try {
+    const f = dream.ai_generated_fields_json;
+    const obj = typeof f === 'string' ? JSON.parse(f) : (f || {});
+    const ids = obj.__members;
+    return Array.isArray(ids) ? ids.filter(Boolean) : [];
+  } catch { return []; }
+}
+
+/**
+ * Retorna os objetos de membro para exibição.
+ * Usa state.familyMembers (composição familiar carregada).
+ */
+function _drmGetMemberObjects(dream) {
+  const ids = _drmGetMemberIds(dream);
+  if (!ids.length) return []; // família geral
+  const allMembers = (typeof getFamilyMembers === 'function' ? getFamilyMembers() : null)
+    || (window._fmc && window._fmc.members) || [];
+  return ids.map(id => allMembers.find(m => m.id === id)).filter(Boolean);
+}
+
+/**
+ * Renderiza chips de membros (inline, compacto) para card e detail.
+ * Se não houver membros → exibe chip "Família".
+ */
+function _drmRenderMemberChips(dream, opts = {}) {
+  const members = _drmGetMemberObjects(dream);
+  const cls = opts.small ? 'drm-member-chip drm-member-chip--sm' : 'drm-member-chip';
+  if (!members.length) {
+    return `<span class="${cls} drm-member-chip--all">👨‍👩‍👧 Família</span>`;
+  }
+  return members.map(m => {
+    const emoji = m.avatar_emoji || '👤';
+    return `<span class="${cls}" title="${_esc(m.name)}">${emoji} ${_esc(m.name)}</span>`;
+  }).join('');
+}
+
 /* ── Main page render ─────────────────────────────────────────────── */
 function renderDreamsPage() {
   const container=document.getElementById('dreams-list-container'); if(!container) return;
@@ -278,6 +348,7 @@ function _renderDreamCard(d) {
       ${d.linked_budget_id?`<span class="drm-meta-chip drm-meta-chip--budget">📊 Orçamento</span>`:''}
       ${items.length?`<span class="drm-meta-chip">${items.length} itens</span>`:''}
     </div>
+    <div class="drm-card-members">${_drmRenderMemberChips(d, {small:true})}</div>
     ${d.description?`<div class="drm-card-desc">${_esc(d.description).slice(0,90)}${d.description.length>90?'…':''}</div>`:''}
     <div class="drm-card-actions" onclick="event.stopPropagation()">
       <button class="drm-action-btn" onclick="openDreamDetail('${d.id}')">🎯 Ver plano</button>
@@ -355,6 +426,12 @@ function _renderDetailBody(d,gd) {
         ${months!==null?`<div class="drm-hero-stat"><span class="drm-hero-stat-label">Prazo</span><span class="drm-hero-stat-val">${months>0?months+' meses':'🎯 Este mês!'}</span></div>`:''}
         ${d.target_date?`<div class="drm-hero-stat"><span class="drm-hero-stat-label">Data alvo</span><span class="drm-hero-stat-val">${_fmtDate(d.target_date,{month:'short',year:'numeric'})}</span></div>`:''}
       </div>
+    </div>
+
+    <!-- Membros vinculados ao sonho -->
+    <div class="drm-detail-section drm-members-section">
+      <div class="drm-section-title">👥 Para quem é este sonho</div>
+      <div class="drm-members-chips">${_drmRenderMemberChips(d)}</div>
     </div>
 
     <!-- Goal Engine: Plano de conquista -->
@@ -865,7 +942,14 @@ function openDreamWizard(dreamId=null) {
   _drm.wizard={step:1,dreamId,type:null,data:{},items:[],editing:!!dreamId};
   if (dreamId) {
     const d=_drm.dreams.find(x=>x.id===dreamId);
-    if(d){_drm.wizard.type=d.dream_type;_drm.wizard.data={...d};_drm.wizard.items=[...(_drm.items[dreamId]||[])];_drm.wizard.step=2;}
+    if(d){
+      _drm.wizard.type=d.dream_type;
+      _drm.wizard.data={...d};
+      // Restore member IDs from ai_generated_fields_json.__members for picker pre-selection
+      _drm.wizard.data.__members = _drmGetMemberIds(d);
+      _drm.wizard.items=[...(_drm.items[dreamId]||[])];
+      _drm.wizard.step=2;
+    }
   }
   _renderWizardModal();
 }
@@ -1017,7 +1101,8 @@ function _wizStep2() {
   // Inicializar picker de membros após o HTML ser injetado no DOM
   requestAnimationFrame(() => {
     if (typeof renderFmcMultiPicker === 'function') {
-      const curSel = _drm.wizard?.data?.family_member_ids || [];
+      // Use __members (our storage key in ai_generated_fields_json)
+      const curSel = _drm.wizard?.data?.__members || [];
       renderFmcMultiPicker('wizFamilyMemberPicker', { selected: curSel, showAll: true });
     }
   });
@@ -1371,6 +1456,15 @@ function _wizStep4() {
         ${monthly!==null?`<div class="drm-review-item"><span class="drm-review-label">Guardar/mês</span><span class="drm-review-value accent">${_fmtCurrency(monthly)}</span></div>`:''}
         ${items.length?`<div class="drm-review-item"><span class="drm-review-label">Componentes</span><span class="drm-review-value">${items.length} itens · ${_fmtCurrency(totalItems)}</span></div>`:''}
       </div>
+      <div class="drm-review-members">
+        <span class="drm-review-members-label">👥 Para quem:</span>
+        ${(()=>{
+          const selIds = w.data?.__members||[];
+          const allM = (typeof getFamilyMembers==='function'?getFamilyMembers():null)||(window._fmc&&window._fmc.members)||[];
+          if(!selIds.length) return '<span class="drm-member-chip drm-member-chip--all">👨‍👩‍👧 Família (todos)</span>';
+          return selIds.map(id=>{const m=allM.find(x=>x.id===id);return m?`<span class="drm-member-chip">${m.avatar_emoji||'👤'} ${_esc(m.name)}</span>`:'';}).join('');
+        })()}
+      </div>
       ${capHint}
       ${items.length?`<div class="drm-review-items-preview">
         ${items.slice(0,5).map(it=>`<div class="drm-review-item-row">${it.is_ai_suggested?'<span class="drm-ai-badge">✨</span>':''}<span>${_esc(it.name)}</span><span>${_fmtCurrency(parseFloat(it.estimated_amount)||0)}</span></div>`).join('')}
@@ -1394,6 +1488,10 @@ function wizardNext() {
     w.data.title=title; w.data.description=document.getElementById('wizDesc')?.value?.trim()||'';
     w.data.target_amount=amount; w.data.target_date=document.getElementById('wizDate')?.value||null;
     w.data.priority=parseInt(document.getElementById('wizPriority')?.value||1);
+    // Captura membros selecionados no picker (array vazio = família geral)
+    w.data.__members = typeof getFmcMultiPickerSelected === 'function'
+      ? getFmcMultiPickerSelected('wizFamilyMemberPicker')
+      : [];
     if(w.type==='viagem') w.data.ai_generated_fields_json={destino:document.getElementById('wizDestino')?.value||'',pessoas:document.getElementById('wizPessoas')?.value||''};
     else if(w.type==='automovel') w.data.ai_generated_fields_json={modelo:document.getElementById('wizModelo')?.value||'',ano:document.getElementById('wizAno')?.value||'',tipo_compra:document.getElementById('wizTipoCompra')?.value||'avista',entrada:_drmReadAmt('wizEntrada')||'',taxa_juros:document.getElementById('wizJuros')?.value||''};
     else if(w.type==='imovel') w.data.ai_generated_fields_json={subtipo:document.getElementById('wizSubtipo')?.value||'',cidade:document.getElementById('wizCidade')?.value||'',tipo_compra:document.getElementById('wizTipoCompra')?.value||'avista',entrada:_drmReadAmt('wizEntrada')||'',fgts:_drmReadAmt('wizFgts')||'',taxa_juros:document.getElementById('wizJuros')?.value||''};
@@ -1433,17 +1531,25 @@ async function saveDream() {
   // Se ainda inválido, tentar salvar como 'outro' — se o banco rejeitar, fallback para 'viagem'
   if (!safeType) safeType = 'outro';
 
-  // Também salvar family_member_ids do picker de membros
-  const memberIds = typeof getFmcMultiPickerSelected === 'function'
-    ? getFmcMultiPickerSelected('wizFamilyMemberPicker')
-    : [];
-  const payload={family_id:fid,created_by:currentUser?.id,title:w.data.title,description:w.data.description||null,dream_type:safeType,family_member_ids:memberIds.length?memberIds:null,target_amount:w.data.target_amount,currency:'BRL',target_date:w.data.target_date||null,priority:w.data.priority||1,status:w.data.status||'active',ai_generated_fields_json:w.data.ai_generated_fields_json?JSON.stringify(w.data.ai_generated_fields_json):null,updated_at:new Date().toISOString()};
+  // Merge __members into ai_generated_fields_json so they're persisted without
+  // requiring a schema change. The dreams table has no family_member_ids column.
+  const memberIds = w.data.__members || [];
+  const _baseFields = w.data.ai_generated_fields_json || {};
+  const _fieldsWithMembers = memberIds.length
+    ? { ..._baseFields, __members: memberIds }
+    : ((() => { const cp = { ..._baseFields }; delete cp.__members; return cp; })());
+  const payload={family_id:fid,created_by:currentUser?.id,title:w.data.title,description:w.data.description||null,dream_type:safeType,target_amount:w.data.target_amount,currency:'BRL',target_date:w.data.target_date||null,priority:w.data.priority||1,status:w.data.status||'active',ai_generated_fields_json:Object.keys(_fieldsWithMembers).length?JSON.stringify(_fieldsWithMembers):null,updated_at:new Date().toISOString()};
   try {
     let dreamId;
     if(w.editing&&w.dreamId){
       const{error}=await sb.from('dreams').update(payload).eq('id',w.dreamId); if(error) throw error;
       dreamId=w.dreamId;
-      const idx=_drm.dreams.findIndex(d=>d.id===dreamId); if(idx!==-1) Object.assign(_drm.dreams[idx],payload);
+      const idx=_drm.dreams.findIndex(d=>d.id===dreamId);
+      if(idx!==-1){
+        Object.assign(_drm.dreams[idx],payload);
+        // Parse back to object for in-memory use (payload stores as JSON string)
+        try { _drm.dreams[idx].ai_generated_fields_json = _fieldsWithMembers; } catch(_){}
+      }
     } else {
       let res = await sb.from('dreams').insert({...payload,created_at:new Date().toISOString()}).select().single();
       // Se banco rejeitou 'outro' (constraint antigo sem esse tipo), retentar com 'viagem'

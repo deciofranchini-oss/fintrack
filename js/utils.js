@@ -296,8 +296,8 @@ function _accountOptions(accounts, placeholder) {
 // populateSelects is defined in reports.js (always loaded).
 // _accountOptions and _buildCategoryFilterOptions are helpers used by it.
 
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+function openModal(id){const el=document.getElementById(id); if(!el){console.warn('[modal] not found:', id); return false;} el.classList.add('open'); return true;}
+function closeModal(id){const el=document.getElementById(id); if(!el){console.warn('[modal] not found:', id); return false;} el.classList.remove('open'); return true;}
 document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
 function toast(msg,type='info'){

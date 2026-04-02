@@ -62,6 +62,7 @@
   window.tryAutoConnect = tryAutoConnect;
   window.ensureSupabaseClient = ensureClient;
 
-  // eager attempt (non-blocking)
-  tryAutoConnect();
+  // Startup is centralized after DOMContentLoaded in auth.js/app.js.
+  // Do not auto-run here because app.html continues after script tags and
+  // an eager session restore can boot against an incomplete DOM.
 })();

@@ -688,6 +688,311 @@ function _helpContent() {
         },
       ],
     },
+    // ══ SONHOS ══════════════════════════════════════════════════════════════
+    {
+      id: 'dreams', icon: '🌟', color: '#f59e0b',
+      title: { pt: 'Sonhos', en: 'Dreams', es: 'Sueños', fr: 'Rêves' },
+      articles: [
+        {
+          id: 'dreams-intro',
+          title: { pt: 'O que são Sonhos?', en: 'What are Dreams?', es: '¿Qué son los Sueños?', fr: 'Que sont les Rêves?' },
+          body: {
+            pt: `<div style="background:linear-gradient(135deg,#92400e,#d97706,#fbbf24);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px;text-align:center">
+  <div style="font-size:2.5rem;margin-bottom:8px">🌟</div>
+  <div style="font-size:1.05rem;font-weight:800;margin-bottom:4px">Transforme objetivos em metas estruturadas</div>
+  <div style="font-size:.8rem;opacity:.9">GPS financeiro inteligente com análise de viabilidade por IA</div>
+</div>
+<p>O módulo <strong>Sonhos</strong> transforma grandes objetivos financeiros — uma viagem, um carro, um imóvel — em metas estruturadas com acompanhamento real de progresso e análise de viabilidade por inteligência artificial.</p>
+<h4>Como funciona</h4>
+<ol>
+  <li>Defina seu sonho (viagem, automóvel ou imóvel)</li>
+  <li>Informe o valor total estimado e o prazo desejado</li>
+  <li>A IA sugere componentes de custo automaticamente</li>
+  <li>Registre aportes mensais e acompanhe o progresso</li>
+  <li>A IA analisa a viabilidade com base nas suas finanças reais</li>
+</ol>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #3b82f6"><strong>✈️ Viagem</strong>Destino, número de pessoas e componentes: passagens, hospedagem, passeios</div>
+  <div class="help-mini-card" style="border-left:3px solid #f97316"><strong>🚗 Automóvel</strong>Marca/modelo, tipo de compra (à vista ou financiado), entrada e taxa de juros</div>
+  <div class="help-mini-card" style="border-left:3px solid #22c55e"><strong>🏠 Imóvel</strong>Subtipo, cidade, aquisição, FGTS e financiamento</div>
+</div>
+<div class="help-tip">💡 Acesse em <strong>Menu → Sonhos</strong>. Se não aparecer, solicite ao admin ativar em Configurações → Módulos.</div>`,
+            en: `<div style="background:linear-gradient(135deg,#92400e,#d97706,#fbbf24);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px;text-align:center">
+  <div style="font-size:2.5rem;margin-bottom:8px">🌟</div>
+  <div style="font-size:1.05rem;font-weight:800">Transform goals into structured plans</div>
+</div>
+<p>The <strong>Dreams</strong> module turns major financial goals — a trip, a car, a home — into structured targets with real progress tracking and AI-powered feasibility analysis.</p>
+<h4>How it works</h4>
+<ol><li>Define your dream (travel, car or real estate)</li><li>Set the total estimated amount and desired timeline</li><li>AI automatically suggests cost components</li><li>Log monthly contributions and track progress</li><li>AI analyzes feasibility against your real finances</li></ol>
+<div class="help-tip">💡 Access via <strong>Menu → Dreams</strong>. If not visible, ask your admin to enable it in Settings → Modules.</div>`,
+            es: `<p>El módulo <strong>Sueños</strong> convierte grandes objetivos financieros en metas estructuradas con seguimiento real del progreso y análisis de viabilidad por IA.</p>
+<ol><li>Defina su sueño (viaje, automóvil o inmueble)</li><li>Informe el monto total estimado y el plazo deseado</li><li>La IA sugiere componentes de costo automáticamente</li><li>Registre aportes mensuales y siga el progreso</li></ol>`,
+            fr: `<p>Le module <strong>Rêves</strong> transforme les grands objectifs financiers en cibles structurées avec suivi réel de la progression et analyse de faisabilité par IA.</p>
+<ol><li>Définissez votre rêve (voyage, voiture ou immobilier)</li><li>Indiquez le montant total estimé et l'échéance souhaitée</li><li>L'IA suggère automatiquement les composantes de coût</li><li>Enregistrez les apports mensuels et suivez la progression</li></ol>`,
+          },
+        },
+        {
+          id: 'dreams-ai',
+          title: { pt: 'Análise de viabilidade com IA', en: 'AI feasibility analysis', es: 'Análisis de viabilidad con IA', fr: 'Analyse de faisabilité par IA' },
+          body: {
+            pt: `<p>Após criar um sonho, clique em <strong>Analisar viabilidade com IA</strong> na tela de detalhes. A IA usa seus dados financeiros reais (receitas, despesas, outros sonhos ativos) para avaliar:</p>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #22c55e"><strong>✅ Alta viabilidade</strong>Meta atingível no prazo com a economia necessária</div>
+  <div class="help-mini-card" style="border-left:3px solid #f59e0b"><strong>⚠️ Viabilidade média</strong>Possível com ajustes nos hábitos de gasto</div>
+  <div class="help-mini-card" style="border-left:3px solid #dc2626"><strong>❌ Baixa viabilidade</strong>Prazo ou valor precisam ser revisados</div>
+</div>
+<h4>O que a análise retorna</h4>
+<ul>
+  <li>Resumo de viabilidade em linguagem natural</li>
+  <li>Pontos positivos e alertas</li>
+  <li>Recomendações práticas de economia</li>
+  <li>Prazo realista sugerido e economia mensal ideal</li>
+  <li>Conflitos com outros sonhos ativos</li>
+  <li>Frase motivacional personalizada</li>
+</ul>
+<div class="help-tip">💡 Requer chave Gemini configurada em Configurações → IA.</div>`,
+            en: `<p>After creating a dream, click <strong>Analyze feasibility with AI</strong> in the details screen. The AI uses your real financial data to evaluate viability and provide:</p>
+<ul><li>Natural language feasibility summary</li><li>Positive points and alerts</li><li>Practical savings recommendations</li><li>Suggested realistic timeline and ideal monthly savings</li><li>Conflicts with other active dreams</li></ul>
+<div class="help-tip">💡 Requires a Gemini API key configured in Settings → AI.</div>`,
+            es: `<p>Después de crear un sueño, haga clic en <strong>Analizar viabilidad con IA</strong>. La IA usa sus datos financieros reales para evaluar la viabilidad y proporcionar recomendaciones prácticas.</p>
+<div class="help-tip">💡 Requiere clave Gemini configurada en Configuraciones → IA.</div>`,
+            fr: `<p>Après avoir créé un rêve, cliquez sur <strong>Analyser la faisabilité avec IA</strong>. L'IA utilise vos données financières réelles pour évaluer la faisabilité et fournir des recommandations pratiques.</p>
+<div class="help-tip">💡 Nécessite une clé Gemini configurée dans Paramètres → IA.</div>`,
+          },
+        },
+        {
+          id: 'dreams-contributions',
+          title: { pt: 'Registrar aportes', en: 'Logging contributions', es: 'Registrar aportes', fr: 'Enregistrer des apports' },
+          body: {
+            pt: `<p>Cada aporte que você faz em direção a um sonho é registrado e somado ao acumulado. A barra de progresso atualiza em tempo real.</p>
+<h4>Como registrar um aporte</h4>
+<ol>
+  <li>Abra o card do sonho e clique em <strong>+ Aporte</strong></li>
+  <li>Informe o valor e a data</li>
+  <li>Adicione uma observação opcional</li>
+  <li>Clique em <strong>Salvar aporte</strong></li>
+</ol>
+<h4>Cenários de simulação</h4>
+<p>Na tela de detalhes, você vê três cenários de economia:</p>
+<div class="help-card-grid">
+  <div class="help-mini-card"><strong>Conservador</strong>Prazo 1,5× maior · Aporte menor por mês</div>
+  <div class="help-mini-card"><strong>Equilibrado</strong>Prazo original · Aporte calculado</div>
+  <div class="help-mini-card"><strong>Acelerado</strong>Prazo 30% menor · Aporte maior por mês</div>
+</div>
+<div class="help-tip">💡 Você pode pausar, reativar ou marcar um sonho como "Conquistado" pelo menu ⋯ no card.</div>`,
+            en: `<p>Each contribution you make toward a dream is recorded and added to the accumulated total. The progress bar updates in real time.</p>
+<h4>How to log a contribution</h4>
+<ol><li>Open the dream card and click <strong>+ Contribution</strong></li><li>Enter the amount and date</li><li>Add an optional note</li><li>Click <strong>Save contribution</strong></li></ol>
+<div class="help-tip">💡 You can pause, reactivate or mark a dream as "Achieved" from the ⋯ menu on the card.</div>`,
+            es: `<ol><li>Abra la tarjeta del sueño y haga clic en <strong>+ Aporte</strong></li><li>Ingrese el monto y la fecha</li><li>Agregue una nota opcional</li><li>Haga clic en <strong>Guardar aporte</strong></li></ol>`,
+            fr: `<ol><li>Ouvrez la carte du rêve et cliquez sur <strong>+ Apport</strong></li><li>Saisissez le montant et la date</li><li>Ajoutez une note optionnelle</li><li>Cliquez sur <strong>Enregistrer l'apport</strong></li></ol>`,
+          },
+        },
+      ],
+    },
+    // ══ AGENTE IA ══════════════════════════════════════════════════════════
+    {
+      id: 'agent', icon: '🤖', color: '#16a34a',
+      title: { pt: 'FinTrack Agent', en: 'FinTrack Agent', es: 'FinTrack Agent', fr: 'FinTrack Agent' },
+      articles: [
+        {
+          id: 'agent-intro',
+          title: { pt: 'O que é o FinTrack Agent?', en: 'What is the FinTrack Agent?', es: '¿Qué es el FinTrack Agent?', fr: "Qu'est-ce que le FinTrack Agent?" },
+          body: {
+            pt: `<div style="background:linear-gradient(135deg,#0f5132,#166534,#16a34a);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <div style="font-size:2rem">🤖</div>
+    <div>
+      <div style="font-size:1.05rem;font-weight:800">FinTrack Agent</div>
+      <div style="font-size:.78rem;opacity:.85">● Online · Assistente financeiro inteligente</div>
+    </div>
+  </div>
+  <p style="font-size:.82rem;opacity:.9;margin:0">Converse em linguagem natural para consultar suas finanças, tirar dúvidas sobre o app e criar lançamentos rapidamente.</p>
+</div>
+<p>O <strong>FinTrack Agent</strong> é o assistente inteligente integrado ao app. Clique no botão verde 🤖 na barra superior para abrir o painel de chat.</p>
+<h4>Três capacidades principais</h4>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a">
+    <strong>📊 Finanças</strong>
+    Consulte saldos, gastos por categoria, resumo do mês, orçamentos utilizados e previsões futuras.
+    <br><em style="font-size:.72rem;color:var(--muted)">Ex: "Quanto gastei este mês?" · "Quais contas estão no vermelho?"</em>
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #1d4ed8">
+    <strong>❓ Ajuda</strong>
+    Tire dúvidas sobre como usar qualquer funcionalidade do app.
+    <br><em style="font-size:.72rem;color:var(--muted)">Ex: "Como adicionar uma conta?" · "O que é reconciliação?"</em>
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706">
+    <strong>⚡ Ações</strong>
+    Crie lançamentos, programados, beneficiários e categorias diretamente pelo chat.
+    <br><em style="font-size:.72rem;color:var(--muted)">Ex: "Crie despesa de R$50 no Supermercado" · "Adicione programado mensal de R$500"</em>
+  </div>
+</div>
+<div class="help-tip">💡 Para comandos complexos (ex: "crie uma despesa de almoço de R$47 na conta Nubank, categoria Alimentação"), configure a chave Gemini em Configurações → IA para melhor interpretação.</div>`,
+            en: `<div style="background:linear-gradient(135deg,#0f5132,#166534,#16a34a);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <div style="font-size:2rem">🤖</div>
+    <div><div style="font-size:1.05rem;font-weight:800">FinTrack Agent</div><div style="font-size:.78rem;opacity:.85">● Online · Smart financial assistant</div></div>
+  </div>
+  <p style="font-size:.82rem;opacity:.9;margin:0">Chat in natural language to query your finances, get help with the app and quickly create transactions.</p>
+</div>
+<p>The <strong>FinTrack Agent</strong> is the intelligent assistant integrated into the app. Click the green 🤖 button in the top bar to open the chat panel.</p>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>📊 Finance</strong> Query balances, spending by category, monthly summary and forecasts. <em style="font-size:.72rem">Ex: "How much did I spend this month?"</em></div>
+  <div class="help-mini-card" style="border-left:3px solid #1d4ed8"><strong>❓ Help</strong> Get answers about any app feature. <em style="font-size:.72rem">Ex: "How do I add an account?"</em></div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706"><strong>⚡ Actions</strong> Create transactions, scheduled items, payees and categories directly from chat. <em style="font-size:.72rem">Ex: "Create a $50 expense at the supermarket"</em></div>
+</div>
+<div class="help-tip">💡 For complex commands, configure your Gemini API key in Settings → AI for better interpretation.</div>`,
+            es: `<p>El <strong>FinTrack Agent</strong> es el asistente inteligente integrado en la app. Haga clic en el botón verde 🤖 en la barra superior para abrir el panel de chat.</p>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>📊 Finanzas</strong> Consulte saldos y gastos por categoría.</div>
+  <div class="help-mini-card" style="border-left:3px solid #1d4ed8"><strong>❓ Ayuda</strong> Obtenga respuestas sobre cualquier función.</div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706"><strong>⚡ Acciones</strong> Cree transacciones directamente desde el chat.</div>
+</div>`,
+            fr: `<p>Le <strong>FinTrack Agent</strong> est l'assistant intelligent intégré dans l'app. Cliquez sur le bouton vert 🤖 dans la barre supérieure pour ouvrir le panneau de chat.</p>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>📊 Finances</strong> Consultez soldes et dépenses par catégorie.</div>
+  <div class="help-mini-card" style="border-left:3px solid #1d4ed8"><strong>❓ Aide</strong> Obtenez des réponses sur toute fonctionnalité.</div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706"><strong>⚡ Actions</strong> Créez des transactions directement depuis le chat.</div>
+</div>`,
+          },
+        },
+        {
+          id: 'agent-commands',
+          title: { pt: 'Comandos e exemplos', en: 'Commands and examples', es: 'Comandos y ejemplos', fr: 'Commandes et exemples' },
+          body: {
+            pt: `<h4>💬 Consultas financeiras</h4>
+<ul>
+  <li>"Quanto gastei este mês?"</li>
+  <li>"Qual minha categoria com mais gastos em março?"</li>
+  <li>"Quais contas estão no vermelho?"</li>
+  <li>"Resumo financeiro do mês"</li>
+  <li>"Quanto tenho de orçamento disponível em Alimentação?"</li>
+  <li>"Mostrar programados do próximo mês"</li>
+</ul>
+<h4>⚡ Criação de lançamentos</h4>
+<ul>
+  <li>"Crie despesa de R$80 no Supermercado"</li>
+  <li>"Lance receita de R$3.000 em Salário na conta Nubank"</li>
+  <li>"Adicione programado mensal de R$500 de Aluguel"</li>
+  <li>"Crie beneficiário Padaria Central"</li>
+  <li>"Adicione categoria Lazer com cor azul"</li>
+</ul>
+<h4>❓ Ajuda sobre o app</h4>
+<ul>
+  <li>"Como adicionar uma conta?"</li>
+  <li>"O que é reconciliação?"</li>
+  <li>"Como convidar um membro da família?"</li>
+  <li>"Para que serve a previsão de caixa?"</li>
+</ul>
+<h4>🧭 Navegação</h4>
+<ul>
+  <li>"Abrir relatórios"</li>
+  <li>"Ir para dashboard"</li>
+  <li>"Navegar para investimentos"</li>
+</ul>
+<div class="help-tip">💡 Chips de sugestão rápida aparecem no painel do Agent para facilitar as consultas mais comuns.</div>`,
+            en: `<h4>💬 Financial queries</h4>
+<ul><li>"How much did I spend this month?"</li><li>"What category had the most spending in March?"</li><li>"Which accounts are in the red?"</li><li>"Give me a monthly financial summary"</li></ul>
+<h4>⚡ Creating transactions</h4>
+<ul><li>"Create an $80 expense at the supermarket"</li><li>"Log a $3,000 income as Salary in my checking account"</li><li>"Add a monthly scheduled payment of $500 for Rent"</li></ul>
+<h4>❓ App help</h4>
+<ul><li>"How do I add an account?"</li><li>"What is reconciliation?"</li><li>"How do I invite a family member?"</li></ul>
+<div class="help-tip">💡 Quick suggestion chips appear in the Agent panel for the most common queries.</div>`,
+            es: `<h4>💬 Consultas financieras</h4>
+<ul><li>"¿Cuánto gasté este mes?"</li><li>"¿Qué categoría tuvo más gasto en marzo?"</li><li>"¿Cuáles cuentas están en rojo?"</li></ul>
+<h4>⚡ Crear transacciones</h4>
+<ul><li>"Crear gasto de $80 en el supermercado"</li><li>"Registrar ingreso de $3.000 como Salario"</li></ul>`,
+            fr: `<h4>💬 Requêtes financières</h4>
+<ul><li>"Combien ai-je dépensé ce mois-ci ?"</li><li>"Quelle catégorie a eu le plus de dépenses en mars ?"</li><li>"Quels comptes sont dans le rouge ?"</li></ul>
+<h4>⚡ Créer des transactions</h4>
+<ul><li>"Créer une dépense de 80€ au supermarché"</li><li>"Enregistrer un revenu de 3 000€ comme Salaire"</li></ul>`,
+          },
+        },
+      ],
+    },
+    // ══ NOVIDADES 2026 ═══════════════════════════════════════════════════
+    {
+      id: 'whats-new', icon: '✨', color: '#16a34a',
+      title: { pt: 'Novidades', en: "What's New", es: 'Novedades', fr: 'Nouveautés' },
+      articles: [
+        {
+          id: 'new-2026',
+          title: { pt: 'Atualizações 2026', en: '2026 Updates', es: 'Actualizaciones 2026', fr: 'Mises à jour 2026' },
+          body: {
+            pt: `<div style="background:linear-gradient(135deg,#0f5132 0%,#166534 50%,#15803d 100%);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="font-size:2rem;margin-bottom:6px">✨</div>
+  <div style="font-size:1.05rem;font-weight:800">Family FinTrack — Atualizações 2026</div>
+  <div style="font-size:.8rem;opacity:.85;margin-top:4px">Novas funcionalidades, melhorias visuais e correções</div>
+</div>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a">
+    <strong>🤖 FinTrack Agent — Redesign</strong>
+    Interface renovada com identidade FinTrack verde, status online, avatar SVG e bolhas de chat premium. Correção do botão na topbar.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #f59e0b">
+    <strong>🌟 Módulo Sonhos</strong>
+    Cards modernos por tipo, wizard 4 passos, análise de viabilidade por IA Gemini, cenários conservador/equilibrado/acelerado.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #7c3aed">
+    <strong>🤖 AI Insights — Visual Premium</strong>
+    Tab bar verde FinTrack, botão "Analisar" com gradiente, estado vazio modernizado.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #0284c7">
+    <strong>📊 Relatórios — Pontos Clicáveis</strong>
+    Gráfico de previsão com pontos em cada dia com transação. Clique para ver detalhes. Barra de título corrigida.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #0284c7">
+    <strong>📊 Relatórios — Drill-down Corrigido</strong>
+    Modal de detalhes ao clicar nos gráficos agora abre corretamente com dados das transações.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #2a6049">
+    <strong>💹 Investimentos — Banner</strong>
+    Tema visual alinhado com o banner de Dívidas: gradiente escuro premium unificado.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706">
+    <strong>📅 Programados — Modal Modernizado</strong>
+    Tabs em pill verde, data na aba Principal, cards de notificação com borda ao ativar, frequência em pill buttons.
+  </div>
+  <div class="help-mini-card" style="border-left:3px solid #0f5132">
+    <strong>🏠 Dashboard — Pontos Clicáveis</strong>
+    Gráfico de previsão 90 dias com pontos em datas com transação. Clique abre detalhes do dia.
+  </div>
+</div>`,
+            en: `<div style="background:linear-gradient(135deg,#0f5132 0%,#166534 50%,#15803d 100%);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="font-size:2rem;margin-bottom:6px">✨</div>
+  <div style="font-size:1.05rem;font-weight:800">Family FinTrack — 2026 Updates</div>
+  <div style="font-size:.8rem;opacity:.85;margin-top:4px">New features, visual improvements and fixes</div>
+</div>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>🤖 FinTrack Agent — Redesign</strong> Revamped UI with FinTrack green identity, online status, SVG avatar and premium chat bubbles. Topbar button fixed.</div>
+  <div class="help-mini-card" style="border-left:3px solid #f59e0b"><strong>🌟 Dreams Module</strong> Modern cards by type, 4-step wizard, AI viability analysis, conservative/balanced/accelerated scenarios.</div>
+  <div class="help-mini-card" style="border-left:3px solid #0284c7"><strong>📊 Reports — Clickable Points</strong> Forecast chart now shows a point on each day with transactions. Click to see details. Title bar fixed.</div>
+  <div class="help-mini-card" style="border-left:3px solid #d97706"><strong>📅 Scheduled — Modernized Modal</strong> Pill tabs, date in Main tab, notification cards with border when active, frequency as pill buttons.</div>
+  <div class="help-mini-card" style="border-left:3px solid #0f5132"><strong>🏠 Dashboard — Clickable Points</strong> 90-day forecast chart with points on transaction dates. Click opens day details.</div>
+</div>`,
+            es: `<div style="background:linear-gradient(135deg,#0f5132,#15803d);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="font-size:2rem">✨</div>
+  <div style="font-size:1.05rem;font-weight:800">Actualizaciones 2026</div>
+</div>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>🤖 FinTrack Agent — Rediseño</strong> Interfaz renovada con identidad verde FinTrack, estado en línea y burbujas de chat premium.</div>
+  <div class="help-mini-card" style="border-left:3px solid #f59e0b"><strong>🌟 Módulo Sueños</strong> Tarjetas modernas por tipo, asistente de 4 pasos, análisis de viabilidad con IA.</div>
+  <div class="help-mini-card" style="border-left:3px solid #0284c7"><strong>📊 Informes — Puntos clicables</strong> Gráfico de previsión con puntos en días con transacciones. Clic para ver detalles.</div>
+</div>`,
+            fr: `<div style="background:linear-gradient(135deg,#0f5132,#15803d);border-radius:14px;padding:20px;color:#fff;margin-bottom:18px">
+  <div style="font-size:2rem">✨</div>
+  <div style="font-size:1.05rem;font-weight:800">Mises à jour 2026</div>
+</div>
+<div class="help-card-grid">
+  <div class="help-mini-card" style="border-left:3px solid #16a34a"><strong>🤖 FinTrack Agent — Refonte</strong> Interface rénovée avec identité verte FinTrack, statut en ligne et bulles de chat premium.</div>
+  <div class="help-mini-card" style="border-left:3px solid #f59e0b"><strong>🌟 Module Rêves</strong> Cartes modernes par type, assistant 4 étapes, analyse de faisabilité par IA.</div>
+  <div class="help-mini-card" style="border-left:3px solid #0284c7"><strong>📊 Rapports — Points cliquables</strong> Graphique de prévision avec points sur les jours avec transactions. Clic pour voir les détails.</div>
+</div>`,
+          },
+        },
+      ],
+    },
   ];
 }
 
