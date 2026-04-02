@@ -992,10 +992,6 @@ function setTxType(type){
   _filterTxAccountOrigin(isCardPayment);
   // Rebuild category picker filtered by transaction type
   buildCatPicker();
-  // Auto-classify card_payment into "Cartão de Crédito" category
-  if (isCardPayment) {
-    _txAutoSetCardPaymentCategory();
-  }
   // Hide FX panel when switching away from transfer
   if(!isTransfer) {
     _hideFxPanel();
@@ -1006,94 +1002,6 @@ function setTxType(type){
     _hideTxCurrencyPanel();
   }
 }
-
-/**
- * Auto-classifica pagamento de cartão na categoria "Cartão de Crédito".
- * Se não existir, exibe banner pedindo que o usuário crie a categoria.
- */
-function _txAutoSetCardPaymentCategory() {
-  const cats = state.categories || [];
-  // Procurar a categoria pelo nome (case-insensitive)
-  const CC_NAMES = ['cartão de crédito', 'cartao de credito', 'pagamento cartão', 'pagamento cartao', 'cartão'];
-  const ccCat = cats.find(c =>
-    CC_NAMES.some(n => c.name.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éê]/g,'e').replace(/[ó]/g,'o').replace(/[ç]/g,'c') === n)
-  );
-
-  // Remover banner anterior se existir
-  document.getElementById('_txCardPayCatBanner')?.remove();
-
-  if (ccCat) {
-    // Categoria encontrada — selecionar automaticamente
-    setCatPickerValue(ccCat.id, 'tx');
-    return;
-  }
-
-  // Categoria não encontrada — exibir banner para criar
-  const catGroup = document.getElementById('txCategoryGroup');
-  if (!catGroup) return;
-
-  // Limpar seleção atual
-  setCatPickerValue(null, 'tx');
-
-  const banner = document.createElement('div');
-  banner.id = '_txCardPayCatBanner';
-  banner.style.cssText = `
-    margin-top: 8px; padding: 11px 14px;
-    background: var(--amber-lt, #fffbeb);
-    border: 1.5px solid var(--amber, #b45309);
-    border-radius: 10px;
-    display: flex; align-items: flex-start; gap: 10px;
-    font-size: .80rem; color: #78350f; line-height: 1.5;
-  `;
-  banner.innerHTML = `
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px;color:#b45309"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:700;margin-bottom:3px">Categoria "Cartão de Crédito" não encontrada</div>
-      <div style="margin-bottom:8px">Para pagamentos de cartão, crie esta categoria uma vez para manter os relatórios organizados.</div>
-      <button type="button" onclick="_txCreateCardPaymentCategory()" style="
-        padding:6px 14px; background:var(--amber,#b45309); color:#fff; border:none;
-        border-radius:7px; font-size:.78rem; font-weight:700; cursor:pointer;
-        font-family:inherit; display:inline-flex; align-items:center; gap:5px;
-      ">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Criar categoria agora
-      </button>
-    </div>`;
-  catGroup.appendChild(banner);
-}
-
-/**
- * Cria a categoria "Cartão de Crédito" do tipo despesa e a seleciona.
- */
-async function _txCreateCardPaymentCategory() {
-  const btn = document.querySelector('#_txCardPayCatBanner button');
-  if (btn) { btn.disabled = true; btn.textContent = 'Criando…'; }
-  try {
-    const payload = {
-      family_id: famId(),
-      name: 'Cartão de Crédito',
-      type: 'despesa',
-      icon: '💳',
-      color: '#1d4ed8',
-      parent_id: null,
-      is_elastic: false,
-    };
-    const { data, error } = await famQ(sb.from('categories').insert(payload).select().single());
-    if (error) throw error;
-    // Adicionar ao state local
-    if (state.categories) state.categories.push(data);
-    // Reconstruir picker e selecionar
-    buildCatPicker();
-    setCatPickerValue(data.id, 'tx');
-    document.getElementById('_txCardPayCatBanner')?.remove();
-    toast('✅ Categoria "Cartão de Crédito" criada e selecionada!', 'success');
-  } catch(e) {
-    toast('Erro ao criar categoria: ' + (e.message || e), 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Criar categoria agora'; }
-  }
-}
-window._txAutoSetCardPaymentCategory  = _txAutoSetCardPaymentCategory;
-window._txCreateCardPaymentCategory   = _txCreateCardPaymentCategory;
 
 // ── FX / Exchange-rate helpers ─────────────────────────────────────────────
 

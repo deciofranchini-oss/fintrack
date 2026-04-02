@@ -156,7 +156,7 @@ function buildCatPicker(typeFilter, ctx) {
   // ── Search input (sticky, top of dropdown) ───────────────────────────────
   const searchId = _catSearchId(ctx);
   let html = '<div class="cat-search-wrap">' +
-    '<svg class="cat-search-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
+    '<span class="cat-search-icon">&#128269;</span>' +
     '<input type="text" id="' + searchId + '" class="cat-search-input"' +
     ' placeholder="Buscar categoria..." autocomplete="off" autocorrect="off" spellcheck="false"' +
     ' oninput="_catPickerFilter(\'' + ctx + '\', this.value)"' +
@@ -165,26 +165,6 @@ function buildCatPicker(typeFilter, ctx) {
     '<button type="button" class="cat-search-clear" id="' + searchId + 'Clear"' +
     ' onclick="event.stopPropagation();_catPickerClearSearch(\'' + ctx + '\')" tabindex="-1" aria-label="Limpar">&#10005;</button>' +
     '</div>';
-
-  // ── Chips de categorias recentes (últimas 5 usadas nas transações) ────────
-  var recentCatIds = _catPickerGetRecents(ctx, typeFilter);
-  if (recentCatIds.length > 0) {
-    html += '<div class="cat-recent-wrap" id="catRecentWrap-' + ctx + '">' +
-      '<div class="cat-recent-lbl">Usadas recentemente</div>' +
-      '<div class="cat-recent-chips">';
-    recentCatIds.forEach(function(catId) {
-      var cat = allCats.find(function(x){ return x.id === catId; });
-      if (!cat) return;
-      var parent = cat.parent_id ? allCats.find(function(x){ return x.id === cat.parent_id; }) : null;
-      var label = parent ? (parent.icon||'') + ' ' + cat.name : (cat.icon||'📦') + ' ' + cat.name;
-      var color = cat.color || 'var(--accent)';
-      html += '<button type="button" class="cat-recent-chip" onclick="event.stopPropagation();setCatPickerValue(\'' + catId + '\', \'' + ctx + '\')" title="' + esc(parent ? parent.name + ' > ' + cat.name : cat.name) + '">' +
-        '<span class="cat-recent-chip-dot" style="background:' + color + '"></span>' +
-        esc(label) +
-        '</button>';
-    });
-    html += '</div></div>';
-  }
 
   // ── "Sem categoria" option ────────────────────────────────────────────────
   html += '<div class="cat-none-option" onclick="setCatPickerValue(null, \'' + ctx + '\')">' +

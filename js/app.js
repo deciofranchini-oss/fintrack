@@ -459,10 +459,6 @@ async function tryAutoConnect(){
       await bootApp();
     } else {
       showLoginScreen();
-      // Verificar token de convite após mostrar a tela de login
-      if (typeof _checkInviteToken === 'function') {
-        _checkInviteToken().catch(e => console.warn('[invite-boot]', e.message));
-      }
     }
   } else {
     const setup=document.getElementById('setupScreen');
@@ -503,13 +499,10 @@ function setAppLogo(url){
   const clean = (typeof url === 'string') ? url.trim() : '';
   APP_LOGO_URL = clean || DEFAULT_LOGO_URL;
 
-  ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','authLogoImg'].forEach(id=>{
+  ['sidebarLogoImg','settingsLogoImg','topbarLogoImg','loginLogoImg','authLogoImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.src = APP_LOGO_URL;
   });
-  // loginLogoImg usa SEMPRE logo_glow_soft.png — nunca logo.jpg (fundo branco)
-  const _loginLogo = document.getElementById('loginLogoImg');
-  if (_loginLogo) _loginLogo.src = 'logo_glow_soft.png';
   // Wizard usa logo_wizard.png (versão para fundo escuro/verde)
   const wzEl = document.getElementById('wzLogoImg');
   if(wzEl) wzEl.src = 'logo_wizard.png';
@@ -619,7 +612,6 @@ async function bootApp(){
   if (typeof applyInvestmentsFeature === 'function') applyInvestmentsFeature().catch(() => {});
   if (typeof applyAiInsightsFeature === 'function') applyAiInsightsFeature().catch(() => {});
   if (typeof applyDebtsFeature === 'function') applyDebtsFeature().catch(() => {});
-  if (typeof applyDreamsFeature === 'function') applyDreamsFeature().catch(() => {});
   // Setup wizard — shows for new users until accounts + categories + transactions exist
   if (typeof initWizard === 'function') setTimeout(() => initWizard().catch(()=>{}), 800);
 }
@@ -628,7 +620,6 @@ const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Co
   grocery:'Lista de Mercado',
   ai_insights:'AI Insights',
   debts:'Dívidas',
-  dreams:'Meus Sonhos',
   help:'Ajuda',
   audit:'Auditoria de Programadas',
   telemetry:'Telemetria',
@@ -653,7 +644,6 @@ const _pageIconsSVG = {
   audit:        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
   telemetry:    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><polyline points="22 20 2 20"/></svg>',
   privacy:      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-  dreams:       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
 };
 async function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
@@ -950,7 +940,6 @@ function navigate(page){
       prices:       '',
       grocery:      '',
       ai_insights:  '',
-      dreams:       `<button class="page-header-action" onclick="openDreamWizard()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo Sonho</button>`,
       help:         '',
     };
     const bar = document.createElement('div');
@@ -976,36 +965,7 @@ function navigate(page){
   if (typeof i18nApplyToDOM === 'function') i18nApplyToDOM(document.getElementById('page-'+page));
   _scrollActivePageToTop(page);
   if(page==='dashboard' && sb) loadDashboard();
-  else if(page==='transactions'){
-    if(state.reconcileMode && typeof exitReconcileMode==='function') exitReconcileMode(false);
-    populateTxMonthFilter();
-    if(typeof populateSelects==='function') populateSelects();
-    // FIX: populateSelects reconstrói o innerHTML dos selects e apaga qualquer .value
-    // definido antes da navegação (ex: goToAccountTransactions). Restaurar do state.
-    const _tf = state.txFilter || {};
-    const _txAccEl = document.getElementById('txAccount');
-    if (_txAccEl && _tf.account) _txAccEl.value = _tf.account;
-    const _txMonthEl = document.getElementById('txMonth');
-    if (_txMonthEl && _tf.month) _txMonthEl.value = _tf.month;
-    const _txTypeEl = document.getElementById('txType');
-    if (_txTypeEl && _tf.type) _txTypeEl.value = _tf.type;
-    const _txCatEl = document.getElementById('txCategoryFilter');
-    if (_txCatEl && _tf.categoryId) _txCatEl.value = _tf.categoryId;
-    // Aplicar is-active em todos os chips — marca visualmente os filtros ativos
-    ['txMonth','txAccount','txType','txStatusFilter','txCategoryFilter','txReconcileFilter'].forEach(id => {
-      const _el = document.getElementById(id);
-      if (_el) _el.classList.toggle('is-active', !!_el.value);
-    });
-    // Se há filtro de conta/mês/tipo ativo, abrir o painel de filtros e atualizar badge
-    if (_tf.account || _tf.month || _tf.type || _tf.categoryId) {
-      const _panel = document.getElementById('tx-filters-panel');
-      const _btn   = document.getElementById('txFilterToggle');
-      if (_panel) _panel.classList.add('open');
-      if (_btn)   _btn.classList.add('active');
-      if (typeof _txUpdateFilterBadge === 'function') _txUpdateFilterBadge();
-    }
-    loadTransactions();
-  }
+  else if(page==='transactions'){if(state.reconcileMode && typeof exitReconcileMode==='function')exitReconcileMode(false);populateTxMonthFilter();if(typeof populateSelects==='function')populateSelects();loadTransactions();}
   else if(page==='accounts'){ if(typeof initAccountsPage==='function') initAccountsPage(); else renderAccounts(); }
   else if(page==='reports'){if(typeof populateSelects==='function')populateSelects();if(typeof populateReportFilters==='function')populateReportFilters();loadCurrentReport();}
   else if(page==='budgets')initBudgetsPage();
@@ -1019,18 +979,13 @@ function navigate(page){
     if (typeof _scCalMonth !== 'undefined') { window._scCalMonth = _now.getMonth(); }
     // Use the exposed setter so the module-scoped variable is actually set
     if (typeof window._setScCalSelDay === 'function') window._setScCalSelDay(_todayStr);
-
-    // FIX: Restaurar a view preferida ANTES do loadScheduled para evitar o flash
-    // list→calendar. A lista começa oculta (display:none no HTML) e a view correta
-    // é aplicada imediatamente antes de qualquer dado chegar.
-    const _savedView = currentUser?.preferred_sc_view ||
-                       localStorage.getItem('sc_view_pref') ||
-                       'calendar';
-    if (typeof setScView === 'function') setScView(_savedView);
-
     loadScheduled().then(() => {
-      // Após os dados carregarem, re-aplicar a view para re-renderizar o conteúdo
-      if (typeof setScView === 'function') setScView(_savedView);
+      if (typeof setScView === 'function') {
+        const savedView = currentUser?.preferred_sc_view ||
+                          localStorage.getItem('sc_view_pref') ||
+                          'calendar';
+        setScView(savedView);
+      }
       // Open upcoming panel if it has events, keep day groups collapsed per spec
       if (typeof _openUpcomingIfHasEvents === 'function') _openUpcomingIfHasEvents();
     });
@@ -1044,7 +999,6 @@ function navigate(page){
   else if(page==='prices')initPricesPage();
   else if(page==='grocery')initGroceryPage();
   else if(page==='ai_insights')initAiInsightsPage();
-  else if(page==='dreams')initDreamsPage?.();
   else if(page==='help'){if(typeof initHelpPage==='function')initHelpPage();}
   else if(page==='privacy'){if(typeof _prvInitPage==='function')_prvInitPage();}
 

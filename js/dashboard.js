@@ -287,18 +287,7 @@ async function loadDashboard(){
   if (typeof renderDashboardUpcoming === 'function') await renderDashboardUpcoming(_dashMemberIds);
   if(typeof _renderDashFavCategories==='function') await _renderDashFavCategories(income, expense);
   _renderDashForecast().catch(()=>{});
-  _dashRenderInvestments().catch(()=>{});
   await loadDashboardAutoRunSummary();
-
-  // FIX: Carregar orçamentos para o snapshot do dashboard.
-  // loadBudgets popula _budgetCache e _budgetSpent, depois chama
-  // _renderDashBudgetSnapshot automaticamente. Sem isso o card fica vazio.
-  if (typeof loadBudgets === 'function') {
-    loadBudgets().catch(() => {}).finally(() => {
-      // Re-aplicar visibilidade após render para respeitar prefs do usuário
-      try { _dashApplyPrefs(_dashGetPrefs()); } catch(_e) {}
-    });
-  }
 
   // Render account balances grouped by account group
   (function renderAccountBalances() {
@@ -320,16 +309,16 @@ async function loadDashboard(){
         const _brlLine    = (a.currency !== 'BRL')
           ? `<div class="dash-fav-brl">${dashFmt(toBRL(a.balance,a.currency),'BRL')}</div>`
           : '';
-        // Confirmed-only balance line — sempre renderizada para manter altura uniforme.
-        // visibility:hidden quando não há pendentes (reserva o espaço sem mostrar nada).
-        const _confBal    = a.confirmed_balance;
+        // Confirmed-only balance line (hidden when equal to total balance)
+        const _confBal = a.confirmed_balance;
         const _hasPending = (_confBal !== undefined) && (Math.abs(_confBal - a.balance) > 0.001);
-        const _confIsNeg  = _confBal < 0;
-        const _confLine   = `<div class="dash-fav-card__confirmed ${_confIsNeg ? 'neg' : ''}"
-          style="${_hasPending ? '' : 'visibility:hidden'}">
-            <span class="dash-fav-card__confirmed-label">confirmado</span>
-            ${_hasPending ? fmt(_confBal, a.currency) : '—'}
-          </div>`;
+        const _confIsNeg   = _confBal < 0;
+        const _confLine    = _hasPending
+          ? `<div class="dash-fav-card__confirmed ${_confIsNeg ? 'neg' : ''}">
+               <span class="dash-fav-card__confirmed-label">confirmado</span>
+               ${fmt(_confBal, a.currency)}
+             </div>`
+          : '';
         return `<div class="dash-fav-card" onclick="goToAccountTransactions('${a.id}')"
           style="--card-clr:${_cardColor}">
           <div class="dash-fav-card__top">
@@ -340,10 +329,6 @@ async function loadDashboard(){
           <div class="dash-fav-card__balance ${_isNeg ? 'neg' : ''}">${fmt(a.balance,a.currency)}</div>
           ${_confLine}
           ${_brlLine}
-          <button class="dash-fav-card__consolidate-btn" title="Ajustar / Consolidar saldo"
-            onclick="event.stopPropagation();openConsolidateModal('${a.id}')">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          </button>
           <div class="dash-fav-card__shine"></div>
         </div>`;
       }
@@ -364,34 +349,25 @@ async function loadDashboard(){
       const favCheck   = favs.filter(a => a.type === 'corrente' || a.type === 'poupanca');
       const favOthers  = favs.filter(a => !['cartao_credito','corrente','poupanca'].includes(a.type));
 
-      // Coluna de tipo: header + contas empilhadas verticalmente
-      const _favTypeCol = (items, label) => {
+      const _favTypeSep = (items, label, totalSign) => {
         if (!items.length) return '';
-        const total      = items.reduce((s,a) => s + toBRL(parseFloat(a.balance)||0, a.currency||'BRL'), 0);
-        const isCC       = label === 'Cartão de Crédito';
-        const totalFmt   = fmt(Math.abs(total), 'BRL');
-        const totalColor = total < 0 ? 'var(--red)' : isCC ? 'var(--red)' : 'var(--accent)';
-        const icon       = isCC ? '💳' : label.includes('Corrente') ? '🏦' : '📦';
-        // No mobile: volta ao layout original (grid horizontal)
-        // No desktop: cada conta é empilhada verticalmente dentro da coluna
-        return `<div class="dash-fav-type-group dash-fav-type-col">
+        const total = items.reduce((s,a) => s + toBRL(parseFloat(a.balance)||0, a.currency||'BRL'), 0);
+        const totalColor = total < 0 ? 'var(--red)' : label === 'Cartão de Crédito' ? 'rgba(192,57,43,.75)' : 'var(--accent)';
+        return `<div class="dash-fav-type-group">
           <div class="dash-fav-type-header">
-            <span class="dash-fav-type-label">${icon} ${label}</span>
-            <span class="dash-fav-type-total" style="color:${totalColor};font-family:var(--font-serif,monospace)">${isCC && total < 0 ? '−' : ''}${totalFmt}</span>
+            <span class="dash-fav-type-label">${label}</span>
+            <span class="dash-fav-type-total" style="color:${totalColor}">${dashFmt(Math.abs(total),'BRL')}</span>
           </div>
-          <div class="dash-favs-col-stack">${items.map(rowHtml).join('')}</div>
+          <div class="dash-favs-grid">${items.map(rowHtml).join('')}</div>
         </div>`;
       };
 
-      // Desktop: grupos lado a lado. Mobile: empilhados (CSS cuida disso).
-      const activeGroups = [
-        favCC.length     ? _favTypeCol(favCC,    'Cartão de Crédito')          : '',
-        favCheck.length  ? _favTypeCol(favCheck,  'Corrente / Poupança') : '',
-        favOthers.length ? _favTypeCol(favOthers, 'Outros')                     : '',
-      ].filter(Boolean);
-
-      const favHtml = activeGroups.length
-        ? `<div class="dash-fav-cols-layout">${activeGroups.join('')}</div>`
+      const favHtml = (favCC.length || favCheck.length || favOthers.length)
+        ? _favTypeSep(favCC, 'Cartão de Crédito') +
+          (favCC.length && (favCheck.length || favOthers.length) ? '<div class="dash-fav-type-divider"></div>' : '') +
+          _favTypeSep(favCheck, 'Contas Correntes / Poupança') +
+          (favOthers.length ? '<div class="dash-fav-type-divider"></div>' : '') +
+          _favTypeSep(favOthers, 'Outros')
         : `<div class="dash-favs-grid">${favs.map(rowHtml).join('')}</div>`;
 
       html += `<div class="dash-favs-section">${favHtml}</div>`;
@@ -646,37 +622,17 @@ function _catColor(color, idx, usedSet) {
 
 async function renderCategoryChart(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  // Two-step query: scalar fields only (sem JOINs) para evitar PostgREST schema-cache issues.
-  // Contas e payees são enriquecidos via state.accounts / state.payees já carregados.
-  const _txSelect = 'id,date,description,amount,brl_amount,currency,account_id,payee_id,category_id,is_transfer,is_card_payment';
-  const _dateGte = `${y}-${m}-01`;
-  // Último dia real do mês — evita comparação com data inválida (ex: 2026-02-31)
-  const _lastDay = new Date(y, now.getMonth()+1, 0).getDate();
-  const _dateLte = `${y}-${m}-${String(_lastDay).padStart(2,'0')}`;
+  const _txSelect = 'id,date,description,amount,brl_amount,currency,account_id,category_id,categories(id,name,color),payees(name),accounts!transactions_account_id_fkey(name)';
+  const _dateGte = `${y}-${m}-01`, _dateLte = `${y}-${m}-31`;
 
-  // Build expense query (amount < 0) — exclui transferências e pagamentos de fatura
+  // Build expense query (amount < 0)
   const qExp = famQ(sb.from('transactions').select(_txSelect))
-    .gte('date',_dateGte).lte('date',_dateLte)
-    .lt('amount',0).not('category_id','is',null)
-    .eq('is_transfer',false).eq('is_card_payment',false);
-  // Build income query (amount > 0) — exclui transferências
+    .gte('date',_dateGte).lte('date',_dateLte).lt('amount',0).not('category_id','is',null);
+  // Build income query (amount > 0)
   const qInc = famQ(sb.from('transactions').select(_txSelect))
-    .gte('date',_dateGte).lte('date',_dateLte)
-    .gt('amount',0).not('category_id','is',null)
-    .eq('is_transfer',false).eq('is_card_payment',false);
+    .gte('date',_dateGte).lte('date',_dateLte).gt('amount',0).not('category_id','is',null);
 
-  const [resExp, resInc] = await Promise.all([qExp, qInc]);
-  const data    = resExp.data;
-  const dataInc = resInc.data;
-
-  // Enriquecer com account name e payee name a partir do estado (já carregado, sem query extra)
-  const _accById  = Object.fromEntries((state.accounts||[]).map(a=>[a.id,a]));
-  const _payById  = Object.fromEntries((state.payees ||[]).map(p=>[p.id,p]));
-  const _enrich = t => ({
-    ...t,
-    accounts: _accById[t.account_id] ? { name: _accById[t.account_id].name } : null,
-    payees:   _payById[t.payee_id]   ? { name: _payById[t.payee_id].name   } : null,
-  });
+  const [{data}, {data: dataInc}] = await Promise.all([qExp, qInc]);
 
   // Build parent lookup from state.categories (already loaded, has parent_id)
   const allCats = state.categories || [];
@@ -697,7 +653,7 @@ async function renderCategoryChart(){
   }
 
   const catMap={};
-  (data||[]).map(_enrich).forEach(t=>{
+  (data||[]).forEach(t=>{
     const root = _getRootCat(t);
     const n = root.name;
     const rawColor = root.color;
@@ -721,7 +677,7 @@ async function renderCategoryChart(){
 
   // Build income category entries (same logic, positive amounts)
   const incMap = {};
-  (dataInc||[]).map(_enrich).forEach(t => {
+  (dataInc||[]).forEach(t => {
     const root = _getRootCat(t);
     const n = root.name, rawColor = root.color;
     if (!incMap[n]) incMap[n] = {rawColor, txs:[], total:0, rootId:root.id};
@@ -741,8 +697,6 @@ async function renderCategoryChart(){
   if(!_catChartEntries.length){
     const el=document.getElementById('categoryChart');
     if(el){const ctx=el.getContext('2d');ctx.clearRect(0,0,el.width,el.height);ctx.fillStyle='#8c8278';ctx.textAlign='center';ctx.font='13px Outfit';ctx.fillText(t('dash.empty_tx'),el.width/2,el.height/2);}
-    closeCatDetail();
-    return; // FIX: não continuar para render com dados vazios
   }
 
   closeCatDetail(); // reset any open detail
@@ -881,15 +835,12 @@ const _DASH_PREFS_KEY = () =>
   `dash_prefs_${typeof currentUser !== 'undefined' && currentUser?.id ? currentUser.id : 'default'}`;
 
 const _DASH_CARDS = [
-  { id: 'kpis',        label: 'Patrimônio, Receita, Despesa e Saldo', icon: '💰', sub: 'Cards de resumo financeiro do mês', el: 'dashCardKpis'       },
-  { id: 'accounts',    label: 'Saldo por Conta',           icon: '🏦', sub: 'Saldo atual de cada conta',                 el: 'dashCardAccounts'   },
-  { id: 'charts',      label: 'Fluxo de Caixa e Gráficos', icon: '📊', sub: 'Cashflow 6 meses + gráfico de despesas',    el: 'dashCardCharts'     },
-  { id: 'favcats',     label: 'Categorias Favoritas',      icon: '⭐', sub: 'Evolução das categorias marcadas',          el: 'dashCardFavCats'    },
-  { id: 'budgetSnap',  label: 'Orçamentos do Mês',         icon: '🎯', sub: 'Resumo dos orçamentos ativos',              el: 'dashBudgetSnapshot' },
-  { id: 'investments', label: 'Carteira de Investimentos', icon: '📈', sub: 'Resumo da carteira: valor, custo e resultado', el: 'dashCardInvestments', moduleKey: 'investments_enabled' },
-  { id: 'upcoming',    label: 'Próximas Transações',       icon: '📆', sub: 'Programadas para os próximos 10 dias',      el: 'dashCardUpcoming'   },
-  { id: 'forecast90',  label: 'Previsão 90 dias',          icon: '📈', sub: 'Projeção de saldo para os próximos 90 dias',el: 'dashCardForecast90' },
-  { id: 'recent',      label: 'Últimas Transações',        icon: '🧾', sub: 'Histórico recente de lançamentos',          el: 'dashCardRecent'     },
+  { id: 'accounts',   label: 'Saldo por Conta',           icon: '🏦', sub: 'Saldo atual de cada conta',                 el: 'dashCardAccounts'   },
+  { id: 'charts',     label: 'Fluxo de Caixa e Gráficos', icon: '📊', sub: 'Cashflow 6 meses + gráfico de despesas',    el: 'dashCardCharts'     },
+  { id: 'favcats',    label: 'Categorias Favoritas',      icon: '⭐', sub: 'Evolução das categorias marcadas',          el: 'dashCardFavCats'    },
+  { id: 'upcoming',   label: 'Próximas Transações',       icon: '📆', sub: 'Programadas para os próximos 10 dias',      el: 'dashCardUpcoming'   },
+  { id: 'forecast90', label: 'Previsão 90 dias',          icon: '📈', sub: 'Projeção de saldo para os próximos 90 dias',el: 'dashCardForecast90' },
+  { id: 'recent',     label: 'Últimas Transações',        icon: '🧾', sub: 'Histórico recente de lançamentos',          el: 'dashCardRecent'     },
 ];
 
 function _dashGetPrefs() {
@@ -897,19 +848,8 @@ function _dashGetPrefs() {
     const raw = localStorage.getItem(_DASH_PREFS_KEY());
     if (raw) return JSON.parse(raw);
   } catch (_e) {}
-  // Defaults: tudo visível (module cards start hidden until module is confirmed active)
-  return Object.fromEntries(_DASH_CARDS.map(c => [c.id, !c.moduleKey]));
-}
-
-/** Returns cards available based on enabled modules */
-function _getDashAvailableCards() {
-  const fid = typeof famId === 'function' ? famId() : null;
-  return _DASH_CARDS.filter(c => {
-    if (!c.moduleKey) return true;
-    const cacheKey = c.moduleKey + '_' + fid;
-    const cached = window._familyFeaturesCache?.[cacheKey];
-    return cached === true;
-  });
+  // Defaults: tudo visível
+  return Object.fromEntries(_DASH_CARDS.map(c => [c.id, true]));
 }
 
 async function _dashSavePrefs(prefs) {
@@ -939,348 +879,111 @@ async function _syncDashPrefsFromServer() {
   } catch (e) { console.warn('[dashPrefs] sync exception:', e.message); }
 }
 
-// ════════════════════════════════════════════════════════
-// INVESTMENT DASHBOARD CARD — render & update
-// ════════════════════════════════════════════════════════
-function _dashEnsureInvCard() {
-  if (document.getElementById('dashCardInvestments')) return;
-  // Insert before dashCardUpcoming
-  const ref = document.getElementById('dashCardUpcoming');
-  if (!ref) return;
-  const card = document.createElement('div');
-  card.id = 'dashCardInvestments';
-  card.className = 'card mb-4';
-  card.innerHTML = `
-    <div class="card-header" style="gap:8px">
-      <span class="card-title">📈 Carteira de Investimentos</span>
-      <button class="btn btn-ghost btn-sm" onclick="navigate('investments')" style="margin-left:auto">Ver carteira →</button>
-    </div>
-    <div id="dashInvContent" style="padding:0 4px 4px">
-      <div class="text-muted" style="text-align:center;padding:18px;font-size:.83rem">Carregando…</div>
-    </div>`;
-  ref.parentElement.insertBefore(card, ref);
-}
-
-async function _dashRenderInvestments() {
-  // Only render if module is active
-  const fid = typeof famId === 'function' ? famId() : null;
-  if (!fid) return;
-  const cacheKey = 'investments_enabled_' + fid;
-  const enabled = window._familyFeaturesCache?.[cacheKey] === true;
-  if (!enabled) return;
-
-  _dashEnsureInvCard();
-  const prefs = _dashGetPrefs();
-  const card = document.getElementById('dashCardInvestments');
-  if (!card) return;
-  card.style.display = prefs.investments !== false ? '' : 'none';
-  if (prefs.investments === false) return;
-
-  const el = document.getElementById('dashInvContent');
-  if (!el) return;
-
-  // Gather data from investments module
-  const positions = (typeof _inv !== 'undefined' && _inv.positions) ? _inv.positions.filter(p => +(p.quantity) > 0) : [];
-
-  if (!positions.length) {
-    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:.83rem">
-      <div style="font-size:1.5rem;margin-bottom:8px">📈</div>
-      Nenhuma posição registrada ainda.<br>
-      <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="navigate('investments')">Acessar Investimentos</button>
-    </div>`;
-    return;
-  }
-
-  // Calculate totals
-  const totalMV   = positions.reduce((s,p) => s + (typeof _invMarketValue === 'function' ? _invMarketValue(p) : 0), 0);
-  const totalCost = positions.reduce((s,p) => s + (typeof _invCost === 'function' ? _invCost(p) : (+(p.quantity) * +(p.avg_cost))), 0);
-  const pnl       = totalMV - totalCost;
-  const pnlPct    = totalCost ? pnl / totalCost * 100 : 0;
-  const isPos     = pnl >= 0;
-
-  // Group by asset type
-  const byType = {};
-  positions.forEach(p => {
-    const k = p.asset_type || 'outro';
-    if (!byType[k]) byType[k] = { mv: 0, count: 0 };
-    byType[k].mv += typeof _invMarketValue === 'function' ? _invMarketValue(p) : 0;
-    byType[k].count++;
-  });
-
-  const typeEmoji = { acao_br:'🇧🇷', fii:'🏢', etf_br:'📊', acao_us:'🇺🇸', etf_us:'📈',
-    bdr:'🌐', crypto:'₿', tesouro_direto:'🏛️', fundo_investimento:'🏦', renda_fixa:'💰', outro:'📌' };
-  const typeLabel = { acao_br:'Ações BR', fii:'FIIs', etf_br:'ETFs BR', acao_us:'Ações US',
-    etf_us:'ETFs US', bdr:'BDRs', crypto:'Cripto', tesouro_direto:'Tesouro', fundo_investimento:'Fundos',
-    renda_fixa:'Renda Fixa', outro:'Outros' };
-
-  const typeRows = Object.entries(byType)
-    .sort((a,b) => b[1].mv - a[1].mv)
-    .slice(0, 5)
-    .map(([type, d]) => {
-      const pct = totalMV ? (d.mv / totalMV * 100) : 0;
-      const emoji = typeEmoji[type] || '📌';
-      const lbl   = typeLabel[type] || type;
-      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:.88rem;flex-shrink:0">${emoji}</span>
-        <span style="font-size:.78rem;font-weight:600;color:var(--text2);flex:1">${lbl}</span>
-        <span style="font-size:.7rem;color:var(--muted);min-width:34px;text-align:right">${pct.toFixed(0)}%</span>
-        <span style="font-size:.82rem;font-weight:700;color:var(--text);min-width:80px;text-align:right;font-family:var(--font-serif)">${fmt(d.mv)}</span>
-      </div>`;
-    }).join('');
-
-  // Top positions
-  const topPos = [...positions]
-    .sort((a,b) => (typeof _invMarketValue === 'function' ? _invMarketValue(b) - _invMarketValue(a) : 0))
-    .slice(0, 3);
-
-  const topRows = topPos.map(p => {
-    const mv  = typeof _invMarketValue === 'function' ? _invMarketValue(p) : 0;
-    const c   = typeof _invCost === 'function' ? _invCost(p) : (+(p.quantity) * +(p.avg_cost));
-    const ret = c ? (mv - c) / c * 100 : 0;
-    const retColor = ret >= 0 ? 'var(--accent)' : 'var(--red,#dc2626)';
-    const netRet = typeof _invNetReturn === 'function' ? _invNetReturn(p) : null;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:.82rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.ticker)}</div>
-        <div style="font-size:.68rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name||'')}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:.82rem;font-weight:700;font-family:var(--font-serif)">${fmt(mv)}</div>
-        <div style="font-size:.68rem;font-weight:600;color:${retColor}">${ret>=0?'+':''}${ret.toFixed(2)}%${netRet?.hasFees?' (liq. '+netRet.netReturnPct.toFixed(1)+'%)':''}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <!-- KPI strip -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
-      <div style="background:var(--surface2);padding:10px 14px">
-        <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px">Valor de mercado</div>
-        <div style="font-size:.95rem;font-weight:800;font-family:var(--font-serif);color:var(--text)">${fmt(totalMV)}</div>
-      </div>
-      <div style="background:var(--surface2);padding:10px 14px">
-        <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px">Custo total</div>
-        <div style="font-size:.95rem;font-weight:800;font-family:var(--font-serif);color:var(--text2)">${fmt(totalCost)}</div>
-      </div>
-      <div style="background:var(--surface2);padding:10px 14px">
-        <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px">Resultado</div>
-        <div style="font-size:.95rem;font-weight:800;font-family:var(--font-serif);color:${isPos?'var(--accent)':'var(--red,#dc2626)'}">${isPos?'+':''}${fmt(pnl)} <span style="font-size:.72rem">(${pnlPct.toFixed(2)}%)</span></div>
-      </div>
-    </div>
-    <!-- Distribution by type -->
-    ${Object.keys(byType).length > 1 ? `
-    <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px;padding:0 2px">Distribuição por tipo</div>
-    <div style="margin-bottom:10px">${typeRows}</div>` : ''}
-    <!-- Top positions -->
-    <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px;padding:0 2px">Principais posições</div>
-    <div>${topRows}</div>
-    <div style="text-align:center;padding:8px 0 2px">
-      <button class="btn btn-ghost btn-sm" onclick="navigate('investments')" style="font-size:.75rem">Ver carteira completa →</button>
-    </div>`;
-}
-window._dashRenderInvestments = _dashRenderInvestments;
-
 function _dashApplyPrefs(prefs) {
   const order = _getDashCardOrder(prefs);
-  const available = _getDashAvailableCards();
-  const availableIds = new Set(available.map(c => c.id));
-
-  // ── 1. Visibilidade ────────────────────────────────────────────────────────
+  // Apply visibility
   order.forEach(c => {
     const el = document.getElementById(c.el);
     if (!el) return;
-    // Module-gated cards: only show if module is active AND user has it enabled
-    if (c.moduleKey && !availableIds.has(c.id)) {
-      el.style.display = 'none';
-      return;
-    }
     el.style.display = prefs[c.id] !== false ? '' : 'none';
   });
-
-  // ── 2. Reordenação robusta no DOM ──────────────────────────────────────────
-  // Elementos fixos que NUNCA devem ser movidos (sempre no topo):
-  //   .page-header-bar  — barra de título injetada pelo navigate()
-  //   #dashFilterBadge  — badge de filtro de membro/grupo
-  //   #fxRatesBadge     — barra de câmbio
+  // Apply order in DOM on all screen sizes
   try {
-    const els = order.map(c => document.getElementById(c.el)).filter(Boolean);
-    if (!els.length) return;
-    const parent = els[0].parentElement;
-    if (!parent) return;
-
-    // Filtra apenas os cards que são filhos diretos deste pai
-    const direct = els.filter(el => el.parentElement === parent);
-    if (!direct.length) return;
-
-    // IDs/classes que são elementos fixos — não devem ser tocados
-    const _isFixed = el =>
-      el.classList.contains('page-header-bar') ||
-      el.id === 'dashFilterBadge' ||
-      el.id === 'fxRatesBadge';
-
-    // Encontrar o índice do primeiro filho NÃO-fixo (ponto de inserção inicial)
-    const allChildren = Array.from(parent.children);
-    let insertionBase = allChildren.findIndex(ch => !_isFixed(ch));
-    if (insertionBase < 0) insertionBase = allChildren.length;
-
-    // Reordenar: inserir cada card na sequência correta, após os elementos fixos
-    direct.forEach((el, i) => {
-      const refIndex = insertionBase + i;
-      const refEl = parent.children[refIndex];
-      if (refEl && refEl !== el) {
-        parent.insertBefore(el, refEl);
-      } else if (!refEl) {
-        parent.appendChild(el);
-      }
-    });
+    const parent = document.getElementById(order[0]?.el)?.parentElement;
+    if (parent) {
+      order.forEach(c => {
+        const el = document.getElementById(c.el);
+        if (el && el.parentElement === parent) parent.appendChild(el);
+      });
+    }
   } catch(_) {}
 }
 
 function openDashCustomModal() {
   const prefs = _dashGetPrefs();
   const order = _getDashCardOrder(prefs);
-  _dashCustomCurrentOrder = order.map(c => c.id);
+  const list  = document.getElementById('dashCustomList');
+  if (!list) return;
   _renderDashCustomList(order, prefs);
   openModal('dashCustomModal');
-  requestAnimationFrame(() => _dashInitDnD());
 }
 
 function _getDashCardOrder(prefs) {
+  // Use saved order from prefs, fallback to _DASH_CARDS default order
   const savedOrder = prefs._order;
   if (savedOrder && Array.isArray(savedOrder)) {
     const ordered = savedOrder
       .map(id => _DASH_CARDS.find(c => c.id === id))
       .filter(Boolean);
+    // Append any new cards not in saved order
     _DASH_CARDS.forEach(c => { if (!ordered.find(x => x.id === c.id)) ordered.push(c); });
     return ordered;
   }
   return [..._DASH_CARDS];
 }
 
-let _dashCustomCurrentOrder = null;
-
 function _renderDashCustomList(order, prefs) {
   const list = document.getElementById('dashCustomList');
   if (!list) return;
-  const _avail = new Set(_getDashAvailableCards().map(c => c.id));
-  list.innerHTML = order.filter(c => !c.moduleKey || _avail.has(c.id)).map((c, idx) => `
-    <div class="dash-custom-item" data-card-id="${c.id}" draggable="true"
-      style="display:flex;align-items:center;gap:10px;padding:11px 14px;
-        background:var(--surface2);border:1.5px solid var(--border);
-        border-radius:10px;cursor:grab;transition:all .15s;user-select:none"
-      onmouseenter="this.style.borderColor='var(--accent)'"
-      onmouseleave="this.style.borderColor='var(--border)'">
-      <span style="color:var(--muted);font-size:1rem;flex-shrink:0;cursor:grab" title="Arrastar">⠿</span>
-      <span style="font-size:1.1rem;flex-shrink:0">${c.icon}</span>
+  list.innerHTML = order.map((c, idx) => `
+    <div class="dash-custom-toggle" data-card-id="${c.id}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px">
+      <span class="dash-custom-toggle-icon">${c.icon}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:.84rem;font-weight:600;color:var(--text)">${c.label}</div>
-        <div style="font-size:.71rem;color:var(--muted);margin-top:1px">${c.sub}</div>
+        <div class="dash-custom-toggle-label">${c.label}</div>
+        <div class="dash-custom-toggle-sub" style="font-size:.72rem;color:var(--muted)">${c.sub}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-        <button
-          style="width:24px;height:20px;border-radius:5px;border:1px solid var(--border);
-            background:var(--surface);color:var(--text2);font-size:.65rem;cursor:pointer;
-            display:flex;align-items:center;justify-content:center;
-            ${idx===0 ? 'opacity:.3;pointer-events:none' : ''}"
-          onclick="event.stopPropagation();_dashMoveCard('${c.id}',-1)"
-          title="Mover para cima">▲</button>
-        <button
-          style="width:24px;height:20px;border-radius:5px;border:1px solid var(--border);
-            background:var(--surface);color:var(--text2);font-size:.65rem;cursor:pointer;
-            display:flex;align-items:center;justify-content:center;
-            ${idx===order.length-1 ? 'opacity:.3;pointer-events:none' : ''}"
-          onclick="event.stopPropagation();_dashMoveCard('${c.id}',+1)"
-          title="Mover para baixo">▼</button>
+      <div class="dash-reorder-btns">
+        <button class="dash-reorder-btn" onclick="_dashMoveCard('${c.id}',-1)" title="Mover para cima" ${idx===0?'disabled style="opacity:.3"':''}>▲</button>
+        <button class="dash-reorder-btn" onclick="_dashMoveCard('${c.id}',+1)" title="Mover para baixo" ${idx===order.length-1?'disabled style="opacity:.3"':''}>▼</button>
       </div>
       <button class="dash-toggle-switch ${prefs[c.id]!==false?'on':''}" data-card="${c.id}"
-        style="flex-shrink:0"
-        onclick="event.stopPropagation();_dashToggleCard('${c.id}',this.closest('.dash-custom-item'))">
-      </button>
+        onclick="event.stopPropagation();_dashToggleCard('${c.id}',this.closest('.dash-custom-toggle'))"></button>
     </div>`).join('');
-  requestAnimationFrame(() => _dashInitDnD());
 }
 
 function _dashMoveCard(id, dir) {
   const prefs = _dashGetPrefs();
-  const order = _getDashCardOrder({ ...prefs, _order: _dashCustomCurrentOrder || prefs._order });
+  const order = _getDashCardOrder(prefs);
   const idx   = order.findIndex(c => c.id === id);
   if (idx < 0) return;
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= order.length) return;
   [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
-  _dashCustomCurrentOrder = order.map(c => c.id);
-  const updPrefs = { ...prefs, _order: _dashCustomCurrentOrder };
+  // Temporarily store new order and re-render the list
+  _dashCustomPendingOrder = order.map(c => c.id);
+  const updPrefs = {...prefs, _order: _dashCustomPendingOrder};
   _renderDashCustomList(order, updPrefs);
-  _dashSavePrefs(updPrefs).catch(() => {});
-  _dashApplyPrefs(updPrefs);
 }
+let _dashCustomPendingOrder = null;
 
 function _dashToggleCard(id, row) {
-  const btn = row ? row.querySelector('.dash-toggle-switch') : null;
+  const btn = row?.querySelector('.dash-toggle-switch');
   if (!btn) return;
   const isOn = btn.classList.toggle('on');
-  const prefs = _dashGetPrefs();
-  const updPrefs = { ...prefs, [id]: isOn };
-  if (_dashCustomCurrentOrder) updPrefs._order = _dashCustomCurrentOrder;
-  _dashSavePrefs(updPrefs).catch(() => {});
-  _dashApplyPrefs(updPrefs);
-}
-
-// Drag-and-Drop nativo
-let _dndDragId = null;
-
-function _dashInitDnD() {
-  const list = document.getElementById('dashCustomList');
-  if (!list) return;
-  list.querySelectorAll('.dash-custom-item').forEach(item => {
-    item.addEventListener('dragstart', e => {
-      _dndDragId = item.dataset.cardId;
-      item.style.opacity = '.45';
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    item.addEventListener('dragend', () => {
-      item.style.opacity = '';
-      list.querySelectorAll('.dash-custom-item').forEach(i => {
-        i.style.background = ''; i.style.borderColor = 'var(--border)';
-      });
-    });
-    item.addEventListener('dragover', e => {
-      e.preventDefault();
-      if (item.dataset.cardId !== _dndDragId) {
-        item.style.borderColor = 'var(--accent)';
-        item.style.background  = 'var(--accent-lt, #e8f2ee)';
-      }
-    });
-    item.addEventListener('dragleave', () => {
-      item.style.background = ''; item.style.borderColor = 'var(--border)';
-    });
-    item.addEventListener('drop', e => {
-      e.preventDefault();
-      item.style.background = ''; item.style.borderColor = 'var(--border)';
-      if (!_dndDragId || _dndDragId === item.dataset.cardId) return;
-      const prefs = _dashGetPrefs();
-      const order = _getDashCardOrder({ ...prefs, _order: _dashCustomCurrentOrder || prefs._order });
-      const fromIdx = order.findIndex(c => c.id === _dndDragId);
-      const toIdx   = order.findIndex(c => c.id === item.dataset.cardId);
-      if (fromIdx < 0 || toIdx < 0) { _dndDragId = null; return; }
-      const [moved] = order.splice(fromIdx, 1);
-      order.splice(toIdx, 0, moved);
-      _dashCustomCurrentOrder = order.map(c => c.id);
-      const updPrefs = { ...prefs, _order: _dashCustomCurrentOrder };
-      _renderDashCustomList(order, updPrefs);
-      _dashSavePrefs(updPrefs).catch(() => {});
-      _dashApplyPrefs(updPrefs);
-      _dndDragId = null;
-    });
-  });
+  btn.setAttribute('data-state', isOn ? 'on' : 'off');
 }
 
 function _dashCustomSave() {
-  // Mudanças já são aplicadas em tempo real — apenas fecha o modal
+  // Start from existing prefs so we don't lose catChartType, dashForecastAccounts, etc.
+  const existingPrefs = _dashGetPrefs();
+  const prefs = { ...existingPrefs };
+  _DASH_CARDS.forEach(c => {
+    const btn = document.querySelector(`.dash-toggle-switch[data-card="${c.id}"]`);
+    prefs[c.id] = btn ? btn.classList.contains('on') : true;
+  });
+  // Save card order if user reordered
+  if (_dashCustomPendingOrder) {
+    prefs._order = _dashCustomPendingOrder;
+    _dashCustomPendingOrder = null;
+  }
+  _dashSavePrefs(prefs);
+  _dashApplyPrefs(prefs);
+  if (prefs.favcats !== false) _renderDashFavCategories(_lastDashIncome, _lastDashExpense);
   closeModal('dashCustomModal');
   toast('Preferências do dashboard salvas!', 'success');
 }
 
+// Guardar últimos valores de income/expense para re-render após customização
 let _lastDashIncome = 0, _lastDashExpense = 0;
 
 // ════════════════════════════════════════════════════════════════
@@ -1635,7 +1338,6 @@ async function renderDashboardUpcoming(memberIds = null) {
 // Navigate to transactions page with category + month pre-filtered
 // ── Dashboard Forecast 90d ─────────────────────────────────────────────────
 let _dashForecastChart = null;
-let _dashForecastRendering = false; // lock para evitar chamadas concorrentes
 let _dashForecastTimer = null;
 
 function _initDashForecastAccountSelect() {
@@ -1649,21 +1351,6 @@ function _initDashForecastAccountSelect() {
 }
 
 async function _renderDashForecast() {
-  // ── Lock de concorrência: evitar "Canvas is already in use" ──────────────
-  // Se uma renderização já está em progresso, aguardar até 1.5s e tentar de novo
-  if (_dashForecastRendering) {
-    await new Promise(r => setTimeout(r, 80));
-    if (_dashForecastRendering) return; // ainda ocupado — desistir
-  }
-  _dashForecastRendering = true;
-  try {
-    await _renderDashForecastInner();
-  } finally {
-    _dashForecastRendering = false;
-  }
-}
-
-async function _renderDashForecastInner() {
   const card = document.getElementById('dashCardForecast90');
   if (!card || card.style.display === 'none') return;
 
@@ -1676,17 +1363,8 @@ async function _renderDashForecastInner() {
   const canvas = document.getElementById('dashForecastChart');
   if (!canvas) return;
 
-  // Destroy previous chart — usar Chart.getChart para garantir limpeza total do canvas
-  // independente de _dashForecastChart ter sido perdido por navegação ou erro anterior
-  const existingChart = (typeof Chart !== 'undefined' && Chart.getChart)
-    ? Chart.getChart(canvas) : null;
-  if (existingChart) {
-    try { existingChart.destroy(); } catch(_) {}
-  }
-  if (_dashForecastChart && _dashForecastChart !== existingChart) {
-    try { _dashForecastChart.destroy(); } catch(_) {}
-  }
-  _dashForecastChart = null;
+  // Destroy previous chart
+  if (_dashForecastChart) { try { _dashForecastChart.destroy(); } catch(_) {} _dashForecastChart = null; }
 
   // Date range: today → today + 90 days
   const fromDate = new Date();
@@ -1730,9 +1408,7 @@ async function _renderDashForecastInner() {
               categories: sc.categories || null,
               payees: sc.payees || null,
               accounts: accMeta || null,
-              isScheduled: true,
-              scheduled_id: sc.id,
-              scheduled_type: sc.type || ''
+              isScheduled: true
             });
           }
         }
@@ -1747,39 +1423,19 @@ async function _renderDashForecastInner() {
             categories: sc.categories || null,
             payees: null,
             accounts: accMeta || null,
-            isScheduled: true,
-            scheduled_id: sc.id,
-            scheduled_type: sc.type || ''
+            isScheduled: true
           });
         }
       });
     });
   }
 
-  const allItems = [...(txData||[]), ...scheduledItems]
-    .map(item => ({
-      ...item,
-      accounts: item.accounts || (state.accounts || []).find(a => a.id === item.account_id) || null,
-    }))
-    .sort((a,b)=> {
-      const dateCmp = String(a.date||'').localeCompare(String(b.date||''));
-      if (dateCmp !== 0) return dateCmp;
-      const accCmp = String(a.account_id||'').localeCompare(String(b.account_id||''));
-      if (accCmp !== 0) return accCmp;
-      return (parseFloat(a.amount)||0) - (parseFloat(b.amount)||0);
-    });
+  const allItems = [...(txData||[]), ...scheduledItems].sort((a,b)=>a.date.localeCompare(b.date));
 
   const accountIds = [...new Set(allItems.map(t=>t.account_id))].filter(Boolean);
-
-  // Quando sem picker selecionado:
-  //   - Prioridade 1: contas que têm tx no período (accountIds)
-  //   - Fallback: todas as contas ativas (garante KPIs mesmo sem tx nos 90 dias)
-  const allActiveAccounts = (state.accounts||[]).filter(a => a.active !== false);
   const accounts = accIds.length
     ? (state.accounts||[]).filter(a=>accIds.includes(a.id))
-    : accountIds.length
-      ? (state.accounts||[]).filter(a=>accountIds.includes(a.id))
-      : allActiveAccounts;
+    : (state.accounts||[]).filter(a=>accountIds.includes(a.id));
 
   if (!accounts.length) {
     const summary = document.getElementById('dashForecastSummary');
@@ -1787,247 +1443,109 @@ async function _renderDashForecastInner() {
     return;
   }
 
-  // Build daily dates for the full 90-day horizon
+  // Build daily dates (sampled weekly for display clarity)
   const dates = [];
   let cur = new Date(fromStr+'T12:00');
   const end = new Date(toStr+'T12:00');
   while (cur <= end) { dates.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+  const step = 7; // weekly samples for 90d
+  const sampled = dates.filter((_,i)=>i%step===0);
+  if (!sampled.includes(toStr)) sampled.push(toStr);
 
   const COLORS = ['#2a6049','#1d4ed8','#b45309','#7c3aed','#dc2626','#059669'];
-  const visibleAccounts = accounts.slice(0,6);
-
-  // ── Calcular KPI: saldo inicial e final totais ──────────────────────────
-
-  const txByDate = dates.reduce((acc, date) => { acc[date] = []; return acc; }, {});
-  allItems.forEach(item => {
-    if (txByDate[item.date]) txByDate[item.date].push(item);
-  });
-
-  const txByDateGrouped = Object.keys(txByDate).reduce((acc, date) => {
-    const groupedMap = new Map();
-    (txByDate[date] || []).forEach(item => {
-      const accKey = item.account_id || '__no_account__';
-      if (!groupedMap.has(accKey)) {
-        groupedMap.set(accKey, {
-          account_id: item.account_id || '',
-          account_name: item.accounts?.name || 'Sem conta',
-          account_color: item.accounts?.color || 'var(--border)',
-          account_currency: item.accounts?.currency || item.currency || 'BRL',
-          items: [],
-        });
-      }
-      groupedMap.get(accKey).items.push(item);
-    });
-    acc[date] = Array.from(groupedMap.values())
-      .map(group => ({
-        ...group,
-        total: group.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
-      }))
-      .sort((a,b) => a.account_name.localeCompare(b.account_name, 'pt-BR'));
-    return acc;
-  }, {});
-
-  const datasets = visibleAccounts.map((a,idx)=>{
+  const datasets = accounts.slice(0,6).map((a,idx)=>{
     const txAcc = allItems.filter(t=>t.account_id===a.id);
-    const txAccByDate = txAcc.reduce((acc, item) => {
-      acc[item.date] = (acc[item.date] || 0) + (parseFloat(item.amount) || 0);
-      return acc;
-    }, {});
     const realSum = txAcc.filter(t=>!t.isScheduled).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
     const baseBal = (parseFloat(a.balance)||0) - realSum;
     const color = a.color || COLORS[idx%COLORS.length];
-    const accTxDates = new Set(Object.keys(txAccByDate));
-    let runningBalance = baseBal;
-    const dailySeries = dates.map(date => {
-      runningBalance += txAccByDate[date] || 0;
-      return +runningBalance.toFixed(2);
-    });
     return {
       label: a.name,
-      data: dailySeries,
+      data: sampled.map(d=>({
+        x: d,
+        y: +(baseBal + txAcc.filter(t=>t.date<=d).reduce((s,t)=>s+(parseFloat(t.amount)||0),0)).toFixed(2)
+      })),
       borderColor: color,
-      backgroundColor: color + '14',
-      fill: 'origin',
-      tension: 0.4,
-      borderWidth: 2.5,
-      pointRadius: dates.map(date => accTxDates.has(date) ? 3 : 0),
-      pointHitRadius: dates.map(() => 14),
-      pointHoverRadius: dates.map(date => accTxDates.has(date) ? 6 : 4),
-      pointBackgroundColor: color,
-      pointBorderColor: '#fff',
-      pointBorderWidth: 1.5,
-      spanGaps: false,
-      _baseBal: baseBal,
+      backgroundColor: color+'18',
+      fill: false,
+      tension: 0.35,
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
     };
   });
 
-  // ── KPIs: saldo inicial total, projetado, min e max ────────────────────
-  // totalInicial = saldo atual real das contas visíveis (não filtradas por período)
-  const totalInicial = visibleAccounts.reduce((s,a) => s + (parseFloat(a.balance)||0), 0);
-  let globalMin = Infinity, globalMax = -Infinity, totalFinal = 0;
-  datasets.forEach(ds => {
-    ds.data.forEach(v => {
-      if (v < globalMin) globalMin = v;
-      if (v > globalMax) globalMax = v;
-    });
-    totalFinal += ds.data[ds.data.length - 1] ?? 0;
-  });
-  if (globalMin === Infinity)  globalMin = 0;
-  if (globalMax === -Infinity) globalMax = 0;
+  // Find global min/max for annotations
+  const allVals = datasets.flatMap(ds=>ds.data.map(p=>p.y));
+  const minVal = allVals.length ? Math.min(...allVals) : 0;
+  const maxVal = allVals.length ? Math.max(...allVals) : 0;
+  const minPt  = datasets[0]?.data.find(p=>p.y===minVal);
+  const maxPt  = datasets[0]?.data.find(p=>p.y===maxVal);
 
-  const _fcp = id => document.getElementById(id);
-  const _fcpFmt = (v, color) => {
-    const el = _fcp(color);
-    if (!el) return;
-    el.textContent = fmt(v);
-    el.style.color = v < 0 ? 'var(--red,#dc2626)' : '';
-  };
-  _fcpFmt(totalInicial, 'fcp-kpi-inicial');
-  if (_fcp('fcp-kpi-final')) {
-    _fcp('fcp-kpi-final').textContent = fmt(totalFinal);
-    _fcp('fcp-kpi-final').style.color = totalFinal < 0 ? 'var(--red,#dc2626)'
-      : totalFinal > totalInicial ? 'var(--green,#16a34a)' : 'var(--accent)';
-  }
-  if (_fcp('fcp-kpi-min')) _fcp('fcp-kpi-min').textContent = fmt(globalMin);
-  if (_fcp('fcp-kpi-max')) _fcp('fcp-kpi-max').textContent = fmt(globalMax);
-
-  // ── Anotações: linha zero + ponto min + ponto máximo ──────────────────
-  let minPtDate = null, maxPtDate = null;
-  let minPtVal = Infinity, maxPtVal = -Infinity;
-  // Usar apenas o primeiro dataset para anotações de ponto (mais legível)
-  if (datasets.length > 0) {
-    datasets[0].data.forEach((v, i) => {
-      if (v < minPtVal) { minPtVal = v; minPtDate = dates[i]; }
-      if (v > maxPtVal) { maxPtVal = v; maxPtDate = dates[i]; }
-    });
-  }
   const annotations = {
     zeroLine: {
       type: 'line', yMin: 0, yMax: 0,
-      borderColor: 'rgba(220,38,38,.40)', borderWidth: 1.5, borderDash: [5,4],
+      borderColor: 'rgba(220,38,38,0.5)', borderWidth: 1.5, borderDash: [4,3],
     },
   };
-  if (minPtDate) annotations.minPt = {
-    type:'point', xValue:minPtDate, yValue:minPtVal,
-    radius:5, backgroundColor:'#dc2626', borderColor:'#fff', borderWidth:2,
-  };
-  if (maxPtDate) annotations.maxPt = {
-    type:'point', xValue:maxPtDate, yValue:maxPtVal,
-    radius:5, backgroundColor:'#16a34a', borderColor:'#fff', borderWidth:2,
-  };
+  if (minPt) annotations.minPt = { type:'point', xValue:minPt.x, yValue:minVal, radius:5, backgroundColor:'#dc2626', borderColor:'#fff', borderWidth:2 };
+  if (maxPt) annotations.maxPt = { type:'point', xValue:maxPt.x, yValue:maxVal, radius:5, backgroundColor:'#16a34a', borderColor:'#fff', borderWidth:2 };
 
-  // ── Gráfico ────────────────────────────────────────────────────────────
+  // Build tx-by-label map for drill-down using the actual dashboard dataset
+  const _fcLabels = datasets[0]?.data?.map(d => d.x) || [];
+  const _fcTxByLabel = _fcLabels.reduce((acc, label) => {
+    acc[label] = allItems
+      .filter(item => item.date === label)
+      .map(item => ({
+        ...item,
+        accounts: item.accounts || (state.accounts || []).find(a => a.id === item.account_id) || null,
+      }));
+    return acc;
+  }, {});
+
   _dashForecastChart = new Chart(canvas, {
     type: 'line',
-    data: { labels: dates, datasets },
+    data: { datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
       plugins: {
-        legend: {
-          position: 'bottom',
-          labels: {
-            boxWidth: 10, boxHeight: 10,
-            borderRadius: 5,
-            usePointStyle: true, pointStyle: 'circle',
-            font: { size: 10, weight: '600' },
-            color: 'var(--text2)',
-            padding: 12,
-          },
-        },
-        tooltip: {
-          backgroundColor: 'var(--surface)',
-          titleColor: 'var(--text)',
-          bodyColor: 'var(--text2)',
-          borderColor: 'var(--border)',
-          borderWidth: 1,
-          padding: 10,
-          cornerRadius: 10,
-          boxPadding: 4,
-          callbacks: {
-            title(items) {
-              const label = items?.[0]?.label || '';
-              return typeof fmtDate === 'function' ? fmtDate(label) : label;
-            },
-            label(ctx) {
-              const isNeg = ctx.parsed.y < 0;
-              return ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`;
-            },
-            afterBody(items) {
-              const label = items?.[0]?.label || '';
-              const groups = txByDateGrouped[label] || [];
-              if (!groups.length) return [];
-              return ['', ...groups.map(g => `  ${g.account_name}: ${g.items.length} lançamento(s)`)];
-            },
-          },
-        },
+        legend: { position:'bottom', labels:{ boxWidth:10, font:{ size:10 } } },
+        tooltip: { callbacks: { label: ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
         annotation: { annotations },
       },
       scales: {
-        x: {
-          type: 'category',
-          ticks: {
-            autoSkip: true,
-            maxTicksLimit: 7,
-            color: 'var(--muted)',
-            font: { size: 10 },
-            callback(value, index) {
-              const label = this.getLabelForValue ? this.getLabelForValue(value) : dates[index];
-              if (!label) return '';
-              const parts = label.split('-');
-              return parts.length === 3 ? `${parts[2]}/${parts[1]}` : label;
-            },
-          },
-          grid: { color: 'rgba(0,0,0,.04)' },
-          border: { display: false },
-        },
-        y: {
-          ticks: {
-            callback: v => fmt(v),
-            color: 'var(--muted)',
-            font: { size: 10 },
-            maxTicksLimit: 5,
-          },
-          grid: {
-            color: ctx => ctx.tick.value === 0 ? 'rgba(220,38,38,.15)' : 'rgba(0,0,0,.04)',
-          },
-          border: { display: false },
-        },
+        x: { type:'category', ticks:{ maxTicksLimit:8, color:'#8c8278', font:{size:10} }, grid:{ color:'#e8e4de33' } },
+        y: { ticks:{ callback:v=>fmt(v), color:'#8c8278', font:{size:10} }, grid:{ color: ctx=>ctx.tick.value===0?'rgba(220,38,38,0.2)':'#e8e4de33' } },
       },
-      onClick(evt) {
-        const points = _dashForecastChart?.getElementsAtEventForMode(evt, 'index', { intersect:false }, false) || [];
-        if (!points.length) return;
-        const idx = points[0].index;
-        const label = dates[idx] || '';
-        if (label) _dashForecastDrill(label, txByDateGrouped[label] || []);
+      onClick(evt, elements) {
+        if (!elements.length) return;
+        const idx   = elements[0].index;
+        const label = _fcLabels[idx] || '';
+        const txs   = _fcTxByLabel[label] || [];
+        if (label) _dashForecastDrill(label, txs);
       },
-      onHover(evt) {
-        const points = _dashForecastChart?.getElementsAtEventForMode(evt, 'index', { intersect:false }, false) || [];
-        const hasDate = Boolean(points?.length);
-        if (evt.native?.target) evt.native.target.style.cursor = hasDate ? 'pointer' : 'default';
+      onHover(evt, elements) {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
       },
     },
   });
 
-  // ── Summary: chips por conta com saldo final ──────────────────────────
+  // Summary row: final balance per account
   const summary = document.getElementById('dashForecastSummary');
   if (summary) {
-    if (!visibleAccounts.length) {
-      summary.innerHTML = '<span style="color:var(--muted);font-size:.78rem">Sem dados para o período.</span>';
-    } else {
-      summary.innerHTML = visibleAccounts.map((a, idx) => {
-        const ds = datasets[idx];
-        const finalY = ds?.data?.[ds.data.length - 1] ?? 0;
-        const isNeg  = finalY < 0;
-        const color  = a.color || COLORS[idx % COLORS.length];
-        return `<div class="fcp-acct-chip">
-          <span class="fcp-acct-dot" style="background:${color}"></span>
-          <span class="fcp-acct-name">${esc(a.name)}</span>
-          <span class="fcp-acct-val ${isNeg ? 'fcp-acct-val--neg' : 'fcp-acct-val--pos'}">${fmt(finalY, a.currency)}</span>
-        </div>`;
-      }).join('');
-    }
+    const today = new Date().toISOString().slice(0,10);
+    summary.innerHTML = accounts.slice(0,6).map((a,idx)=>{
+      const ds = datasets[idx];
+      const finalY = ds?.data[ds.data.length-1]?.y ?? 0;
+      const isNeg = finalY < 0;
+      const color = a.color || COLORS[idx%COLORS.length];
+      return `<span style="display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
+        <span style="color:var(--text2)">${esc(a.name)}:</span>
+        <strong style="color:${isNeg?'var(--red)':'var(--accent)'}">${fmt(finalY,a.currency)}</strong>
+      </span>`;
+    }).join('');
   }
 }
 
@@ -2118,7 +1636,7 @@ function _setCatChartType(type) {
 
 function _renderCatChartDoughnut() {
   const canvas = document.getElementById('categoryChart');
-  if (!canvas || !_catChartEntries.length) return; // FIX: guarda contra dados vazios
+  if (!canvas) return;
   // Reset wrapper so doughnut uses its natural aspect ratio
   const wrap = document.getElementById('catChartWrap');
   if (wrap) { wrap.style.height = ''; }
@@ -2215,98 +1733,47 @@ function attachForecastNavigation(chartInstance, labelsArr, txByLabel) {
   chartInstance.update();
 }
 
-function _dashForecastOpenItem(kind, id) {
-  closeModal('forecastDrillModal');
-  if (kind === 'scheduled') {
-    if (typeof openScheduledModal === 'function') openScheduledModal(id || '');
-    return;
-  }
-  if (typeof editTransaction === 'function') editTransaction(id || '');
-}
-window._dashForecastOpenItem = _dashForecastOpenItem;
-
-function _dashForecastDrill(label, groups) {
-  _showForecastDrillModal(label, groups);
+function _dashForecastDrill(label, txs) {
+  // Use modal popup instead of inline panel
+  _showForecastDrillModal(label, txs);
 }
 
-function _showForecastDrillModal(label, groups) {
-  const normalizedGroups = Array.isArray(groups) ? groups : [];
-  const allTxs = normalizedGroups.flatMap(group => Array.isArray(group.items) ? group.items : []);
-  const totalAbs = allTxs.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
-  const totalNet = allTxs.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const rows = normalizedGroups.length
-    ? normalizedGroups.map(group => {
-        const accountTone = group.account_color || 'var(--border)';
-        const accountCurrency = group.account_currency || 'BRL';
-        const itemsHtml = (group.items || []).map(item => {
-          const isNeg = Number(item.amount) < 0;
-          const catColor = item.categories?.color || (isNeg ? 'var(--red)' : 'var(--green)');
-          const meta = [
-            item.isScheduled ? 'Programado' : 'Lançado',
-            item.categories?.name ? esc(item.categories.name) : '',
-            item.payees?.name ? esc(item.payees.name) : ''
-          ].filter(Boolean).join(' · ');
-          const openKind = item.isScheduled ? 'scheduled' : 'transaction';
-          const openId = item.isScheduled ? (item.scheduled_id || '') : (item.id || '');
-          const badge = item.isScheduled
-            ? '<span style="font-size:.62rem;background:rgba(30,91,168,.12);color:#1e5ba8;border-radius:4px;padding:1px 5px;margin-left:4px">prog.</span>'
-            : '';
-          return `<button type="button" onclick="_dashForecastOpenItem('${openKind}','${openId}')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;cursor:pointer">
-            <span style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></span>
-            <span style="flex:1;min-width:0">
-              <span style="display:block;font-size:.8rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(item.description || '—')}${badge}</span>
-              <span style="display:block;font-size:.68rem;color:var(--muted);margin-top:2px">${meta || 'Sem detalhes adicionais'}</span>
-            </span>
-            <span style="font-size:.82rem;font-weight:700;color:${isNeg ? 'var(--red,#c0392b)' : 'var(--green,#2a7a4a)'};flex-shrink:0">${isNeg ? '−' : '+'}${fmt(Math.abs(Number(item.amount) || 0), item.currency || accountCurrency)}</span>
-          </button>`;
-        }).join('');
-
-        return `<div style="display:flex;flex-direction:column;gap:8px;padding:10px 0;border-top:1px solid var(--border)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-            <div style="display:flex;align-items:center;gap:8px;min-width:0">
-              <span style="width:9px;height:9px;border-radius:50%;background:${accountTone};flex-shrink:0"></span>
-              <div style="min-width:0">
-                <div style="font-size:.8rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(group.account_name || 'Sem conta')}</div>
-                <div style="font-size:.68rem;color:var(--muted)">${group.items.length} item(ns)</div>
-              </div>
-            </div>
-            <div style="font-size:.8rem;font-weight:700;color:${group.total < 0 ? 'var(--red,#c0392b)' : 'var(--green,#2a7a4a)'};flex-shrink:0">${group.total < 0 ? '−' : '+'}${fmt(Math.abs(group.total || 0), accountCurrency)}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px">${itemsHtml}</div>
-        </div>`;
-      }).join('')
-    : `<div style="padding:18px 10px;text-align:center;color:var(--muted)">Nenhuma transação ou programado encontrado para este dia.</div>`;
-
-  const subtitle = `${allTxs.length} lançamento${allTxs.length!==1?'s':''} · líquido ${totalNet < 0 ? '−' : '+'}${fmt(Math.abs(totalNet))}`;
-  const title = typeof fmtDate === 'function' ? fmtDate(label) : label;
-  const netColor = totalNet < 0 ? 'var(--red,#dc2626)' : 'var(--green,#16a34a)';
+function _showForecastDrillModal(label, txs) {
+  const total = txs.reduce((s,t) => s + Math.abs(Number(t.amount)||0), 0);
   const content = `
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div>
-        <div style="font-size:.92rem;font-weight:800;color:var(--text);letter-spacing:-.01em">${esc(title)}</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
-          <span style="font-size:.72rem;color:var(--muted)">${allTxs.length} lançamento${allTxs.length!==1?'s':''}</span>
-          <span style="font-size:.72rem;font-weight:700;color:${netColor}">
-            ${totalNet < 0 ? '−' : '+'}${fmt(Math.abs(totalNet))}
-          </span>
-          ${totalAbs > Math.abs(totalNet) ? `<span style="font-size:.68rem;color:var(--muted)">giro ${fmt(totalAbs)}</span>` : ''}
-        </div>
+        <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(label)}</div>
+        <div style="font-size:.72rem;color:var(--muted)">${txs.length} transação${txs.length!==1?'ões':''} · ${fmt(total)}</div>
       </div>
       <button onclick="closeModal('forecastDrillModal')"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;cursor:pointer;font-size:.72rem;font-weight:600;color:var(--text2);white-space:nowrap;flex-shrink:0;transition:background .15s"
-        onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background='var(--surface2)'">
-        Fechar ✕
+        style="background:none;border:1px solid var(--border);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:.75rem;color:var(--muted)">
+        Fechar
       </button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:0;max-height:60dvh;overflow-y:auto">${rows}</div>`;
-
+    <div style="display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto">
+      ${txs.length ? txs.map(t => {
+        const isNeg = Number(t.amount) < 0;
+        const meta = [t.date || '', t.accounts?.name ? esc(t.accounts.name) : '', t.isScheduled ? 'Programado' : 'Lançado'].filter(Boolean).join(' · ');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface2);border-radius:7px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.8rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}${t.isScheduled ? '<span style="font-size:.62rem;background:rgba(30,91,168,.12);color:#1e5ba8;border-radius:4px;padding:1px 5px;margin-left:4px">prog.</span>' : ''}</div>
+            <div style="font-size:.68rem;color:var(--muted)">${meta}</div>
+          </div>
+          <span style="font-size:.82rem;font-weight:700;color:${isNeg?'var(--red,#c0392b)':'var(--green,#2a7a4a)'}">
+            ${isNeg?'−':'+'}${fmt(Math.abs(Number(t.amount)||0), t.currency || t.accounts?.currency || 'BRL')}
+          </span>
+        </div>`;
+      }).join('') : `<div style="padding:18px 10px;text-align:center;color:var(--muted)">Nenhuma transação ou programado encontrado para este dia.</div>`}
+    </div>`;
+  // Inject into modal
   let modal = document.getElementById('forecastDrillModal');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'forecastDrillModal';
     modal.className = 'modal-overlay';
     modal.onclick = e => { if (e.target === modal) closeModal('forecastDrillModal'); };
-    modal.innerHTML = '<div class="modal" style="max-width:560px;max-height:82dvh;overflow:hidden;padding:0;display:flex;flex-direction:column"><div class="modal-handle"></div><div id="forecastDrillModalBody" style="padding:16px 18px;overflow-y:auto"></div></div>';
+    modal.innerHTML = '<div class="modal" style="max-width:520px;max-height:80dvh;overflow-y:auto;padding:0"><div class="modal-handle"></div><div id="forecastDrillModalBody" style="padding:16px 18px"></div></div>';
     document.body.appendChild(modal);
   }
   document.getElementById('forecastDrillModalBody').innerHTML = content;
@@ -2330,235 +1797,138 @@ async function _openPatrimonioModal() {
   const accs = Array.isArray(state.accounts) ? state.accounts : [];
   if (!accs.length) return;
 
-  // ── Mostrar modal imediatamente com loading ───────────────────────────────
+  // ── Match KPI calculation exactly ────────────────────────────────────────
+  // Account total: investment accounts use _totalPortfolioBalance if available
+  const accountTotal = accs.reduce((s, a) => {
+    const bal = (a.type === 'investimento' && a._totalPortfolioBalance != null)
+      ? a._totalPortfolioBalance
+      : (parseFloat(a.balance) || 0);
+    return s + toBRL(bal, a.currency || 'BRL');
+  }, 0);
+
+  // Debts: same query as KPI
+  let debtTotal = 0;
+  let debts = [];
+  try {
+    const { data: debtsData } = await famQ(
+      sb.from('debts').select('id,description,current_balance,original_amount,currency,status').eq('status', 'active')
+    );
+    debts = debtsData || [];
+    debtTotal = debts.reduce((s,d) =>
+      s + toBRL(parseFloat(d.current_balance ?? d.original_amount)||0, d.currency||'BRL'), 0);
+  } catch(_) {}
+
+  const totalBRL = accountTotal - debtTotal;
+
+  // Group accounts by currency
+  const byCurrency = {};
+  accs.forEach(a => {
+    const cur = a.currency || 'BRL';
+    if (!byCurrency[cur]) byCurrency[cur] = [];
+    byCurrency[cur].push(a);
+  });
+
+  let content = `
+    <div style="padding:20px 22px 24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px">Patrimônio Total</div>
+          <div style="font-size:1.8rem;font-weight:800;font-family:var(--font-serif);color:${totalBRL>=0?'var(--accent)':'var(--red)'}">${dashFmt(totalBRL,'BRL')}</div>
+        </div>
+        <button onclick="closeModal('patrimonioModal')" style="background:var(--surface2);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;font-size:.9rem;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center">✕</button>
+      </div>`;
+
+  Object.entries(byCurrency).forEach(([cur, group]) => {
+    const groupTotal = group.reduce((s,a) => s + (parseFloat(a.balance)||0), 0);
+    const groupTotalBRL = group.reduce((s,a) => s + toBRL(parseFloat(a.balance)||0, cur), 0);
+    content += `
+      <div style="margin-bottom:16px">
+        <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:8px">${cur}</div>
+        <div style="display:flex;flex-direction:column;gap:4px">`;
+    group.sort((a,b)=>(Math.abs(b.balance||0)-Math.abs(a.balance||0))).forEach(a => {
+      const bal = parseFloat(a.balance)||0;
+      const pct = groupTotalBRL !== 0 ? Math.abs(toBRL(bal,cur)/totalBRL*100) : 0;
+      const isNeg = bal < 0;
+      content += `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:var(--surface2);cursor:pointer;transition:background .12s"
+          onclick="goToAccountTransactions('${a.id}');closeModal('patrimonioModal')"
+          onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--surface2)'">
+          <div style="width:30px;height:30px;border-radius:8px;background:${a.color||'var(--accent)'}22;display:flex;align-items:center;justify-content:center;flex-shrink:0">${_dashRenderIcon(a.icon,a.color,16)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.82rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.name)}</div>
+            <div style="font-size:.68rem;color:var(--muted)">${accountTypeLabel?.(a.type)||a.type||''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:.88rem;font-weight:700;font-family:var(--font-serif);color:${isNeg?'var(--red)':'var(--text)'}">${fmt(bal,cur)}</div>
+            ${cur!=='BRL'?`<div style="font-size:.68rem;color:var(--muted)">${dashFmt(toBRL(bal,cur),'BRL')}</div>`:''}
+            <div style="font-size:.65rem;color:var(--muted)">${pct.toFixed(1)}% do total</div>
+          </div>
+        </div>
+        <div style="height:3px;border-radius:2px;background:var(--border);margin:0 10px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(pct,100)}%;background:${a.color||'var(--accent)'};border-radius:2px;transition:width .4s ease"></div>
+        </div>`;
+    });
+    content += `
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px 0;font-size:.75rem;color:var(--muted)">
+          <span>${group.length} conta${group.length!==1?'s':''}</span>
+          <span style="font-weight:700;color:var(--text)">${fmt(groupTotal,cur)}${cur!=='BRL'?` (${dashFmt(groupTotalBRL,'BRL')})`:''}</span>
+        </div>
+      </div>`;
+  });
+
+  // ── Debts section ──────────────────────────────────────────────────────
+  if (debts.length) {
+    content += `
+      <div style="margin-bottom:16px">
+        <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--red,#dc2626);padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:8px">Dívidas Ativas (deduzidas)</div>
+        <div style="display:flex;flex-direction:column;gap:4px">`;
+    debts.forEach(d => {
+      const bal = parseFloat(d.current_balance ?? d.original_amount) || 0;
+      const balBRL = toBRL(bal, d.currency || 'BRL');
+      content += `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:rgba(220,38,38,.04);border:1px solid rgba(220,38,38,.1)">
+          <div style="width:30px;height:30px;border-radius:8px;background:rgba(220,38,38,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem">💳</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.82rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.description||'Dívida')}</div>
+            <div style="font-size:.68rem;color:var(--muted)">Dívida ativa</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:.88rem;font-weight:700;font-family:var(--font-serif);color:var(--red,#dc2626)">−${fmt(bal, d.currency||'BRL')}</div>
+            ${d.currency&&d.currency!=='BRL'?`<div style="font-size:.68rem;color:var(--muted)">−${dashFmt(balBRL,'BRL')}</div>`:''}
+          </div>
+        </div>`;
+    });
+    content += `
+        </div>
+        <div style="display:flex;justify-content:flex-end;padding:6px 10px 0;font-size:.75rem">
+          <span style="font-weight:700;color:var(--red,#dc2626)">−${dashFmt(debtTotal,'BRL')}</span>
+        </div>
+      </div>`;
+  }
+
+  // ── Net total line ──────────────────────────────────────────────────────
+  if (debts.length) {
+    content += `
+      <div style="border-top:2px solid var(--border);margin-top:8px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:.8rem;font-weight:700;color:var(--text)">Patrimônio Líquido</div>
+        <div style="font-size:1.1rem;font-weight:800;font-family:var(--font-serif);color:${totalBRL>=0?'var(--accent)':'var(--red)'}">${dashFmt(totalBRL,'BRL')}</div>
+      </div>`;
+  }
+
+  content += '</div>';
+
+  // Inject into modal
   let modal = document.getElementById('patrimonioModal');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'patrimonioModal';
     modal.className = 'modal-overlay';
     modal.onclick = e => { if (e.target === modal) closeModal('patrimonioModal'); };
-    modal.innerHTML = `<div class="modal" style="max-width:500px;max-height:84dvh;overflow-y:auto;padding:0"><div class="modal-handle"></div><div id="patrimonioModalBody"></div></div>`;
+    modal.innerHTML = `<div class="modal" style="max-width:480px;max-height:80dvh;overflow-y:auto;padding:0"><div class="modal-handle"></div><div id="patrimonioModalBody"></div></div>`;
     document.body.appendChild(modal);
   }
-  document.getElementById('patrimonioModalBody').innerHTML =
-    `<div style="padding:32px;text-align:center;color:var(--muted);font-size:.85rem">Carregando composição…</div>`;
-  openModal('patrimonioModal');
-
-  // ── Separar contas por tipo ───────────────────────────────────────────────
-  const invAccs = accs.filter(a => a.type === 'investimento');
-  const regAccs = accs.filter(a => a.type !== 'investimento');
-
-  // Contas regulares
-  const regularTotal = regAccs.reduce((s, a) =>
-    s + toBRL(parseFloat(a.balance) || 0, a.currency || 'BRL'), 0);
-
-  // Contas de investimento: usa _totalPortfolioBalance se disponível (valor de mercado)
-  const investTotal = invAccs.reduce((s, a) => {
-    const bal = (a._totalPortfolioBalance != null)
-      ? a._totalPortfolioBalance
-      : (parseFloat(a.balance) || 0);
-    return s + toBRL(bal, a.currency || 'BRL');
-  }, 0);
-
-  const accountTotal = regularTotal + investTotal;
-
-  // ── Dívidas ───────────────────────────────────────────────────────────────
-  let debtTotal = 0, debts = [];
-  try {
-    const { data: debtsData } = await famQ(
-      sb.from('debts')
-        .select('id,name,current_balance,original_amount,currency,status,adjustment_type')
-        .eq('status', 'active')
-    );
-    debts = debtsData || [];
-    debtTotal = debts.reduce((s, d) =>
-      s + toBRL(parseFloat(d.current_balance ?? d.original_amount) || 0, d.currency || 'BRL'), 0);
-  } catch(_) {}
-
-  // ── Patrimônio líquido — bate com statTotal ───────────────────────────────
-  const totalBRL = accountTotal - debtTotal;
-
-  // ── Helper: linha de conta ────────────────────────────────────────────────
-  const _accRow = (a, isInv) => {
-    const bal = isInv
-      ? ((a._totalPortfolioBalance != null) ? a._totalPortfolioBalance : (parseFloat(a.balance) || 0))
-      : (parseFloat(a.balance) || 0);
-    const cur    = a.currency || 'BRL';
-    const balBRL = toBRL(bal, cur);
-    const pct    = Math.abs(totalBRL) > 0 ? Math.abs(balBRL / totalBRL * 100) : 0;
-    const isNeg  = bal < 0;
-    const onclick = isInv
-      ? `navigate('investments');closeModal('patrimonioModal')`
-      : `goToAccountTransactions('${a.id}');closeModal('patrimonioModal')`;
-    return `
-      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
-                  background:var(--surface2);cursor:pointer;transition:background .12s"
-        onclick="${onclick}"
-        onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--surface2)'">
-        <div style="width:30px;height:30px;border-radius:8px;background:${a.color||'var(--accent)'}22;
-                    display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          ${_dashRenderIcon(a.icon, a.color, 16)}
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:.82rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.name)}</div>
-          <div style="font-size:.67rem;color:var(--muted)">${accountTypeLabel?.(a.type)||a.type||''}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:.88rem;font-weight:700;font-family:var(--font-serif);color:${isNeg?'var(--red)':'var(--text)'}">
-            ${fmt(bal, cur)}${isInv && a._totalPortfolioBalance != null ? ' <span style="font-size:.6rem;color:#7c3aed;font-weight:600">MKT</span>' : ''}
-          </div>
-          ${cur !== 'BRL' ? `<div style="font-size:.67rem;color:var(--muted)">${dashFmt(balBRL,'BRL')}</div>` : ''}
-          <div style="font-size:.63rem;color:var(--muted)">${pct.toFixed(1)}%</div>
-        </div>
-      </div>
-      <div style="height:3px;border-radius:2px;background:var(--border);margin:0 10px 2px;overflow:hidden">
-        <div style="height:100%;width:${Math.min(pct,100)}%;background:${isInv?'#7c3aed':(a.color||'var(--accent)')};border-radius:2px;transition:width .4s ease"></div>
-      </div>`;
-  };
-
-  // ── Helper: cabeçalho de seção ────────────────────────────────────────────
-  const _secHead = (label, total, color) => `
-    <div style="font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
-                color:${color||'var(--muted)'};padding:4px 0 8px;border-bottom:1px solid var(--border);
-                margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-      <span>${label}</span>
-      <span style="font-family:var(--font-serif);font-size:.82rem;color:var(--text)">${dashFmt(total,'BRL')}</span>
-    </div>`;
-
-  // ── Construir HTML ────────────────────────────────────────────────────────
-  let content = `<div style="padding:20px 22px 28px">`;
-
-  // Header com total + breakdown rápido
-  content += `
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px">
-      <div>
-        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px">Patrimônio Líquido</div>
-        <div style="font-size:1.9rem;font-weight:800;font-family:var(--font-serif);
-                    color:${totalBRL>=0?'var(--accent)':'var(--red)'};line-height:1.05">${dashFmt(totalBRL,'BRL')}</div>
-        <div style="font-size:.72rem;color:var(--muted);margin-top:7px;display:flex;gap:14px;flex-wrap:wrap">
-          <span>Contas: <strong style="color:var(--text)">${dashFmt(regularTotal,'BRL')}</strong></span>
-          ${investTotal ? `<span>Investimentos: <strong style="color:#7c3aed">${dashFmt(investTotal,'BRL')}</strong></span>` : ''}
-          ${debtTotal   ? `<span style="color:var(--red)">Dívidas: <strong>−${dashFmt(debtTotal,'BRL')}</strong></span>` : ''}
-        </div>
-      </div>
-      <button onclick="closeModal('patrimonioModal')"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:50%;
-               width:32px;height:32px;font-size:.9rem;cursor:pointer;color:var(--muted);
-               display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
-    </div>`;
-
-  // Barra de composição visual
-  const grand = accountTotal + debtTotal;
-  if (grand > 0) {
-    const pReg = grand > 0 ? (regularTotal / grand * 100) : 0;
-    const pInv = grand > 0 ? (investTotal  / grand * 100) : 0;
-    const pDbt = grand > 0 ? (debtTotal    / grand * 100) : 0;
-    content += `
-      <div style="margin-bottom:18px">
-        <div style="display:flex;height:8px;border-radius:99px;overflow:hidden;gap:2px;margin-bottom:7px">
-          ${regularTotal > 0 ? `<div style="flex:${pReg.toFixed(1)};background:var(--accent);min-width:4px;border-radius:99px"></div>` : ''}
-          ${investTotal  > 0 ? `<div style="flex:${pInv.toFixed(1)};background:#7c3aed;min-width:4px;border-radius:99px"></div>` : ''}
-          ${debtTotal    > 0 ? `<div style="flex:${pDbt.toFixed(1)};background:var(--red);min-width:4px;border-radius:99px"></div>` : ''}
-        </div>
-        <div style="display:flex;gap:16px;font-size:.68rem;color:var(--muted);flex-wrap:wrap">
-          ${regularTotal > 0 ? `<span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:3px;vertical-align:middle"></i>Contas ${pReg.toFixed(0)}%</span>` : ''}
-          ${investTotal  > 0 ? `<span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#7c3aed;margin-right:3px;vertical-align:middle"></i>Investimentos ${pInv.toFixed(0)}%</span>` : ''}
-          ${debtTotal    > 0 ? `<span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:3px;vertical-align:middle"></i>Dívidas ${pDbt.toFixed(0)}%</span>` : ''}
-        </div>
-      </div>`;
-  }
-
-  // ── Contas regulares agrupadas por moeda ──────────────────────────────────
-  if (regAccs.length) {
-    const byCur = {};
-    regAccs.forEach(a => {
-      const c = a.currency || 'BRL';
-      (byCur[c] = byCur[c] || []).push(a);
-    });
-    Object.entries(byCur).forEach(([cur, group]) => {
-      const grpBRL = group.reduce((s,a) => s + toBRL(parseFloat(a.balance)||0, cur), 0);
-      content += `<div style="margin-bottom:14px">`;
-      content += _secHead(`Contas${Object.keys(byCur).length > 1 ? ' — '+cur : ''}`, grpBRL);
-      content += `<div style="display:flex;flex-direction:column;gap:2px">`;
-      group.sort((a,b) => Math.abs(parseFloat(b.balance)||0) - Math.abs(parseFloat(a.balance)||0))
-           .forEach(a => { content += _accRow(a, false); });
-      content += `</div></div>`;
-    });
-  }
-
-  // ── Investimentos ─────────────────────────────────────────────────────────
-  if (invAccs.length) {
-    content += `<div style="margin-bottom:14px">`;
-    content += _secHead('Carteira de Investimentos', investTotal, '#7c3aed');
-    content += `<div style="display:flex;flex-direction:column;gap:2px">`;
-    invAccs.sort((a,b) => {
-      const ba = a._totalPortfolioBalance ?? parseFloat(a.balance) ?? 0;
-      const bb = b._totalPortfolioBalance ?? parseFloat(b.balance) ?? 0;
-      return Math.abs(bb) - Math.abs(ba);
-    }).forEach(a => { content += _accRow(a, true); });
-    content += `</div>`;
-    if (invAccs.some(a => a._totalPortfolioBalance != null)) {
-      content += `<div style="font-size:.66rem;color:var(--muted);padding:5px 10px 0;font-style:italic">MKT = valor de mercado calculado das posições em carteira</div>`;
-    }
-    content += `</div>`;
-  }
-
-  // ── Dívidas ───────────────────────────────────────────────────────────────
-  if (debts.length) {
-    content += `<div style="margin-bottom:14px">`;
-    content += _secHead('Dívidas Ativas (deduzidas)', debtTotal, 'var(--red)');
-    content += `<div style="display:flex;flex-direction:column;gap:4px">`;
-    debts.forEach(d => {
-      const bal    = parseFloat(d.current_balance ?? d.original_amount) || 0;
-      const cur    = d.currency || 'BRL';
-      const balBRL = toBRL(bal, cur);
-      const pct    = Math.abs(totalBRL) > 0 ? Math.abs(balBRL / totalBRL * 100) : 0;
-      content += `
-        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;
-                    background:rgba(220,38,38,.04);border:1px solid rgba(220,38,38,.1)">
-          <div style="width:30px;height:30px;border-radius:8px;background:rgba(220,38,38,.1);
-                      display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem">💳</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:.82rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.name||'Dívida')}</div>
-            <div style="font-size:.67rem;color:var(--muted)">${d.adjustment_type||'Dívida ativa'}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-size:.88rem;font-weight:700;font-family:var(--font-serif);color:var(--red)">−${fmt(bal, cur)}</div>
-            ${cur !== 'BRL' ? `<div style="font-size:.67rem;color:var(--muted)">−${dashFmt(balBRL,'BRL')}</div>` : ''}
-            <div style="font-size:.63rem;color:var(--muted)">${pct.toFixed(1)}%</div>
-          </div>
-        </div>`;
-    });
-    content += `</div>`;
-    content += `<div style="display:flex;justify-content:flex-end;padding:5px 10px 0;font-size:.74rem">
-      <span style="font-weight:700;color:var(--red)">Total: −${dashFmt(debtTotal,'BRL')}</span>
-    </div>`;
-    content += `</div>`;
-  }
-
-  // ── Linha de reconciliação (bate com o KPI) ───────────────────────────────
-  content += `
-    <div style="border-top:2px solid var(--border);margin-top:4px;padding-top:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:.78rem;color:var(--muted)">Contas + Investimentos</span>
-        <span style="font-size:.85rem;font-weight:700;font-family:var(--font-serif)">${dashFmt(accountTotal,'BRL')}</span>
-      </div>
-      ${debtTotal ? `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:.78rem;color:var(--muted)">− Dívidas ativas</span>
-        <span style="font-size:.85rem;font-weight:700;font-family:var(--font-serif);color:var(--red)">−${dashFmt(debtTotal,'BRL')}</span>
-      </div>` : ''}
-      <div style="display:flex;justify-content:space-between;align-items:center;
-                  background:${totalBRL>=0?'var(--accent-lt)':'var(--red-lt)'};
-                  border-radius:10px;padding:10px 14px">
-        <span style="font-size:.82rem;font-weight:700;color:var(--text)">= Patrimônio Líquido</span>
-        <span style="font-size:1.05rem;font-weight:800;font-family:var(--font-serif);
-                     color:${totalBRL>=0?'var(--accent)':'var(--red)'}">${dashFmt(totalBRL,'BRL')}</span>
-      </div>
-    </div>`;
-
-  content += '</div>';
   document.getElementById('patrimonioModalBody').innerHTML = content;
+  openModal('patrimonioModal');
 }
 window._openPatrimonioModal = _openPatrimonioModal;
-

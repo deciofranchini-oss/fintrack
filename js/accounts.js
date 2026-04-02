@@ -235,76 +235,24 @@ function renderAccountsSummary(){
   el.innerHTML=`<span class="summary-label">${t('acct.total')}</span><span class="summary-value ${total<0?'text-red':'text-accent'}">${fmt(total)}</span>${pos?`<span class="summary-sep">·</span><span class="summary-pos">+${fmt(pos)}</span>`:''}${neg?`<span class="summary-sep">·</span><span class="summary-neg">${fmt(neg)}</span>`:''}`;
 }
 
-function accountCardHTML(a) {
-  const isNeg   = a.balance < 0;
-  const color   = a.color || 'var(--accent)';
-  const typeLabel = accountTypeLabel(a.type);
-
-  // Badge de tipo com ícone
-  const typeBadge = {
-    corrente:        { icon: '🏦', label: 'Corrente' },
-    poupanca:        { icon: '🐷', label: 'Poupança' },
-    cartao_credito:  { icon: '💳', label: 'Cartão' },
-    investimento:    { icon: '📈', label: 'Investimento' },
-    dinheiro:        { icon: '💵', label: 'Dinheiro' },
-    outros:          { icon: '📁', label: 'Outros' },
-  }[a.type] || { icon: '💰', label: a.type };
-
-  // Linha de vencimento para cartão
-  const dueLine = (a.type === 'cartao_credito' && a.due_day)
-    ? `<div class="acc-card-due">Vence dia <strong>${a.due_day}</strong></div>` : '';
-
-  // Linha de moeda para contas estrangeiras
-  const currLine = a.currency !== 'BRL'
-    ? `<div class="acc-card-currency">${a.currency}</div>` : '';
-
-  // Estrela de favorito
-  const favBtn = `<button class="acc-card-fav ${a.is_favorite ? 'active' : ''}"
+function accountCardHTML(a){
+  const favStar = `<span
     onclick="event.stopPropagation();toggleAccountFavorite('${a.id}',${!!a.is_favorite})"
-    title="${a.is_favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}"
-    id="favStar-${a.id}">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="${a.is_favorite ? 'currentColor' : 'none'}"
-      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-    </svg>
-  </button>`;
-
-  return `<div class="account-card acc-card-v2" onclick="goToAccountTransactions('${a.id}')" data-type="${a.type}">
-    <!-- Faixa de cor lateral -->
-    <div class="acc-card-bar" style="background:${color}"></div>
-
-    <!-- Topo: ícone + estrela + ações -->
-    <div class="acc-card-top">
-      <div class="acc-card-icon-wrap" style="background:color-mix(in srgb,${color} 14%,transparent)">
-        ${renderIconEl(a.icon, a.color, 22)}
-      </div>
-      ${favBtn}
-      <div class="acc-card-actions">
-        <button class="acc-action-btn" title="Consolidar saldo"
-          onclick="event.stopPropagation();openConsolidateModal('${a.id}')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        </button>
-        <button class="acc-action-btn" title="Editar"
-          onclick="event.stopPropagation();openAccountModal('${a.id}')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-        <button class="acc-action-btn acc-action-btn--danger" title="Excluir"
-          onclick="event.stopPropagation();deleteAccount('${a.id}')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Corpo: nome + tipo -->
-    <div class="acc-card-name">${esc(a.name)}</div>
-    <div class="acc-card-type-badge">
-      <span>${typeBadge.icon}</span>
-      <span>${typeBadge.label}</span>
-    </div>
-
-    <!-- Saldo -->
-    <div class="acc-card-balance ${isNeg ? 'neg' : ''}">${fmt(a.balance, a.currency)}</div>
-    ${currLine}
+    title="${a.is_favorite?'Remover dos favoritos':'Adicionar aos favoritos'}"
+    style="position:absolute;top:6px;left:8px;font-size:.9rem;cursor:pointer;transition:transform .15s;z-index:2;user-select:none"
+    onmouseover="this.style.transform='scale(1.25)'" onmouseout="this.style.transform=''"
+    id="favStar-${a.id}">${a.is_favorite ? '⭐' : '<span style="opacity:.3;font-size:.8rem">☆</span>'}</span>`;
+  const dueLine = (a.type==='cartao_credito' && a.due_day)
+    ? `<div style="font-size:.68rem;color:var(--muted);margin-top:2px">Vence dia ${a.due_day}</div>` : '';
+  return `<div class="account-card" onclick="goToAccountTransactions('${a.id}')" style="position:relative">
+    ${favStar}
+    <div class="account-card-stripe" style="background:${a.color||'var(--accent)'}"></div>
+    <div class="account-actions"><button class="btn-icon" title="Consolidar saldo" onclick="event.stopPropagation();openConsolidateModal('${a.id}')">⚖️</button><button class="btn-icon" onclick="event.stopPropagation();openAccountModal('${a.id}')">✏️</button><button class="btn-icon" onclick="event.stopPropagation();deleteAccount('${a.id}')">🗑️</button></div>
+    <div class="account-icon" style="font-size:1.6rem;margin-bottom:8px">${renderIconEl(a.icon,a.color,36)}</div>
+    <div class="account-name">${esc(a.name)}</div>
+    <div class="account-type">${accountTypeLabel(a.type)}</div>
+    <div class="account-balance ${a.balance<0?'text-red':'text-accent'}">${fmt(a.balance,a.currency)}</div>
+    <div class="account-currency">${a.currency}</div>
     ${dueLine}
   </div>`;
 }
@@ -367,15 +315,6 @@ async function openAccountModal(id=''){
   const ddEl=document.getElementById('accountDueDay');
   if(ddEl) ddEl.value=form.due_day||'';
   setTimeout(()=>syncIconPickerToValue(form.icon||'',form.color||'#2a6049'),50);
-  // Bank details — load from account notes & sync visible fields
-  _clearBankDetails();
-  _loadBankDetails(id ? state.accounts.find(x=>x.id===id) : null);
-  // Re-sync when currency changes
-  const _currEl = document.getElementById('accountCurrency');
-  if (_currEl && !_currEl._bankSyncBound) {
-    _currEl._bankSyncBound = true;
-    _currEl.addEventListener('change', _syncBankFields);
-  }
   openModal('accountModal');
 }
 
@@ -406,15 +345,6 @@ async function saveAccount(){
     updated_at:new Date().toISOString()
   };
   if(!data.name){toast(t('toast.err_account_name'),'error');return;}
-  // Merge bank details into notes JSON
-  if (typeof _collectBankDetails === 'function') {
-    const _bankDetails = _collectBankDetails();
-    const _existingAcc = id ? state.accounts.find(x=>x.id===id) : null;
-    const _mergedNotes = typeof _mergeBankDetailsIntoNotes === 'function'
-      ? _mergeBankDetailsIntoNotes(_existingAcc?.notes || null, _bankDetails)
-      : null;
-    data.notes = _mergedNotes;
-  }
   if(!id) data.family_id=famId();
   let err;
   if(id){({error:err}=await sb.from('accounts').update(data).eq('id',id));}
@@ -782,11 +712,6 @@ function onAccountTypeChange(){
   if(iofConfig)iofConfig.style.display=isCC?'':'none';
   const cardDates=document.getElementById('accountCardDatesConfig');
   if(cardDates)cardDates.style.display=isCC?'':'none';
-  // Hide bank details for cash accounts (no banking info needed)
-  const bankSec=document.getElementById('accountBankDetailsSection');
-  if(bankSec)bankSec.style.display=type==='dinheiro'?'none':'';
-  // Re-sync bank field visibility when type changes
-  if(typeof _syncBankFields==='function') _syncBankFields();
 }
 
 async function checkAccountIofConfig(accountId){
@@ -870,321 +795,3 @@ async function toggleAccountFavorite(accId, currentIsFav) {
   }
 }
 window.toggleAccountFavorite = toggleAccountFavorite;
-
-// ── AI icon suggestion for accounts ──────────────────────────────────────
-
-// Map of known bank/institution names → icon picker data-icon values
-const _BANK_ICON_MAP = {
-  'itau': 'itau', 'itaú': 'itau',
-  'inter': 'inter', 'banco inter': 'inter',
-  'bradesco': 'bradesco',
-  'nubank': 'nubank', 'nu': 'nubank',
-  'bb': 'bb', 'banco do brasil': 'bb',
-  'caixa': 'caixa', 'cef': 'caixa', 'caixa econômica': 'caixa',
-  'santander': 'santander',
-  'xp': 'xp', 'xp investimentos': 'xp',
-  'c6': 'c6', 'c6 bank': 'c6',
-  'neon': 'neon',
-  'next': 'next',
-  'picpay': 'picpay',
-  'mercado pago': 'mercadopago', 'mercadopago': 'mercadopago',
-  'sicoob': 'sicoob',
-  'rico': 'rico',
-  'will': 'will', 'will bank': 'will',
-  'boursobank': 'boursobank', 'bourso': 'boursobank',
-  'bnp': 'bnp', 'bnp paribas': 'bnp',
-  'sg': 'sg', 'societe generale': 'sg', 'société générale': 'sg',
-  'credit agricole': 'ca', 'crédit agricole': 'ca',
-  'lcl': 'lcl',
-  'la poste': 'laposte', 'banque postale': 'laposte',
-  'cic': 'cic',
-  'bred': 'bred',
-  'revolut': 'revolut',
-  'n26': 'n26',
-  'wise': 'wise', 'transferwise': 'wise',
-  'paypal': 'paypal',
-  'visa': 'visa',
-  'mastercard': 'mastercard', 'master': 'mastercard',
-  'amex': 'amex', 'american express': 'amex',
-  'elo': 'elo',
-  'hipercard': 'hipercard',
-  'diners': 'dinersclub', 'diners club': 'dinersclub',
-  'sams': 'sams', "sam's club": 'sams',
-  'porto': 'porto', 'porto seguro': 'porto',
-};
-
-window.accountAiSuggestIcon = async function() {
-  const name     = (document.getElementById('accountName')?.value || '').trim();
-  const type     = document.getElementById('accountType')?.value || '';
-  const currency = document.getElementById('accountCurrency')?.value || 'BRL';
-  if (!name) { toast('Informe o nome da conta primeiro', 'warning'); return; }
-
-  const panel   = document.getElementById('accountAiSuggestPanel');
-  const content = document.getElementById('accountAiSuggestContent');
-  if (!panel || !content) return;
-  panel.style.display = '';
-  content.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:12px;width:100%">⏳ Buscando sugestões…</div>';
-
-  // ── Step 1: try to match against known banks first ──────────────────
-  const lname = name.toLowerCase();
-  const matchedIconKey = Object.entries(_BANK_ICON_MAP).find(([k]) => lname.includes(k))?.[1];
-
-  // Build bank-match chip if found
-  let bankChipHtml = '';
-  if (matchedIconKey) {
-    const iconEl = document.querySelector(`.icon-option[data-icon="${matchedIconKey}"]`);
-    if (iconEl) {
-      const iconLabel = iconEl.querySelector('.icon-label')?.textContent || matchedIconKey;
-      const iconColor = iconEl.dataset.color || '#2a6049';
-      const iconInner = iconEl.querySelector('.bank-logo')?.outerHTML || iconEl.querySelector('span')?.outerHTML || '🏦';
-      bankChipHtml = `
-        <div onclick="accountSelectAiIcon('${matchedIconKey}','${iconColor}')"
-          style="flex:1;min-width:88px;text-align:center;padding:10px 8px;border:2px solid var(--accent);
-                 border-radius:10px;cursor:pointer;background:var(--accent-lt);transition:all .15s;position:relative"
-          onmouseover="this.style.background='var(--accent)';this.querySelectorAll('div').forEach(d=>d.style.color='#fff')"
-          onmouseout="this.style.background='var(--accent-lt)';this.querySelectorAll('div').forEach(d=>d.style.color='')">
-          <div style="font-size:1.5rem;line-height:1.3;margin-bottom:4px">${iconInner}</div>
-          <div style="font-size:.7rem;font-weight:800;color:var(--accent);margin-bottom:2px">${esc(iconLabel)}</div>
-          <div style="font-size:.62rem;color:var(--muted)">Logotipo reconhecido ✓</div>
-          <span style="position:absolute;top:-8px;right:6px;font-size:.58rem;font-weight:800;background:var(--accent);color:#fff;padding:1px 6px;border-radius:20px">MELHOR</span>
-        </div>`;
-    }
-  }
-
-  // ── Step 2: AI emoji suggestions ────────────────────────────────────
-  try {
-    const apiKey = await getAppSetting('gemini_api_key', '');
-    if (!apiKey) {
-      content.innerHTML = bankChipHtml ||
-        '<div style="color:var(--red,#dc2626);font-size:.78rem;padding:8px">Configure a chave Gemini em Configurações → IA</div>';
-      return;
-    }
-
-    const typeLabels = { corrente:'Conta Corrente', poupanca:'Poupança', cartao_credito:'Cartão de Crédito', investimento:'Investimentos', dinheiro:'Dinheiro', outros:'Outros' };
-    const context = [
-      `Nome da conta: ${name}`,
-      `Tipo de conta: ${typeLabels[type] || type}`,
-      currency !== 'BRL' ? `Moeda: ${currency}` : '',
-    ].filter(Boolean).join('\n');
-
-    const prompt = [
-      'Você é um assistente de branding para um app financeiro.',
-      'Com base nos dados de uma conta bancária, sugira 3 ícones/emoji para representá-la visualmente.',
-      'Priorize o nome do banco como pista: se reconhecer o banco, sugira ícones que remetam à identidade visual (cor, inicial, símbolo) da instituição.',
-      'Considere o tipo de conta (corrente, poupança, cartão) como contexto secundário.',
-      'Responda APENAS com JSON válido: {"suggestions":[{"emoji":"💳","label":"Cartão","reason":"..."},{"emoji":"...","label":"...","reason":"..."},{"emoji":"...","label":"...","reason":"..."}]}',
-      '',
-      context
-    ].join('\n');
-
-    const models = ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-    let parsed = null;
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 400, temperature: 0.3, responseMimeType: 'application/json' }
-          })
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```json|```/g,'').trim();
-        parsed = JSON.parse(text);
-        if (parsed?.suggestions?.length) break;
-      } catch(_) {}
-    }
-
-    const sugs = parsed?.suggestions || [];
-    const aiChips = sugs.map(s => {
-      const emoji = String(s.emoji || '🏦').replace(/'/g, '&#39;');
-      return `
-        <div onclick="accountSelectAiIcon('emoji-${emoji}','')"
-          style="flex:1;min-width:80px;text-align:center;padding:10px 8px;border:1.5px solid var(--border);
-                 border-radius:10px;cursor:pointer;transition:all .15s;background:var(--surface)"
-          onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--accent-lt)'"
-          onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface)'">
-          <div style="font-size:2rem;line-height:1;margin-bottom:4px">${esc(s.emoji || '🏦')}</div>
-          <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:2px">${esc(s.label||'')}</div>
-          <div style="font-size:.63rem;color:var(--muted);line-height:1.2">${esc(s.reason||'')}</div>
-        </div>`;
-    }).join('');
-
-    content.innerHTML = (bankChipHtml + aiChips) ||
-      '<div style="color:var(--muted);font-size:.8rem;padding:8px">Sem sugestões.</div>';
-
-  } catch(e) {
-    content.innerHTML = bankChipHtml ||
-      `<div style="color:var(--red,#dc2626);font-size:.78rem;padding:8px">Erro: ${esc(e.message)}</div>`;
-  }
-};
-
-window.accountSelectAiIcon = function(iconKeyOrEmoji, color) {
-  // iconKeyOrEmoji: 'itau' | 'nubank' | 'emoji-💳'
-  const panel = document.getElementById('accountAiSuggestPanel');
-
-  if (iconKeyOrEmoji.startsWith('emoji-')) {
-    // Emoji suggestion: set icon value as 'emoji-X' and preview
-    const emoji = iconKeyOrEmoji.slice(6);
-    const iconInput   = document.getElementById('accountIcon');
-    const iconPreview = document.getElementById('accountIconPreview');
-    if (iconInput)   iconInput.value = `emoji-${emoji}`;
-    if (iconPreview) iconPreview.innerHTML = `<span style="font-size:1.4rem">${emoji}</span>`;
-    // Also call syncIconPickerToValue if available
-    if (typeof syncIconPickerToValue === 'function') {
-      syncIconPickerToValue(`emoji-${emoji}`, color || document.getElementById('accountColor')?.value || '#2a6049');
-    }
-    toast('Ícone selecionado!', 'success');
-  } else {
-    // Bank icon: trigger the existing icon picker selection
-    const iconEl = document.querySelector(`.icon-option[data-icon="${iconKeyOrEmoji}"]`);
-    if (iconEl) {
-      // Show its tab group first
-      const gridEl = iconEl.closest('.icon-grid');
-      if (gridEl) {
-        document.querySelectorAll('.icon-grid').forEach(g => g.style.display = 'none');
-        gridEl.style.display = '';
-        // Activate the tab button
-        const tabBtns = document.querySelectorAll('#accountIconPicker .icon-tab');
-        tabBtns.forEach(b => {
-          b.classList.toggle('active', b.getAttribute('onclick')?.includes(gridEl.id));
-        });
-      }
-      if (typeof selectAccountIcon === 'function') selectAccountIcon(iconEl);
-    }
-    toast('Ícone do banco selecionado!', 'success');
-  }
-  if (panel) panel.style.display = 'none';
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-// DADOS BANCÁRIOS — Tab opcional no cadastro de contas
-// Armazenados em JSON no campo `notes` da conta (chave: bank_details)
-// ════════════════════════════════════════════════════════════════════════════
-
-const _BANK_INST_BR = [
-  'Banco do Brasil','Caixa Econômica Federal','Bradesco','Itaú Unibanco',
-  'Santander','Nubank','Banco Inter','C6 Bank','BTG Pactual','XP Investimentos',
-  'Rico','Clear','Avenue','Órama','Modalmais','Genial Investimentos','Warren',
-  'Sicoob','Sicredi','Banco Original','Safra','Banrisul','PagBank',
-  'Mercado Pago','PicPay','Neon','Sofisa Direto','Daycoval'
-];
-const _BANK_INST_US = [
-  'Chase','Bank of America','Wells Fargo','Citibank','Goldman Sachs',
-  'Morgan Stanley','Fidelity','Charles Schwab','Interactive Brokers',
-  'Ally Bank','Capital One','American Express','TD Bank'
-];
-
-/** Atualiza campos visíveis e datalist conforme moeda selecionada */
-function _syncBankFields() {
-  const currency = document.getElementById('accountCurrency')?.value || 'BRL';
-  const brlDiv   = document.getElementById('accountBankFieldsBRL');
-  const ibanDiv  = document.getElementById('accountBankFieldsIBAN');
-  const usdDiv   = document.getElementById('accountBankFieldsUSD');
-  const instLbl  = document.getElementById('accountBankInstLabel');
-  const summLbl  = document.getElementById('accountBankSummaryLabel');
-  const dl       = document.getElementById('accountBankInstList');
-
-  if (brlDiv)  brlDiv.style.display  = currency === 'BRL' ? 'flex' : 'none';
-  if (ibanDiv) ibanDiv.style.display  = !['BRL','USD'].includes(currency) ? 'flex' : 'none';
-  if (usdDiv)  usdDiv.style.display   = currency === 'USD' ? 'flex' : 'none';
-
-  if (instLbl) instLbl.textContent = currency === 'USD' ? 'Institution / Broker' : 'Instituição Financeira';
-  if (summLbl) summLbl.textContent = currency === 'USD' ? 'Bank Details' : 'Dados Bancários';
-
-  if (dl) {
-    const list = currency === 'USD' ? _BANK_INST_US : _BANK_INST_BR;
-    dl.innerHTML = list.map(i => `<option value="${i}">`).join('');
-  }
-}
-window._syncBankFields = _syncBankFields;
-
-/** Carrega dados bancários do campo notes no formulário */
-function _loadBankDetails(account) {
-  _syncBankFields();
-  if (!account?.notes) return;
-  let details;
-  try {
-    const n = typeof account.notes === 'object' ? account.notes : JSON.parse(account.notes);
-    details = n?.bank_details;
-  } catch(_) { return; }
-  if (!details) return;
-
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-  set('accountBankInstitution', details.institution);
-  set('accountBankAgency',      details.agency);
-  set('accountBankNumber',      details.number);
-  set('accountBankAccountType', details.accountType);
-  set('accountBankPix',         details.pix);
-  set('accountBankIBAN',        details.iban);
-  set('accountBankSwift',       details.swift);
-  set('accountBankForeignName', details.foreignName);
-  set('accountBankRouting',     details.routing);
-  set('accountBankUSANumber',   details.usaNumber);
-  set('accountBankUSAType',     details.usaType);
-  set('accountBankUSAName',     details.usaName);
-  set('accountBankUSASwift',    details.usaSwift);
-  set('accountBankNotes',       details.notes);
-
-  // Auto-open if data exists
-  const hasData = Object.values(details).some(v => v && v !== '');
-  if (hasData) {
-    const det = document.getElementById('accountBankDetailsToggle');
-    if (det) det.open = true;
-  }
-}
-window._loadBankDetails = _loadBankDetails;
-
-/** Limpa todos os campos bancários */
-function _clearBankDetails() {
-  ['accountBankInstitution','accountBankAgency','accountBankNumber','accountBankAccountType',
-   'accountBankPix','accountBankIBAN','accountBankSwift','accountBankForeignName',
-   'accountBankRouting','accountBankUSANumber','accountBankUSAType','accountBankUSAName',
-   'accountBankUSASwift','accountBankNotes'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  const det = document.getElementById('accountBankDetailsToggle');
-  if (det) det.open = false;
-}
-
-/** Coleta dados bancários do formulário */
-function _collectBankDetails() {
-  const currency = document.getElementById('accountCurrency')?.value || 'BRL';
-  const get = id => document.getElementById(id)?.value?.trim() || '';
-
-  const base = {
-    institution: get('accountBankInstitution'),
-    notes:       get('accountBankNotes'),
-  };
-
-  if (currency === 'BRL') {
-    return { ...base, agency: get('accountBankAgency'), number: get('accountBankNumber'),
-      accountType: get('accountBankAccountType'), pix: get('accountBankPix') };
-  } else if (currency === 'USD') {
-    return { ...base, routing: get('accountBankRouting'), usaNumber: get('accountBankUSANumber'),
-      usaType: get('accountBankUSAType'), usaName: get('accountBankUSAName'),
-      usaSwift: get('accountBankUSASwift') };
-  } else {
-    return { ...base, iban: get('accountBankIBAN'), swift: get('accountBankSwift'),
-      foreignName: get('accountBankForeignName') };
-  }
-}
-window._collectBankDetails = _collectBankDetails;
-
-/** Funde bank_details no campo notes JSON da conta */
-function _mergeBankDetailsIntoNotes(existingNotes, bankDetails) {
-  let base = {};
-  if (existingNotes) {
-    try { base = typeof existingNotes === 'object' ? existingNotes : JSON.parse(existingNotes); } catch(_) {}
-  }
-  const hasData = Object.values(bankDetails).some(v => v && v !== '');
-  if (hasData) { base.bank_details = bankDetails; }
-  else { delete base.bank_details; }
-  return Object.keys(base).length ? JSON.stringify(base) : null;
-}
-window._mergeBankDetailsIntoNotes = _mergeBankDetailsIntoNotes;
-

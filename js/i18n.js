@@ -41,8 +41,7 @@ const _I18N_BUILTIN = {
   'nav.prices':           {pt:'Preços',        en:'Prices',        es:'Precios',         fr:'Prix'},
   'nav.investments':      {pt:'Investimentos', en:'Investments',   es:'Inversiones',     fr:'Investissements'},
   'nav.ai_insights':      {pt:'AI Insights',   en:'AI Insights',   es:'Perspectivas IA', fr:'Aperçus IA'},
-  'nav.dreams':           {pt:'Sonhos',         en:'Dreams',        es:'Sueños',           fr:'Rêves'},
-  'nav.more':             {pt:'Mais',           en:'More',          es:'Más',              fr:'Plus'},
+  'nav.more':             {pt:'Mais',          en:'More',          es:'Más',             fr:'Plus'},
   // Seções do sidebar
   'nav.section_main':     {pt:'Principal',     en:'Main',          es:'Principal',       fr:'Principal'},
   'nav.section_analysis': {pt:'Análise',       en:'Analysis',      es:'Análisis',        fr:'Analyse'},

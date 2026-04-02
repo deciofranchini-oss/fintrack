@@ -139,51 +139,12 @@ async function _finalizeScheduledOccurrence(scId, scheduledDate, executionToken,
 
 async function processScheduledOccurrence(sc, opts = {}) {
   const scheduledDate = opts.scheduledDate;
-  const actualDate    = opts.actualDate || scheduledDate;
-  const memo          = opts.memo ?? sc.memo ?? null;
-  const amountInput   = Number(opts.amount ?? sc.amount ?? 0);
-  const isScTransfer  = sc.type === 'transfer' || sc.type === 'card_payment';
-  const finalAmount   = opts.finalAmount ?? ((sc.type === 'expense' || isScTransfer) ? -Math.abs(amountInput) : Math.abs(amountInput));
-  const txStatus      = (sc.auto_confirm ?? true) ? 'confirmed' : 'pending';
-
-  // ── Resolução de moeda estrangeira ────────────────────────────────────────
-  // Se o programado está em moeda diferente de BRL, calcula brl_amount.
-  const scCurrency = (sc.currency || 'BRL').toUpperCase();
-  let brlAmount = null;
-  let usedFxRate = null;
-
-  if (scCurrency !== 'BRL') {
-    const fxMode = sc.fx_mode || 'fixed';
-    if (fxMode === 'fixed' && sc.fx_rate && Number(sc.fx_rate) > 0) {
-      // Taxa fixa cadastrada pelo usuário
-      usedFxRate = Number(sc.fx_rate);
-      brlAmount  = Math.abs(finalAmount) * usedFxRate;
-    } else if (fxMode === 'api') {
-      // Buscar taxa da API Frankfurter no momento do registro
-      try {
-        const dateKey   = actualDate || new Date().toISOString().slice(0,10);
-        const apiUrl    = `https://api.frankfurter.dev/v1/${dateKey}?base=${scCurrency}&to=BRL`;
-        const resp      = await fetch(apiUrl);
-        const json      = await resp.json();
-        const rate      = json?.rates?.BRL;
-        if (rate && Number(rate) > 0) {
-          usedFxRate = Number(rate);
-          brlAmount  = Math.abs(finalAmount) * usedFxRate;
-          console.info(`[scheduled-fx] ${scCurrency}→BRL @ ${usedFxRate} em ${dateKey} (API)`);
-        } else {
-          console.warn('[scheduled-fx] API não retornou taxa BRL:', json);
-        }
-      } catch (fxErr) {
-        console.warn('[scheduled-fx] Erro ao buscar taxa da API:', fxErr?.message || fxErr);
-        // Continua sem brl_amount — não bloqueia o registro
-      }
-    }
-    if (brlAmount !== null) {
-      // Preservar sinal
-      brlAmount = finalAmount < 0 ? -Math.abs(brlAmount) : Math.abs(brlAmount);
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
+  const actualDate = opts.actualDate || scheduledDate;
+  const memo = opts.memo ?? sc.memo ?? null;
+  const amountInput = Number(opts.amount ?? sc.amount ?? 0);
+  const isScTransfer = sc.type === 'transfer' || sc.type === 'card_payment';
+  const finalAmount = opts.finalAmount ?? ((sc.type === 'expense' || isScTransfer) ? -Math.abs(amountInput) : Math.abs(amountInput));
+  const txStatus = (sc.auto_confirm ?? true) ? 'confirmed' : 'pending';
 
   const reservation = await _reserveScheduledOccurrence(sc, scheduledDate, actualDate, finalAmount, memo);
   if (reservation.status === 'already_executed' || reservation.status === 'locked_by_other') {
@@ -199,10 +160,7 @@ async function processScheduledOccurrence(sc, opts = {}) {
     family_id: famId(),
     date: actualDate,
     description: sc.description,
-    amount:   finalAmount,
-    currency: scCurrency,
-    ...(brlAmount !== null ? { brl_amount: brlAmount } : {}),
-    ...(usedFxRate  !== null ? { currency_rate: usedFxRate } : {}),
+    amount: finalAmount,
     account_id: sc.account_id,
     payee_id: isScTransfer ? null : (sc.payee_id || null),
     category_id: sc.category_id || null,
@@ -587,7 +545,7 @@ function _scCardHtml(sc) {
         <div class="sc-card-meta">${freqPill}${meta ? `<span class="sc-card-meta-text">${meta}</span>` : ''}${catChip}${memberChips ? '<div class="sc-member-chips">' + memberChips + '</div>' : ''}</div>
       </div>
       <div class="sc-card-end">
-        <div class="sc-card-amt ${isExpense?'amount-neg':'amount-pos'}">${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}${sc.currency && sc.currency !== 'BRL' ? `<span style="font-size:.65em;font-weight:500;opacity:.75;margin-left:3px">${esc(sc.currency)}</span>` : ''}</div>
+        <div class="sc-card-amt ${isExpense?'amount-neg':'amount-pos'}">${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}</div>
         <div class="sc-card-badges">${nextBadge}<span class="sc-status-badge ${st.cls}">${st.label}</span></div>
       </div>
       <svg class="sc-card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" id="scChev-${sc.id}"><polyline points="6 9 12 15 18 9"/></svg>
@@ -733,19 +691,14 @@ function renderUpcoming() {
         ? `<span class="sup-manual-badge">Manual</span>` : '';
       const pendingBadge = isPending
         ? `<span class="sup-pending-badge" title="Aguardando registro">⚠ Pendente</span>` : '';
-      // ── Moeda correta: respeitar sc.currency (EUR, USD, etc.) ───────────
-      const scCur  = (sc.currency || 'BRL').toUpperCase();
-      const amtFmt = fmt(Math.abs(sc.amount), scCur);
-      const fxHint = scCur !== 'BRL'
-        ? `<span class="sup-fx-badge">${scCur}</span>` : '';
       return `<div class="sup-item${isToday?' sup-item--today':''}">
         <div class="sup-icon" style="background:color-mix(in srgb,${catColor} 14%,transparent);color:${catColor}">${typeIcon}</div>
         <div class="sup-body">
-          <div class="sup-desc">${esc(sc.description)}${fxHint}${manualBadge}${pendingBadge}</div>
+          <div class="sup-desc">${esc(sc.description)}${manualBadge}${pendingBadge}</div>
           <div class="sup-acct">${esc(sc.accounts?.name||'—')}${dest?` <span class="sup-arrow">→</span> ${esc(dest.name)}`:''}</div>
         </div>
         <div class="sup-right">
-          <span class="sup-amt ${isExp?'neg':'pos'}">${isExp?'−':'+'}${amtFmt}</span>
+          <span class="sup-amt ${isExp?'neg':'pos'}">${isExp?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
           <div class="sup-actions">
             <button class="sup-ignore-btn" title="Ignorar"
               onclick="event.stopPropagation();ignoreOccurrence('${sc.id}','${date}')">✕</button>
@@ -763,25 +716,12 @@ function renderUpcoming() {
       ? `<div class="sup-day-pill sup-day-pill--tmrw"><span>Amanhã</span></div>`
       : `<div class="sup-day-pill"><span class="sup-day-num">${dayNum}</span><span class="sup-day-mon">${dayMon}</span></div>`;
 
-    // Para Hoje/Amanhã: subtítulo com data por extenso; demais: só dow + data
-    const dowLabel = isToday
-      ? `<div class="sup-group-dow-wrap">
-           <span class="sup-group-dow sup-group-dow--special">Hoje</span>
-           <span class="sup-group-date-sub">${dow} · ${dayNum} de ${dayMon}</span>
-         </div>`
-      : isTomorrow
-      ? `<div class="sup-group-dow-wrap">
-           <span class="sup-group-dow sup-group-dow--special">Amanhã</span>
-           <span class="sup-group-date-sub">${dow} · ${dayNum} de ${dayMon}</span>
-         </div>`
-      : `<span class="sup-group-dow">${dow}, ${fmtDate(date)}</span>`;
-
     const _startOpen = isToday || isTomorrow;
     return `<div class="sup-group">
       <div class="sup-group-hdr" onclick="toggleUpcomingGroup('${gid}')">
         <div class="sup-group-left">
           ${dayPill}
-          ${dowLabel}
+          <span class="sup-group-dow">${dow}</span>
         </div>
         <div class="sup-group-meta">
           <span class="sup-day-total ${dayTot>=0?'pos':'neg'}">${dayTot>=0?'+':''}${fmt(dayTot)}</span>
@@ -841,17 +781,6 @@ function toggleScCard(id) {
   const body = document.getElementById('scBody-'+id);
   if(body) body.classList.toggle('open');
 }
-
-// ── Sync date entre os dois campos de data (Principal ↔ Recorrência) ──
-// Ambos os campos chamam esta função via oninput/onchange.
-// Ela mantém os dois sincronizados e dispara o preview.
-window._scSyncDate = function(value) {
-  const p = document.getElementById('scStartDatePrincipal');
-  const r = document.getElementById('scStartDate');
-  if (p && p.value !== value) p.value = value;
-  if (r && r.value !== value) r.value = value;
-  if (typeof updateScPreview === 'function') updateScPreview();
-};
 
 // ── Modal open/save/delete ─────────────────────────────
 function openScheduledModal(id='') {
@@ -931,9 +860,8 @@ function openScheduledModal(id='') {
     }
   }, 50);
 
-  // Dates — usa _scSyncDate para manter os dois campos sincronizados
-  const _startDate = sc?.start_date || localDateStr();
-  _scSyncDate(_startDate);
+  // Dates
+  document.getElementById('scStartDate').value = sc?.start_date || localDateStr();
 
   // Frequency
   const freq = sc?.frequency||'once';
@@ -954,15 +882,9 @@ function openScheduledModal(id='') {
   // Attach event listeners for dynamic preview (replace to avoid dupes)
   document.querySelectorAll('input[name=scFreq]').forEach(r => { r.onchange = onScFreqChange; });
   document.querySelectorAll('input[name=scEnd]').forEach(r => { r.onchange = onScEndChange; });
-  // Campos de data: usa _scSyncDate (que mantém os dois sincronizados E chama updateScPreview)
-  ['scStartDate','scStartDatePrincipal'].forEach(id => {
+  ['scStartDate','scEndCount','scEndDate','scCustomInterval','scCustomUnit'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.oninput = el.onchange = () => _scSyncDate(el.value);
-  });
-  // Demais campos: apenas atualiza o preview
-  ['scEndCount','scEndDate','scCustomInterval','scCustomUnit'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.oninput = updateScPreview;
+    if(el) el.oninput = updateScPreview;
   });
 
   document.getElementById('scheduledModalTitle').textContent = id ? 'Editar Programação' : 'Programar Transação';
@@ -1038,8 +960,6 @@ function openScheduledModal(id='') {
   openModal('scheduledModal');
   if (typeof initScFormMode === "function") initScFormMode();
   if (typeof initScFormMode === 'function') initScFormMode();
-  // Aplica visibilidade de canais (WA/Telegram on/off)
-  if (typeof applyNotifChannelVisibility === 'function') applyNotifChannelVisibility();
   // Scroll modal body to top on every open
   requestAnimationFrame(() => {
     const body = document.querySelector('#scheduledModal .modal-body');
@@ -1214,10 +1134,7 @@ function updateScPreview() {
   const preview = document.getElementById('scPreview');
   if(!preview) return;
   const freq = document.querySelector('input[name=scFreq]:checked')?.value || 'once';
-  // Lê a data de ambos os campos — Principal tem prioridade por ser o visível
-  const start = document.getElementById('scStartDatePrincipal')?.value?.trim()
-             || document.getElementById('scStartDate')?.value?.trim()
-             || '';
+  const start = document.getElementById('scStartDate').value;
   const end = document.querySelector('input[name=scEnd]:checked')?.value || 'forever';
   const count = parseInt(document.getElementById('scEndCount').value) || null;
   const endDate = document.getElementById('scEndDate').value;
@@ -1314,15 +1231,7 @@ async function saveScheduled() {
     memo: document.getElementById('scMemo').value,
     tags: tags.length ? tags : null,
     status: document.getElementById('scStatus').value,
-    start_date: (() => {
-      // _scSyncDate() garante que ambos os campos estão sempre iguais.
-      // Lemos o campo da aba Principal como fonte primária;
-      // o campo da aba Recorrência como fallback caso o Principal esteja oculto.
-      const principal   = document.getElementById('scStartDatePrincipal')?.value?.trim() || '';
-      const recorrencia = document.getElementById('scStartDate')?.value?.trim() || '';
-      // Usa o que tiver valor; se ambos tiverem (caso normal), são iguais por design.
-      return principal || recorrencia || '';
-    })(),
+    start_date: document.getElementById('scStartDate').value,
     frequency: freq,
     custom_interval: freq==='custom' ? parseInt(document.getElementById('scCustomInterval').value)||1 : null,
     custom_unit: freq==='custom' ? document.getElementById('scCustomUnit').value : null,
@@ -1345,7 +1254,7 @@ async function saveScheduled() {
     notify_telegram_days_before: notifyTg ? notifyTgDaysBefore : 1,
     notify_telegram_on_processed: notifyTg ? !!notifyTgProcessed : false,
     notify_telegram_on_upcoming: notifyTg ? !!notifyTgUpcoming : false,
-    fx_mode:  (fxVisible || currVisible) ? fxMode : null,
+    fx_mode:  fxVisible ? fxMode : null,
     fx_rate:  fxRate,
     updated_at: new Date().toISOString(),
     family_member_ids: typeof getFmcMultiPickerSelected === 'function'
@@ -1499,23 +1408,7 @@ function openRegisterOcc(scId, date) {
   document.getElementById('occDate').value = date;
   setAmtField('occAmount', sc.amount);
   document.getElementById('occMemo').value = '';
-
-  const scCurrency = (sc.currency || 'BRL').toUpperCase();
-  let extraInfo = '';
-  if (scCurrency !== 'BRL') {
-    const fxMode = sc.fx_mode || 'fixed';
-    if (fxMode === 'fixed' && sc.fx_rate) {
-      const estimated = Math.abs(sc.amount) * Number(sc.fx_rate);
-      extraInfo = `
-💱 Câmbio: 1 ${scCurrency} = R$ ${Number(sc.fx_rate).toFixed(4)} (fixo) · BRL estimado: ${fmt(estimated)}`;
-    } else {
-      extraInfo = `
-📡 Taxa de câmbio ${scCurrency}→BRL será buscada automaticamente na API no momento do registro.`;
-    }
-  }
-
-  document.getElementById('registerOccDesc').textContent =
-    `Registrar "${sc.description}" em ${fmtDate(date)} — isso criará uma transação real na conta ${sc.accounts?.name||''}.${extraInfo}`;
+  document.getElementById('registerOccDesc').textContent = `Registrar "${sc.description}" em ${fmtDate(date)} — isso criará uma transação real na conta ${sc.accounts?.name||''}.`;
   openModal('registerOccModal');
 }
 
@@ -2636,32 +2529,19 @@ function _renderCalUpcoming() {
 
     const rows = items.map(({ sc, isPending }) => {
       const isExp    = sc.type === 'expense' || sc.type === 'card_payment' || sc.type === 'transfer';
-      const typeIcon = sc.type === 'card_payment' ? '💳' : sc.type === 'transfer' ? '↔' : isExp ? '↑' : '↓';
-      const dest     = (sc.type === 'transfer' || sc.type === 'card_payment')
-                       ? (state.accounts || []).find(a => a.id === sc.transfer_to_account_id) : null;
-      const catColor = sc.categories?.color || (isExp ? 'var(--red)' : 'var(--green)');
-      // ── Moeda correta: respeitar sc.currency (EUR, USD, etc.) ─────────
-      const scCur    = (sc.currency || 'BRL').toUpperCase();
-      const amtFmt   = typeof fmt === 'function' ? fmt(Math.abs(sc.amount), scCur) : Math.abs(sc.amount).toFixed(2);
-      const fxHint   = scCur !== 'BRL' ? `<span class="sup-fx-badge">${scCur}</span>` : '';
+      const isIncome = sc.type === 'income';
+      const typeIcon = sc.type === 'transfer' ? '🔄' : isExp ? '💸' : '💰';
+      const amtStr   = typeof fmt === 'function' ? fmt(Math.abs(sc.amount)) : Math.abs(sc.amount).toFixed(2);
       const pendingBadge = isPending
-        ? `<span class="sup-pending-badge" title="Pendente">⚠</span>` : '';
-      const manualBadge = !sc.auto_register
-        ? `<span class="sup-manual-badge">Manual</span>` : '';
+        ? `<span class="sc-occ-pending-dot" title="Pendente"></span>` : '';
       return `<div class="sup-item${isToday ? ' sup-item--today' : ''}">
-        <div class="sup-icon" style="background:color-mix(in srgb,${catColor} 14%,transparent);color:${catColor}">${typeIcon}</div>
-        <div class="sup-body">
-          <div class="sup-desc">${esc(sc.description || '—')}${fxHint}${manualBadge}${pendingBadge}</div>
-          <div class="sup-acct">${esc((state.accounts || []).find(a => a.id === sc.account_id)?.name || '—')}${dest ? ` <span class="sup-arrow">→</span> ${esc(dest.name)}` : ''}</div>
+        <span class="sup-type-icon">${typeIcon}</span>
+        <div class="sup-item-mid">
+          <div class="sup-item-desc">${esc(sc.description || '—')}${pendingBadge}</div>
+          <div class="sup-item-meta">${esc((state.accounts || []).find(a => a.id === sc.account_id)?.name || '')}</div>
         </div>
-        <div class="sup-right">
-          <span class="sup-amt ${isExp ? 'neg' : 'pos'}">${isExp ? '−' : '+'}${amtFmt}</span>
-          <div class="sup-actions">
-            <button class="sup-ignore-btn" title="Ignorar"
-              onclick="event.stopPropagation();ignoreOccurrence('${sc.id}','${date}')">✕</button>
-            <button class="sup-register-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓</button>
-          </div>
-        </div>
+        <span class="sup-item-amt ${isExp ? 'neg' : 'pos'}">${isExp ? '−' : '+'}${amtStr}</span>
+        <button class="sup-register-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓</button>
       </div>`;
     }).join('');
 

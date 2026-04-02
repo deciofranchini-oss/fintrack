@@ -8,7 +8,7 @@ function cfgShowPane(paneId) {
   const tab = paneId.replace('pane-', '');
   const btn = document.getElementById('cfgNavBtn-' + tab);
   if (btn) btn.classList.add('active');
-  if ((paneId === 'pane-avancado' || paneId === 'pane-traducoes') && typeof initTranslationsAdmin === 'function') {
+  if (paneId === 'pane-avancado' && typeof initTranslationsAdmin === 'function') {
     initTranslationsAdmin();
   }
   if (paneId === 'pane-feedbacks' && typeof loadFeedbackReports === 'function') {
@@ -22,7 +22,7 @@ window.cfgShowPane = cfgShowPane;
 function _cfgApplyAdminNav() {
   const role = (typeof currentUser !== 'undefined') ? currentUser?.role : null;
   const isAdmin = role === 'admin' || role === 'owner';
-  ['cfgNavBtn-familia','cfgNavBtn-aparencia','cfgNavBtn-avancado','cfgNavBtn-traducoes','cfgNavBtn-feedbacks'].forEach(id => {
+  ['cfgNavBtn-familia','cfgNavBtn-aparencia','cfgNavBtn-avancado','cfgNavBtn-feedbacks'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? '' : 'none';
   });
@@ -79,34 +79,6 @@ async function loadAppSettings() {
     // Apply logo override (if any)
     const logo = _appSettingsCache['app_logo_url'] || '';
     if (typeof setAppLogo === 'function') setAppLogo(logo);
-    // Tema de login: DB é fonte de verdade → cache no localStorage → aplica.
-    // localStorage serve só como fallback offline/antes do boot. Sempre sobrescrito
-    // pelo DB quando disponível.
-    {
-      const _lt_raw = _appSettingsCache[LOGIN_THEME_SETTING] || null;
-      const _lt_valid = ['split','centered','asymmetric','immersive','minimal'];
-      if (_lt_raw) {
-        let _lt = _lt_raw;
-        if (typeof _lt === 'string') { try { _lt = JSON.parse(_lt); } catch(_e) {} }
-        if (typeof _lt === 'string' && _lt_valid.includes(_lt)) {
-          try { localStorage.setItem(LOGIN_THEME_SETTING, _lt); } catch(_e) {}
-          if (typeof applyLoginTheme === 'function') applyLoginTheme(_lt);
-        }
-      }
-    }
-
-    // App theme (dark/light): DB é fonte de verdade → localStorage → aplica.
-    if (typeof bootApplyAppTheme === 'function') bootApplyAppTheme();
-
-    // Sincroniza canais de notificação do DB → localStorage
-    const _notifKeys = ['notif_channel_email_enabled','notif_channel_wa_enabled','notif_channel_tg_enabled'];
-    _notifKeys.forEach(k => {
-      if (k in _appSettingsCache) {
-        try { localStorage.setItem(k, String(_appSettingsCache[k] === true || _appSettingsCache[k] === 'true')); } catch(_) {}
-      }
-    });
-    // Aplica visibilidade assim que o cache está disponível
-    if (typeof applyNotifChannelVisibility === 'function') applyNotifChannelVisibility();
 
     // Apply menu visibility (if configured)
     try { applyMenuVisibility(_getMenuVisibilityFromCache()); } catch {}
@@ -168,226 +140,6 @@ async function saveAppSetting(key, value) {
     console.warn('saveAppSetting DB error (saved locally):', e.message);
   }
 }
-
-
-// ── Login theme selector ──────────────────────────────────────────────────
-const LOGIN_THEME_SETTING = 'login_theme';
-
-function _saveLoginThemeBtn() {
-  // Mantido por compatibilidade — o tema agora é salvo via onchange direto
-  const sel = document.querySelector('input[name="loginTheme"]:checked');
-  const theme = sel ? sel.value : null;
-  if (!theme) return;
-  saveLoginTheme(theme);
-}
-window._saveLoginThemeBtn = _saveLoginThemeBtn;
-
-// ── Chaves de configuração dos canais de notificação ──────────────────────────
-const NOTIF_CHANNEL_KEYS = {
-  email:    'notif_channel_email_enabled',
-  whatsapp: 'notif_channel_wa_enabled',
-  telegram: 'notif_channel_tg_enabled',
-};
-
-/**
- * Salva o estado ativo/inativo de um canal de notificação.
- * Persiste em localStorage (instantâneo) + banco (assíncrono).
- * Após salvar aplica a visibilidade em toda a UI.
- */
-async function saveNotifChannelSetting(channel, enabled) {
-  const key = NOTIF_CHANNEL_KEYS[channel];
-  if (!key) return;
-  try { localStorage.setItem(key, String(enabled)); } catch(_) {}
-  try { await saveAppSetting(key, enabled); } catch(_) {}
-  applyNotifChannelVisibility();
-  const label = { email:'E-mail', whatsapp:'WhatsApp', telegram:'Telegram' }[channel] || channel;
-  toast(label + (enabled ? ' ativado' : ' desativado'), 'success');
-}
-window.saveNotifChannelSetting = saveNotifChannelSetting;
-
-/**
- * Lê o estado salvo de um canal. Default: email=true, wa/tg=false.
- */
-function getNotifChannelEnabled(channel) {
-  const key = NOTIF_CHANNEL_KEYS[channel];
-  if (!key) return true;
-  // Lê do cache em memória primeiro (mais rápido)
-  if (window._appSettingsCache && key in window._appSettingsCache) {
-    const v = window._appSettingsCache[key];
-    return v === true || v === 'true';
-  }
-  // Fallback localStorage
-  try {
-    const v = localStorage.getItem(key);
-    if (v !== null) return v === 'true';
-  } catch(_) {}
-  // Default: email sim, WhatsApp/Telegram não (evita aparecer sem configuração)
-  return channel === 'email';
-}
-window.getNotifChannelEnabled = getNotifChannelEnabled;
-
-/**
- * Aplica a visibilidade dos canais em todos os pontos da UI:
- *  - Toggles no painel Configurações (checkboxes)
- *  - Campos de WhatsApp e Telegram no modal de Perfil
- *  - Cards de WhatsApp e Telegram no modal de Programados
- */
-function applyNotifChannelVisibility() {
-  const waOn = getNotifChannelEnabled('whatsapp');
-  const tgOn = getNotifChannelEnabled('telegram');
-
-  // ── Painel de Configurações: sincronizar checkboxes ──────────────────────
-  const cfgWa = document.getElementById('cfgChannelWaEnabled');
-  const cfgTg = document.getElementById('cfgChannelTgEnabled');
-  if (cfgWa) cfgWa.checked = waOn;
-  if (cfgTg) cfgTg.checked = tgOn;
-
-  // ── Modal de Perfil: campos WhatsApp e Telegram ──────────────────────────
-  const profWaWrap  = document.getElementById('profWaChannelWrap');
-  const profTgWrap  = document.getElementById('profTgChannelWrap');
-  const profTxWaRow = document.getElementById('profTxNotifWaRow');
-  const profTxTgRow = document.getElementById('profTxNotifTgRow');
-  if (profWaWrap)  profWaWrap.style.display  = waOn ? '' : 'none';
-  if (profTgWrap)  profTgWrap.style.display  = tgOn ? '' : 'none';
-  if (profTxWaRow) profTxWaRow.style.display = waOn ? '' : 'none';
-  if (profTxTgRow) profTxTgRow.style.display = tgOn ? '' : 'none';
-
-  // ── Modal de Programados: cards dos canais ───────────────────────────────
-  const scWaCard = document.getElementById('scWaChannelCard');
-  const scTgCard = document.getElementById('scTgChannelCard');
-  if (scWaCard) scWaCard.style.display = waOn ? '' : 'none';
-  if (scTgCard) scTgCard.style.display = tgOn ? '' : 'none';
-}
-window.applyNotifChannelVisibility = applyNotifChannelVisibility;
-
-/**
- * Carrega os estados dos canais do banco/localStorage e atualiza a UI.
- * Chamado em loadSettings() e logo após o login.
- */
-async function loadNotifChannelSettings() {
-  // Tenta ler do cache (já populado por loadAppSettings)
-  // Se cache ainda não está pronto, lê do localStorage
-  const cfgEmail = document.getElementById('cfgChannelEmailEnabled');
-  if (cfgEmail) cfgEmail.checked = getNotifChannelEnabled('email');
-  applyNotifChannelVisibility();
-
-  // Sincroniza com o banco em background (sem bloquear a UI)
-  if (sb) {
-    try {
-      const keys = Object.values(NOTIF_CHANNEL_KEYS);
-      const { data } = await sb.from('app_settings').select('key,value').in('key', keys);
-      (data || []).forEach(row => {
-        try { localStorage.setItem(row.key, String(row.value === true || row.value === 'true')); } catch(_) {}
-        if (window._appSettingsCache) window._appSettingsCache[row.key] = (row.value === true || row.value === 'true');
-      });
-      applyNotifChannelVisibility();
-    } catch(_) {}
-  }
-}
-window.loadNotifChannelSettings = loadNotifChannelSettings;
-
-async function saveLoginTheme(theme) {
-  // Fonte de verdade: DB (app_settings).
-  // localStorage = cache para renderização offline/próximo boot (fallback).
-  // Ordem: 1) aplica visualmente  2) LS cache imediato  3) persiste DB async
-  const validThemes = ['centered','grid','split','asymmetric','immersive','minimal'];
-  if (!theme || !validThemes.includes(theme)) return;
-
-  // 1. Aplica visualmente sem esperar rede
-  applyLoginTheme(theme);
-  // 2. Grava no LS como cache (fallback offline)
-  try { localStorage.setItem(LOGIN_THEME_SETTING, theme); } catch(_e) {}
-  // 3. Persiste no DB (fonte de verdade) — atualiza o cache em memória também
-  try {
-    await saveAppSetting(LOGIN_THEME_SETTING, theme);
-    // Mantém _appSettingsCache sincronizado para loadLoginThemeSelector()
-    if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) {
-      _appSettingsCache[LOGIN_THEME_SETTING] = theme;
-    }
-  } catch(_e) {
-    console.warn('[saveLoginTheme] DB save failed, LS cache kept:', _e?.message);
-  }
-  // Update radio + highlight
-  document.querySelectorAll('.login-theme-option input[type=radio]').forEach(r => {
-    r.checked = (r.value === theme);
-  });
-  document.querySelectorAll('.login-theme-option').forEach(card => {
-    const isActive = card.dataset.theme === theme;
-    card.style.outline = isActive ? '2px solid var(--accent)' : '';
-    card.style.background = isActive ? 'var(--accent-lt,#e8f2ee)' : '';
-  });
-  const status = document.getElementById('loginThemeSaveStatus');
-  if (status) {
-    status.innerHTML = '<span>✓</span> Tema salvo com sucesso';
-    setTimeout(() => { status.innerHTML = ''; }, 3000);
-  }
-}
-
-function applyLoginTheme(theme) {
-  const ls = document.getElementById('loginScreen');
-  if (!ls) return;
-  // Remove all existing theme classes
-  ['ls-theme-centered','ls-theme-split','ls-theme-asymmetric','ls-theme-immersive',
-   'ls-theme-minimal','ls-theme-grid'].forEach(c => ls.classList.remove(c));
-  // 'centered' and 'grid' both map to the professional grid design (v5 default).
-  // All other theme names are kept for backward compatibility but render identically.
-  const t = (theme && typeof theme === 'string') ? theme.trim() : 'centered';
-  // Normalize legacy 'split' default → 'centered' (new default)
-  const effectiveTheme = (t === '' || t === 'split') ? 'centered' : t;
-  ls.classList.add('ls-theme-' + effectiveTheme);
-}
-
-function loadLoginThemeSelector() {
-  // Prioridade de leitura: 1) DB cache (_appSettingsCache) → 2) localStorage → 3) default
-  // DB é fonte de verdade. LS é cache offline. Nunca o contrário.
-  const validThemes = ['split','centered','asymmetric','immersive','minimal'];
-  const _isMobile = (() => {
-    try { const i = typeof detectLoginPlatform === 'function' ? detectLoginPlatform() : {isMobile:false}; return i.isMobile; }
-    catch(_e) { return false; }
-  })();
-  const _mobileDefault = 'centered'; // grid design works on all devices
-
-  const _normalize = (raw) => {
-    if (!raw) return null;
-    let t = raw;
-    if (typeof t === 'string') { try { t = JSON.parse(t); } catch(_e) {} }
-    return (typeof t === 'string' && validThemes.includes(t)) ? t : null;
-  };
-
-  const applyAndMark = (theme) => {
-    applyLoginTheme(theme);
-    // Mantém LS sincronizado com DB (cache offline)
-    try { localStorage.setItem(LOGIN_THEME_SETTING, theme); } catch(_e) {}
-    document.querySelectorAll('.login-theme-option input[type=radio]').forEach(r => { r.checked = (r.value === theme); });
-    document.querySelectorAll('.login-theme-option').forEach(card => {
-      const isActive = card.dataset.theme === theme;
-      card.style.outline = isActive ? '2px solid var(--accent)' : '';
-      card.style.background = isActive ? 'var(--accent-lt,#e8f2ee)' : '';
-    });
-  };
-
-  // 1. DB cache (disponível se loadAppSettings() já rodou — normal após login)
-  const cacheRaw = (typeof _appSettingsCache !== 'undefined' && _appSettingsCache)
-    ? (_appSettingsCache[LOGIN_THEME_SETTING] || null) : null;
-  const dbTheme = _normalize(cacheRaw);
-
-  if (dbTheme) {
-    applyAndMark(dbTheme);
-    return; // DB disponível → aplica e termina
-  }
-
-  // 2. LS fallback (offline / antes do boot completar)
-  const lsRaw = (() => { try { return localStorage.getItem(LOGIN_THEME_SETTING); } catch(_e) { return null; } })();
-  const lsTheme = _normalize(lsRaw) || lsRaw;
-  applyAndMark(lsTheme || _mobileDefault);
-
-  // 3. Async: busca DB pra atualizar caso o cache ainda não estivesse pronto
-  getAppSetting(LOGIN_THEME_SETTING, _mobileDefault).then(t => {
-    const resolved = _normalize(t) || _mobileDefault;
-    if (resolved !== (lsTheme || _mobileDefault)) applyAndMark(resolved);
-  }).catch(() => {});
-}
-
 
 async function getAppSetting(key, defaultValue = null) {
   if (_appSettingsCache && key in _appSettingsCache) return _appSettingsCache[key];
@@ -480,7 +232,6 @@ async function forceActivateModule(modKey, enabled, label) {
     investments:  'applyInvestmentsFeature',
     ai_insights:  'applyAiInsightsFeature',
     debts:        'applyDebtsFeature',
-    dreams:       'applyDreamsFeature',
   };
   const applyFn = applyMap[modKey];
   if (applyFn && typeof window[applyFn] === 'function') {
@@ -880,9 +631,6 @@ function loadSettings() {
   // Telegram bot token
   if (typeof loadTelegramBotTokenUI === 'function') loadTelegramBotTokenUI();
 
-  // Canais de notificação (WhatsApp / Telegram on/off)
-  if (typeof loadNotifChannelSettings === 'function') loadNotifChannelSettings();
-
 
 
 
@@ -901,8 +649,6 @@ function loadSettings() {
     // Admin: inicializar formulários das novas seções
     initSettingsVisibilityForm();
     initServiceRoleKeySection();
-    // Login theme selector
-    if (typeof loadLoginThemeSelector === 'function') loadLoginThemeSelector();
     try { _loadNormalizeNamesInfo().catch(()=>{}); } catch {}
     // Translations admin (admin only)
     if (typeof initTranslationsAdmin === 'function') {
@@ -1404,7 +1150,6 @@ function initFamModulesStandalone() {
     { key: 'investments_enabled_' + famId, label: 'Investimentos',    emoji: '📈', applyFn: 'applyInvestmentsFeature',  desc: 'Carteira de investimentos (requer conta do tipo Investimentos)' },
     { key: 'ai_insights_enabled_' + famId, label: 'AI Insights',      emoji: '🤖', applyFn: 'applyAiInsightsFeature',   desc: 'Análise financeira e chat com IA Gemini (requer chave API)' },
     { key: 'debts_enabled_'       + famId, label: 'Dívidas',          emoji: '💳', applyFn: 'applyDebtsFeature',        desc: 'Controle e evolução de dívidas' },
-    { key: 'dreams_enabled_'      + famId, label: 'Sonhos',           emoji: '🌟', applyFn: 'applyDreamsFeature',       desc: 'GPS financeiro — transforme objetivos em metas com IA' },
     { key: 'backup_enabled_'      + famId, label: 'Backup',           emoji: '☁️', applyFn: null,                       desc: 'Backup automático de dados' },
     { key: 'snapshot_enabled_'    + famId, label: 'Snapshot',         emoji: '📸', applyFn: null,                       desc: 'Snapshots periódicos do estado financeiro' },
   ];
@@ -1581,7 +1326,7 @@ async function _cfgToggleModule(key, famId, label, applyFn) {
 
   // Aplica imediatamente sem esperar DB (UX responsivo)
   if (applyFn && typeof window[applyFn] === 'function') {
-    Promise.resolve(window[applyFn]()).catch(() => {}); // safe: undefined ou Promise
+    window[applyFn]().catch(() => {});
   }
   toast(nowOn ? `✓ ${label} ativado` : `${label} desativado`, 'success');
 
@@ -3048,100 +2793,3 @@ async function _telRenderLandingContent(el, cachedRows) {
           </div>`}
     </div>`;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   APP THEME — Dark / Light mode
-   Fonte de verdade: DB (app_settings key='app_theme').
-   localStorage é cache offline. Aplicado via [data-theme="dark"] no <html>.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const APP_THEME_KEY = 'app_theme';
-const APP_THEME_VALID = ['dark', 'light'];
-
-/** Apply theme to <html> and update all UI indicators. No network calls. */
-function applyAppTheme(theme) {
-  const isDark = theme === 'dark';
-  const html = document.documentElement;
-
-  // Smooth transition
-  html.classList.add('theme-transitioning');
-  setTimeout(() => html.classList.remove('theme-transitioning'), 320);
-
-  if (isDark) {
-    html.setAttribute('data-theme', 'dark');
-  } else {
-    html.removeAttribute('data-theme');
-  }
-
-  // Update user menu toggle
-  _updateThemeToggleUI(isDark);
-}
-
-/** Update the toggle switch and icon/label inside the user menu. */
-function _updateThemeToggleUI(isDark) {
-  try {
-    const icon   = document.getElementById('umThemeIcon');
-    const label  = document.getElementById('umThemeLabel');
-    const sw     = document.getElementById('umThemeSwitch');
-    const pill   = document.getElementById('umThemePill');
-
-    if (icon)  icon.textContent  = isDark ? '☀️' : '🌙';
-    if (label) label.textContent = isDark ? 'Modo Tradicional' : 'Modo Escuro';
-    if (sw) {
-      sw.style.background = isDark ? 'var(--accent)' : 'var(--border2)';
-    }
-    if (pill) {
-      pill.style.transform = isDark ? 'translateX(16px)' : 'translateX(0)';
-    }
-  } catch(_) {}
-}
-
-/** Toggle between dark and light. Called by the user menu button. */
-async function toggleAppTheme() {
-  const current = document.documentElement.getAttribute('data-theme') === 'dark'
-    ? 'dark' : 'light';
-  const next = current === 'dark' ? 'light' : 'dark';
-  applyAppTheme(next);
-  await saveAppTheme(next);
-}
-window.toggleAppTheme = toggleAppTheme;
-
-/** Persist theme: DB (source of truth) + localStorage (offline cache). */
-async function saveAppTheme(theme) {
-  if (!APP_THEME_VALID.includes(theme)) return;
-  // 1. localStorage — cache imediato, funciona offline
-  try { localStorage.setItem(APP_THEME_KEY, theme); } catch(_) {}
-  // 2. DB — fonte de verdade cross-device
-  try { await saveAppSetting(APP_THEME_KEY, theme); } catch(_) {}
-}
-
-/** Resolve theme: DB cache → localStorage → system preference. */
-function resolveAppTheme() {
-  // 1. DB cache (fonte de verdade, disponível após loadAppSettings)
-  if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache) {
-    const dbVal = _appSettingsCache[APP_THEME_KEY];
-    if (dbVal && APP_THEME_VALID.includes(dbVal)) return dbVal;
-  }
-  // 2. localStorage (cache offline)
-  try {
-    const lsVal = localStorage.getItem(APP_THEME_KEY);
-    if (lsVal && APP_THEME_VALID.includes(lsVal)) return lsVal;
-  } catch(_) {}
-  // 3. System preference (media query) — default respects OS
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
-}
-
-/** Boot: apply theme as fast as possible. Called from loadAppSettings and DOMContentLoaded. */
-function bootApplyAppTheme() {
-  const theme = resolveAppTheme();
-  applyAppTheme(theme);
-  // Sync to localStorage from DB (keeps cache fresh)
-  if (typeof _appSettingsCache !== 'undefined' && _appSettingsCache &&
-      _appSettingsCache[APP_THEME_KEY]) {
-    try { localStorage.setItem(APP_THEME_KEY, _appSettingsCache[APP_THEME_KEY]); } catch(_) {}
-  }
-}
-window.bootApplyAppTheme = bootApplyAppTheme;
