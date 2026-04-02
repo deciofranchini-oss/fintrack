@@ -1,8 +1,8 @@
 {
   "name": "Family FinTrack",
   "short_name": "FinTrack",
-  "description": "Gestão financeira familiar",
-  "start_url": "./index.html",
+  "description": "Gest\u00e3o financeira familiar",
+  "start_url": "./app.html",
   "display": "standalone",
   "background_color": "#0d2318",
   "theme_color": "#0d2318",
@@ -20,5 +20,6 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "scope": "./"
 }
