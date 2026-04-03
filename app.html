@@ -196,17 +196,7 @@
   color: #ffffff !important;
   transform: translateY(-1px);
 }
-/* Botão sair na topbar mantém vermelho */
-#logoutTopbarBtn {
-  background: #fff5f5 !important;
-  border-color: rgba(220,38,38,0.20) !important;
-  color: #dc2626 !important;
-}
-#logoutTopbarBtn:hover {
-  background: #fee2e2 !important;
-  border-color: #dc2626 !important;
-  box-shadow: 0 0 0 3px rgba(220,38,38,0.12) !important;
-}
+/* #logoutTopbarBtn: removido da topbar */
 /* Botão do Agente — verde elétrico com brilho */
 .topbar-agent-btn {
   background: linear-gradient(135deg, #05df72, #00b359) !important;
@@ -630,10 +620,7 @@
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="currentColor" opacity=".18"/><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 7v5.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.3" fill="currentColor"/></svg>
           <span id="feedbackBadge" class="feedback-topbar-badge" style="display:none"></span>
         </button>
-        <!-- Sair -->
-        <button class="topbar-icon-btn" id="logoutTopbarBtn" onclick="doLogout()" title="Sair">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </button>
+        <!-- Sair: movido para menu do usuario -->
       </div>
 <button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()" title="Nova Transação" aria-label="Nova Transação">+</button>
     </div>
@@ -781,6 +768,28 @@
             <button class="btn btn-ghost btn-sm" onclick="navigate('transactions')">Ver todas</button>
           </div>
           <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody id="recentTxBody"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando...</td></tr></tbody></table></div>
+      </div>
+
+      <!-- Card: Investimentos -->
+      <div id="dashCardInvestments" class="card mb-4" style="display:none">
+        <div class="card-header">
+          <span class="card-title">📈 Carteira de Investimentos</span>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('investments')">Ver carteira</button>
+        </div>
+        <div id="dashInvestmentsBody">
+          <div class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando…</div>
+        </div>
+      </div>
+
+      <!-- Card: Sonhos -->
+      <div id="dashCardDreams" class="card mb-4" style="display:none">
+        <div class="card-header">
+          <span class="card-title">🌟 Meus Sonhos</span>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('dreams')">Ver sonhos</button>
+        </div>
+        <div id="dashDreamsBody">
+          <div class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Carregando…</div>
+        </div>
       </div>
 
       <!-- Modal de customização do dashboard -->
@@ -2678,6 +2687,64 @@
           </div>
 
           <div class="cfg-section-label">Notificações &amp; IA</div>
+
+          <!-- ── Controle de Canais de Notificação (admin) ── -->
+          <div class="cfg-card" style="margin-bottom:12px">
+            <div style="padding:14px 16px">
+              <div style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:4px">🔔 Canais Ativos por Família</div>
+              <div style="font-size:.74rem;color:var(--muted);margin-bottom:14px;line-height:1.5">
+                Canais desativados aqui desaparecem de todas as configurações de usuários, transações e programados.
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px" id="notifChannelControls">
+                <!-- Email -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:32px;height:32px;background:#f0fdf4;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem">📧</div>
+                    <div>
+                      <div style="font-size:.83rem;font-weight:600;color:var(--text)">E-mail</div>
+                      <div style="font-size:.72rem;color:var(--muted)">Notificações via EmailJS</div>
+                    </div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="notifEmailEnabled" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer"
+                      onchange="saveNotifChannelSetting('email', this.checked)">
+                    <span id="notifEmailLabel" style="font-size:.75rem;font-weight:600;color:var(--muted)">Ativo</span>
+                  </label>
+                </div>
+                <!-- WhatsApp -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:32px;height:32px;background:#f0fdf4;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem">💬</div>
+                    <div>
+                      <div style="font-size:.83rem;font-weight:600;color:var(--text)">WhatsApp</div>
+                      <div style="font-size:.72rem;color:var(--muted)">Mensagens via API WhatsApp</div>
+                    </div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="notifWhatsappEnabled" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer"
+                      onchange="saveNotifChannelSetting('whatsapp', this.checked)">
+                    <span id="notifWhatsappLabel" style="font-size:.75rem;font-weight:600;color:var(--muted)">Ativo</span>
+                  </label>
+                </div>
+                <!-- Telegram -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:32px;height:32px;background:#e7f3ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem">✈️</div>
+                    <div>
+                      <div style="font-size:.83rem;font-weight:600;color:var(--text)">Telegram</div>
+                      <div style="font-size:.72rem;color:var(--muted)">Notificações via Bot Telegram</div>
+                    </div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="notifTelegramEnabled" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer"
+                      onchange="saveNotifChannelSetting('telegram', this.checked)">
+                    <span id="notifTelegramLabel" style="font-size:.75rem;font-weight:600;color:var(--muted)">Ativo</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="cfg-card">
             <div class="cfg-row">
               <div class="cfg-row-icon" style="background:#f0fdf4">
@@ -2915,6 +2982,29 @@
               <div id="dbBackupList"><div style="color:var(--muted);font-size:.8rem">Carregando…</div></div>
             </div>
           </div>
+          <!-- Exportação Excel/ZIP — owner only -->
+          <div class="cfg-card" id="exportExcelSection">
+            <div class="cfg-row">
+              <div class="cfg-row-icon" style="background:#f0fdf4">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <div class="cfg-row-info">
+                <div class="cfg-row-label">Exportar para Excel (ZIP)</div>
+                <div class="cfg-row-sub">1 planilha por tabela · Somente Owner</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="exportAllExcelZip()" id="exportExcelBtn">⬇️ Exportar</button>
+            </div>
+            <div id="exportExcelProgress" style="display:none;padding:10px 16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <span id="exportExcelStatus" style="font-size:.78rem;color:var(--muted)">Preparando…</span>
+                <span id="exportExcelPct" style="font-size:.78rem;font-weight:700">0%</span>
+              </div>
+              <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                <div id="exportExcelBar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width .3s ease"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="cfg-card" id="normalizeNamesSection" style="display:none">
             <div class="cfg-row">
               <div class="cfg-row-icon" style="background:#f0fdf4">
@@ -4899,9 +4989,13 @@ Se você não solicitou isso, ignore este e-mail.`,
   <!-- ═══════════ LOGIN SCREEN ═══════════ -->
   <div id="loginScreen" class="login-screen-shell login-bg-opt1" style="display:flex;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:24px">
 
-    <!-- Decorative background layers -->
-    <!-- Opção 2: Névoa difusa + linhas diagonais -->
-    <!-- Option 1: single orb composited via CSS — no DOM elements needed -->
+    <!-- Background visual — mesma linguagem da landing page -->
+    <!-- Grid quadriculado (hgrid pattern da landing) -->
+    <div class="login-hgrid"></div>
+    <!-- Orbs suaves (mesma linguagem das landing orbs) -->
+    <div class="login-orb login-orb1"></div>
+    <div class="login-orb login-orb2"></div>
+    <div class="login-orb login-orb3"></div>
 
     <div class="login-card login-card-a" style="width:100%;max-width:400px">
       <div style="text-align:center;margin-bottom:28px">
@@ -4910,17 +5004,7 @@ Se você não solicitou isso, ignore este e-mail.`,
       </div>
       <div id="loginFormArea">
 
-        <!-- Login method toggle -->
-        <div style="display:flex;background:#f3f4f6;border-radius:10px;padding:3px;margin-bottom:20px;gap:2px">
-          <button id="loginTabPassword" onclick="switchLoginTab('password')"
-            style="flex:1;padding:8px;border:none;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;font-family:inherit">
-            <span data-i18n="auth.login_tab_pwd">🔑 Senha</span>
-          </button>
-          <button id="loginTabMagic" onclick="switchLoginTab('magic')"
-            style="flex:1;padding:8px;border:none;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;background:transparent;color:#6b7280;font-family:inherit">
-            <span data-i18n="auth.login_tab_magic">✉️ Link por E-mail</span>
-          </button>
-        </div>
+
 
         <!-- Password login panel -->
         <div id="loginPanelPassword">
@@ -4950,35 +5034,7 @@ Se você não solicitou isso, ignore este e-mail.`,
           </div>
         </div>
 
-        <!-- Magic link panel -->
-        <div id="loginPanelMagic" style="display:none">
-          <div style="text-align:center;margin-bottom:16px">
-            <div style="font-size:.83rem;color:#6b7280;line-height:1.5">
-              Informe seu e-mail e enviaremos um link para entrar sem senha.
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom:20px">
-            <label style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block">E-mail</label>
-            <input type="email" id="magicEmail" placeholder="seu@email.com"
-              style="width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:.9rem;outline:none;box-sizing:border-box"
-             
-              onkeydown="if(event.key==='Enter')doMagicLink()">
-          </div>
-          <button onclick="doMagicLink()" id="magicLinkBtn"
-            style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit">
-            <span data-i18n="auth.btn_send_link">✉️ Enviar Link de Acesso</span>
-          </button>
-          <!-- Sent confirmation state -->
-          <div id="magicLinkSent" style="display:none;margin-top:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:16px;text-align:center">
-            <div style="font-size:1.5rem;margin-bottom:6px">📬</div>
-            <div style="font-size:.85rem;font-weight:600;color:#166534;margin-bottom:4px">Link enviado!</div>
-            <div style="font-size:.78rem;color:#15803d;line-height:1.5">Verifique sua caixa de entrada e clique no link para entrar.</div>
-            <button onclick="doMagicLink()" id="magicResendBtn"
-              style="margin-top:10px;background:none;border:1px solid #86efac;color:#16a34a;font-size:.75rem;font-weight:600;padding:5px 14px;border-radius:20px;cursor:pointer;font-family:inherit">
-              Reenviar
-            </button>
-          </div>
-        </div>
+        <!-- Magic link: removido -->
 
         <div id="loginError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
         <div id="loginRequestAccessWrap" style="text-align:center;margin-top:12px;font-size:.8rem;color:#6b7280;display:none">
@@ -4998,6 +5054,37 @@ Se você não solicitou isso, ignore este e-mail.`,
             Solicitar acesso
           </button>
         </div>
+      </div>
+
+      <!-- ══ 2FA VERIFICATION AREA ══ -->
+      <div id="twoFaArea" style="display:none">
+        <div class="twofa-title">🔐 Verificação em Dois Fatores</div>
+        <div class="twofa-sub" id="twoFaSub">
+          Enviamos um código de 6 dígitos para o seu e-mail.<br>
+          Insira-o abaixo para continuar.
+        </div>
+        <input type="text" id="twoFaCode" class="twofa-code-input"
+          maxlength="6" inputmode="numeric" pattern="[0-9]*"
+          placeholder="000000"
+          onkeydown="if(event.key==='Enter')doVerify2FA()"
+          oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <div class="twofa-actions">
+          <button onclick="doVerify2FA()" id="twoFaVerifyBtn"
+            style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:12px;font-size:.95rem;font-weight:700;cursor:pointer;font-family:inherit">
+            ✓ Verificar
+          </button>
+          <div class="twofa-trust-row">
+            <input type="checkbox" id="twoFaTrust" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer;flex-shrink:0">
+            <label for="twoFaTrust">Confiar neste dispositivo por 30 dias</label>
+          </div>
+          <button onclick="resend2FACode()" class="twofa-resend" id="twoFaResendBtn">
+            Reenviar código
+          </button>
+          <button onclick="showLoginFormArea()" class="twofa-back">
+            ← Voltar ao login
+          </button>
+        </div>
+        <div id="twoFaError" style="margin-top:12px;color:#dc2626;font-size:.8rem;text-align:center;display:none"></div>
       </div>
 
       <!-- Forgot password form -->
@@ -6394,7 +6481,7 @@ Se você não solicitou isso, ignore este e-mail.`,
       <input type="hidden" id="accountId">
       <div class="form-grid">
         <div class="form-group full"><label>Nome da Conta *</label><input type="text" id="accountName" placeholder="Ex: Itaú Corrente"></div>
-        <div class="form-group"><label>Tipo *</label><select id="accountType" onchange="onAccountTypeChange()"><option value="corrente">Conta Corrente</option><option value="poupanca">Poupança</option><option value="cartao_credito">Cartão de Crédito</option><option value="investimento">Investimentos</option><option value="dinheiro">Dinheiro</option><option value="outros">Outros</option></select></div>
+        <div class="form-group"><label>Tipo *</label><select id="accountType" onchange="_onAccModalTypeChange()"><option value="corrente">Conta Corrente</option><option value="poupanca">Poupança</option><option value="cartao_credito">Cartão de Crédito</option><option value="investimento">Investimentos</option><option value="dinheiro">Dinheiro</option><option value="outros">Outros</option></select></div>
         <div class="form-group"><label>Moeda</label><select id="accountCurrency"><option value="BRL">BRL — Real</option><option value="USD">USD — Dólar</option><option value="EUR">EUR — Euro</option><option value="AED">AED — Dirham</option></select></div>
         <div class="form-group full"><label>Grupo</label><select id="accountGroupId"><option value="">— Sem grupo —</option></select></div>
         <!-- Feature 7: conta favorita -->
@@ -6443,6 +6530,52 @@ Se você não solicitou isso, ignore este e-mail.`,
             </div>
           </div>
         </div>
+        <!-- Dados bancários — expandíveis -->
+        <div class="form-group full" id="accountBankDataSection">
+          <details id="accountBankDetails" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden">
+            <summary style="padding:10px 14px;cursor:pointer;font-size:.82rem;font-weight:700;color:var(--text2);user-select:none;list-style:none">
+              🏦 Dados Bancários <span style="font-size:.72rem;font-weight:400;color:var(--muted)">(opcional)</span>
+            </summary>
+            <div style="padding:12px 14px;border-top:1px solid var(--border)">
+              <div class="form-grid" style="gap:10px">
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Banco / Instituição</label><input type="text" id="accountBankName" placeholder="Ex: Itaú, Nubank…"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Código</label><input type="text" id="accountBankCode" placeholder="Ex: 341" inputmode="numeric"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Agência</label><input type="text" id="accountAgency" placeholder="Ex: 0001-9"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Número da Conta</label><input type="text" id="accountNumber" placeholder="Ex: 12345-6"></div>
+                <div class="form-group full" style="margin:0"><label style="font-size:.75rem">IBAN</label><input type="text" id="accountIban" placeholder="Ex: FR7630001007941234567890185" style="font-family:monospace;font-size:.82rem"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Routing Number (EUA)</label><input type="text" id="accountRoutingNumber" placeholder="9 dígitos ABA" inputmode="numeric"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">SWIFT / BIC</label><input type="text" id="accountSwiftBic" placeholder="Ex: BNPAFRPPXXX" style="font-family:monospace;font-size:.82rem"></div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Cartão de crédito — só visível para cartao_credito -->
+        <div class="form-group full" id="accountCardDataSection" style="display:none">
+          <details id="accountCardDetails" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden">
+            <summary style="padding:10px 14px;cursor:pointer;font-size:.82rem;font-weight:700;color:var(--text2);user-select:none;list-style:none">
+              💳 Detalhes do Cartão <span style="font-size:.72rem;font-weight:400;color:var(--muted)">(opcional)</span>
+            </summary>
+            <div style="padding:12px 14px;border-top:1px solid var(--border)">
+              <div class="form-grid" style="gap:10px">
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Banco Emissor</label><input type="text" id="accountCardIssuer" placeholder="Ex: Itaú, Bradesco…"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Bandeira</label>
+                  <select id="accountCardBrand"><option value="">— Selecionar —</option><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="elo">Elo</option><option value="amex">American Express</option><option value="hipercard">Hipercard</option><option value="dinersclub">Diners Club</option><option value="outro">Outro</option></select></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Categoria</label>
+                  <select id="accountCardType"><option value="">— Selecionar —</option><option value="standard">Standard</option><option value="gold">Gold</option><option value="platinum">Platinum</option><option value="black">Black</option><option value="infinite">Infinite</option></select></div>
+                <div class="form-group" style="margin:0"><label style="font-size:.75rem">Limite Total</label><input type="number" id="accountCardLimit" placeholder="0,00" min="0" step="0.01" inputmode="decimal"></div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Vincular a sonho -->
+        <div class="form-group full" id="accountDreamLinkSection">
+          <label style="font-size:.82rem;font-weight:600;color:var(--text2)">🌟 Vincular a Sonho</label>
+          <select id="accountLinkedDreamId"><option value="">— Nenhum —</option></select>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:3px">Associe esta conta ao progresso de um sonho.</div>
+        </div>
+
         <div class="form-group"><label id="accountBalanceLabel">Saldo Inicial</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="accountBalanceSignBtn" onclick="toggleAmtSign('accountBalance')" aria-label="Alternar sinal">+</button><input type="text" id="accountBalance" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="_amtFieldInput('accountBalance')" onkeydown="_amtFieldKeydown('accountBalance', event)" onblur="_amtFieldBlur('accountBalance')" onfocus="_amtFieldFocus('accountBalance')"></div><div style="font-size:.72rem;color:var(--muted);margin-top:4px">Este é o saldo de abertura. O saldo atual é calculado automaticamente com base nas transações.</div></div>
         <div class="form-group full">
           <label style="display:flex;align-items:center;justify-content:space-between">
@@ -7382,6 +7515,44 @@ Se você não solicitou isso, ignore este e-mail.`,
             </div>
           </div>
           <div id="myProfilePwdNote" style="font-size:.72rem;color:var(--muted);margin-top:8px">Deixe em branco para manter a senha atual.</div>
+
+          <div class="prof-section-label" style="margin-top:18px">🔐 Autenticação em Dois Fatores</div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div>
+                <div style="font-size:.85rem;font-weight:600;color:var(--text)">2FA ativo</div>
+                <div style="font-size:.74rem;color:var(--muted);margin-top:2px">Exige código de verificação a cada login</div>
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="myProfile2faEnabled" style="width:17px;height:17px;accent-color:#2a6049;cursor:pointer"
+                  onchange="_toggle2FAPanel(this.checked)">
+              </label>
+            </div>
+            <div id="myProfile2faPanel" style="display:none;border-top:1px solid var(--border);padding-top:12px">
+              <div style="font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:8px">Canal de envio do código</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid var(--border);border-radius:9px;cursor:pointer;transition:border-color .15s"
+                  id="twoFaChanEmailLabel">
+                  <input type="radio" name="twoFaChannel" id="twoFaChanEmail" value="email" style="accent-color:#2a6049">
+                  <div>
+                    <div style="font-size:.83rem;font-weight:600;color:var(--text)">📧 E-mail</div>
+                    <div style="font-size:.72rem;color:var(--muted)" id="twoFaEmailHint">Código enviado para o seu e-mail</div>
+                  </div>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid var(--border);border-radius:9px;cursor:pointer;transition:border-color .15s"
+                  id="twoFaChanTgLabel">
+                  <input type="radio" name="twoFaChannel" id="twoFaChanTelegram" value="telegram" style="accent-color:#2a6049">
+                  <div>
+                    <div style="font-size:.83rem;font-weight:600;color:var(--text)">✈️ Telegram</div>
+                    <div style="font-size:.72rem;color:var(--muted)" id="twoFaTgHint">Código enviado pelo bot para o seu Telegram</div>
+                  </div>
+                </label>
+              </div>
+              <div style="font-size:.73rem;color:var(--muted);margin-top:10px;line-height:1.55">
+                Configure seu Telegram Chat ID em <strong>Notificações → Telegram</strong> para usar este canal.
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ── Tab: Preferências ── -->
@@ -7555,7 +7726,16 @@ Se você não solicitou isso, ignore este e-mail.`,
                 <input type="text" id="myProfileTelegramChatId" placeholder="Ex.: 7540422976" style="flex:1">
                 <button type="button" class="btn btn-ghost btn-sm" id="myProfileTelegramTestBtn" onclick="testMyProfileNotification('telegram')">🧪 Testar</button>
               </div>
-              <div style="font-size:.7rem;color:var(--muted);margin-top:3px">Abra o bot do Telegram, envie /start e informe aqui o chat ID retornado.</div>
+              <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="openTelegramLinkFlow()" id="tgLinkFlowBtn"
+                  style="display:flex;align-items:center;gap:5px;font-size:.75rem">
+                  ✈️ Vincular via Telegram
+                </button>
+                <span id="tgLinkStatus" style="font-size:.72rem;color:var(--muted)"></span>
+              </div>
+              <div style="font-size:.7rem;color:var(--muted);margin-top:4px;line-height:1.5">
+                Clique em <strong>Vincular via Telegram</strong> para abrir o bot e obter seu Chat ID automaticamente.
+              </div>
             </div>
           </div>
         </div>
@@ -9073,6 +9253,16 @@ Se você não solicitou isso, ignore este e-mail.`,
         <span>🏠</span><span data-i18n="topbar.manage_fam">Gerenciar minha família</span>
       </button>
       <div style="height:1px;background:var(--border);margin:4px 0"></div>
+      <button class="dark-mode-toggle" onclick="toggleDarkMode()" id="darkModeToggleBtn">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="darkModeIcon">🌙</span>
+          <span id="darkModeLabel">Modo Escuro</span>
+        </div>
+        <div class="dark-mode-toggle-track">
+          <div class="dark-mode-toggle-thumb"></div>
+        </div>
+      </button>
+      <div style="height:1px;background:var(--border);margin:4px 0"></div>
       <button class="user-menu-item" onclick="closeUserMenu();navigate('help')">
         <span>❓</span><span>Central de Ajuda</span>
       </button>
@@ -9478,14 +9668,19 @@ window.openMyProfile = function(...args) {
              transition:background .15s">✕</button>
   </div>
 
-  <!-- Quick suggestions — preenchidas dinamicamente por agentRefreshQuickReplies() -->
+  <!-- Quick suggestions — preenchidas dinamicamente por _agentRefreshQuickReplies() -->
   <div id="agentQuickBar" style="padding:8px 12px;border-bottom:1px solid var(--border);
     display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;background:var(--surface2)">
-    <button onclick="agentSuggest('Quanto gastei este mês?')" class="agent-chip">📊 Gastos do mês</button>
-    <button onclick="agentSuggest('Quais contas estão no vermelho?')" class="agent-chip">💰 Saldo</button>
-    <button onclick="agentSuggest('Crie uma despesa de R$')" class="agent-chip">➕ Despesa</button>
-    <button onclick="agentSuggest('Crie receita de R$')" class="agent-chip">💰 Receita</button>
-    <button onclick="agentSuggest('Resumo financeiro do mês')" class="agent-chip">📈 Resumo</button>
+    <button onclick="agentShowCapabilities()" class="agent-chip agent-chip--highlight"
+      style="background:linear-gradient(135deg,rgba(22,163,74,.15),rgba(15,81,50,.12));border-color:rgba(22,163,74,.35);white-space:nowrap;flex-shrink:0">
+      💡 O que posso fazer
+    </button>
+    <button onclick="agentSuggest('Quanto gastei este mês?')" class="agent-chip">📊 Gastos</button>
+    <button onclick="agentSuggest('qual meu saldo total?')" class="agent-chip">💳 Saldo</button>
+    <button onclick="agentSuggest('criar despesa')" class="agent-chip">➕ Despesa</button>
+    <button onclick="agentSuggest('criar receita')" class="agent-chip">💰 Receita</button>
+    <button onclick="agentSuggest('resumo financeiro deste mês')" class="agent-chip">📈 Resumo</button>
+    <button onclick="agentSuggest('previsão próximos 30 dias')" class="agent-chip">🔮 Previsão</button>
     <button onclick="agentSuggest('Como adicionar uma conta?')" class="agent-chip">❓ Ajuda</button>
   </div>
 
