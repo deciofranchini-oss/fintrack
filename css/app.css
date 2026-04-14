@@ -1510,3 +1510,5 @@ body.tx-compact .tx-table .badge{
   min-width: 0; /* allow flex children to shrink */
 .sc-occ-date { color: var(--muted); min-width: 70px; flex-shrink: 0; }
 .sc-occ-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+.inv-kpi-brl { border-left: 3px solid #16a34a !important; }
+.inv-kpi-fx  { border-left: 3px solid #1d4ed8 !important; }
