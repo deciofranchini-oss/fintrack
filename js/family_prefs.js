@@ -103,6 +103,7 @@ async function updateFamilyPreferences(patch) {
 
   // Dispara evento
   document.dispatchEvent(new CustomEvent('familyprefs:changed', { detail: { prefs: updated } }));
+  if (updated?.ui?.stats_exclude) window._cachedStatsExclude = updated.ui.stats_exclude;
 }
 
 /**
@@ -175,7 +176,7 @@ function _fpDefaultPrefs(famId) {
       investments:  false,
       grocery:      false,
       prices:       false,
-      dreams:       false,
+      dreams:       true,   // default ON — dreams are a core feature
     },
     language: 'pt',
     ui: {},
@@ -239,6 +240,7 @@ async function _fpLoadFromDB(famId, background) {
     if (!background) _fpSetReady();
     if (!background) {
       document.dispatchEvent(new CustomEvent('familyprefs:loaded', { detail: { prefs } }));
+    if (prefs?.ui?.stats_exclude) window._cachedStatsExclude = prefs.ui.stats_exclude;
     }
 
     return prefs;

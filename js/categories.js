@@ -191,6 +191,11 @@ function renderCategories() {
             ${subs.length ? `<span class="cat-sub-pill">${subs.length} sub</span>` : ''}
             ${pTxCount > 0 ? `<span class="cat-tx-pill" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${p.id}','${esc(p.name)}')">📊 ${pTxCount}</span>` : ''}
           </div>
+          <label class="cat-chat-switch" onclick="event.stopPropagation()" title="${p.chat_enabled !== false ? 'Chat ativo — clique para desativar' : 'Chat inativo — clique para ativar'}">
+            <input type="checkbox" ${p.chat_enabled !== false ? 'checked' : ''} onchange="toggleCatChatEnabled('${p.id}')">
+            <span class="cat-chat-track"><span class="cat-chat-thumb"></span></span>
+            <span class="cat-chat-lbl">Chat</span>
+          </label>
           <div class="cat-inline-actions">
             <button class="btn-icon" onclick="openCategoryModal('','${p.id}','${dbType}')" title="Nova subcategoria">＋ Sub</button>
             <button class="btn-icon" onclick="toggleCatFavorite('${p.id}')" title="${isCatFavorite(p.id)?'Remover favorito':'Favoritar'}" style="color:${isCatFavorite(p.id)?'var(--amber,#f59e0b)':'var(--muted)'};font-size:1.05rem">★</button>
@@ -227,6 +232,11 @@ function renderCategories() {
             </div>
             <span class="cat-sub-name" id="catName-${c.id}" ondblclick="startCatInlineEdit('${c.id}')">${q ? _catHighlight(esc(c.name), q) : esc(c.name)}</span>
             ${cCount > 0 ? `<span class="cat-tx-pill" title="Ver histórico" onclick="event.stopPropagation();openCategoryHistory('${c.id}','${esc(c.name)}')">📊 ${cCount}</span>` : ''}
+            <label class="cat-chat-switch" onclick="event.stopPropagation()" title="${c.chat_enabled !== false ? 'Chat ativo — clique para desativar' : 'Chat inativo — clique para ativar'}">
+              <input type="checkbox" ${c.chat_enabled !== false ? 'checked' : ''} onchange="toggleCatChatEnabled('${c.id}')">
+              <span class="cat-chat-track"><span class="cat-chat-thumb"></span></span>
+              <span class="cat-chat-lbl">Chat</span>
+            </label>
             <div class="cat-inline-actions">
               <button class="btn-icon" onclick="toggleCatFavorite('${c.id}')" title="${isCatFavorite(c.id)?'Remover favorito':'Favoritar'}" style="color:${isCatFavorite(c.id)?'var(--amber,#f59e0b)':'var(--muted)'};font-size:1.05rem">★</button>
               <button class="btn-icon" onclick="openCategoryModal('${c.id}')" title="Editar">✏️</button>
@@ -349,6 +359,8 @@ function openCategoryModal(id = '', preParentId = '', preType = '') {
   document.getElementById('categoryType').value  = form.type;
   document.getElementById('categoryIcon').value  = form.icon || '📦';
   document.getElementById('categoryColor').value = form.color || '#2a6049';
+  const _catChatEl = document.getElementById('categoryChatEnabled');
+  if (_catChatEl) _catChatEl.checked = form.chat_enabled !== false; // default true
   document.getElementById('categoryModalTitle').textContent = id ? 'Editar Categoria' : (preParentId ? 'Nova Subcategoria' : 'Nova Categoria');
 
   const sel = document.getElementById('categoryParent');
@@ -405,6 +417,7 @@ async function saveCategory() {
     parent_id: document.getElementById('categoryParent').value || null,
     icon:      document.getElementById('categoryIcon').value || '📦',
     color:     document.getElementById('categoryColor').value,
+    chat_enabled: document.getElementById('categoryChatEnabled') ? !!document.getElementById('categoryChatEnabled').checked : true,
   };
   if (!data.name) { toast(t('toast.err_name'), 'error'); return; }
   if (!id) data.family_id = famId();
@@ -674,6 +687,72 @@ window.confirmCatReassign                  = confirmCatReassign;
 window.initCategoriesPage                  = initCategoriesPage;
 window.loadCategories                      = loadCategories;
 window.openCategoryHistory                 = openCategoryHistory;
+/** Toggle chat_enabled for a single category inline (no modal needed) */
+async function toggleCatChatEnabled(catId) {
+  const cat = (state.categories || []).find(c => c.id === catId);
+  if (!cat) return;
+  const newVal = cat.chat_enabled === false; // false → true, true/null → false
+  try {
+    const { error } = await sb.from('categories').update({ chat_enabled: newVal }).eq('id', catId);
+    if (error) throw error;
+    cat.chat_enabled = newVal;
+    // Re-render only the button in-place without full re-render
+    const btns = document.querySelectorAll(`.cat-chat-btn[onclick*="'${catId}'"]`);
+    btns.forEach(btn => {
+      const on = newVal;
+      // Update all switch checkboxes for this category (parent + sub rows)
+      document.querySelectorAll(`.cat-chat-switch input[onchange*="'${catId}'"]`).forEach(inp => {
+        inp.checked = on;
+        const lbl = inp.closest('.cat-chat-switch');
+        if (lbl) lbl.title = on ? 'Chat ativo — clique para desativar' : 'Chat inativo — clique para ativar';
+      });
+    });
+    toast(`💬 Categoria ${newVal ? 'ativada' : 'desativada'} no chat`, 'info');
+  } catch(e) {
+    toast('Erro: ' + (e.message || e), 'error');
+  }
+}
+window.toggleCatChatEnabled = toggleCatChatEnabled;
+
+/** Bulk toggle chat_enabled for ALL categories — auto-detects: if any is OFF → mark all ON; else mark all OFF */
+async function _catBulkChatToggle() {
+  const fid = typeof famId === 'function' ? famId() : currentUser?.family_id;
+  if (!fid) return;
+  const cats = state.categories || [];
+
+  // If any category is currently disabled → enable all; otherwise disable all
+  const anyOff = cats.some(c => c.chat_enabled === false);
+  const enable = anyOff; // true = turn everyone ON, false = turn everyone OFF
+
+  const action = enable ? 'ativar todas as categorias no chat' : 'desativar todas as categorias no chat';
+  if (!confirm(`Deseja ${action}?`)) return;
+
+  try {
+    const { error } = await sb.from('categories')
+      .update({ chat_enabled: enable })
+      .eq('family_id', fid);
+    if (error) throw error;
+
+    // Update local state + re-render switches
+    cats.forEach(c => { c.chat_enabled = enable; });
+
+    // Update all visible switch checkboxes
+    document.querySelectorAll('.cat-chat-switch input[type="checkbox"]').forEach(inp => {
+      inp.checked = enable;
+    });
+
+    // Update button label
+    const btn = document.getElementById('catBulkChatBtn');
+    if (btn) btn.textContent = enable ? '💬 Desativar todas do Chat' : '💬 Ativar todas para Chat';
+
+    toast(`✓ Chat ${enable ? 'ativado' : 'desativado'} em todas as categorias`, 'success');
+  } catch(e) {
+    toast('Erro: ' + (e.message || e), 'error');
+  }
+}
+window._catBulkChatToggle = _catBulkChatToggle;
+window._catBulkChatEnable = (enable) => { /* compat shim */ _catBulkChatToggle(); };
+
 window.openCategoryModal                   = openCategoryModal;
 window.renderCategories                    = renderCategories;
 window.saveCategory                        = saveCategory;

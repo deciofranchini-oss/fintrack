@@ -52,7 +52,7 @@ const _accounts = {
     if (!force && _fresh('accounts') && state.accounts.length) return;
     return _once('accounts', () => _wrap('Carregando contas…', async () => {
       const cols = 'id,name,type,currency,color,icon,initial_balance,group_id,family_id,' +
-                   'active,is_favorite,best_purchase_day,due_day,iof_rate,is_brazilian,' +
+                   'active,is_favorite,chat_enabled,best_purchase_day,due_day,iof_rate,is_brazilian,' +
                    'bank_name,bank_code,agency,account_number,iban,routing_number,swift_bic,' +
                    'card_brand,card_type,card_issuer,card_limit,linked_dream_id,notes,' +
                    'is_archived,archived_at,archive_reason,pix_key,pix_keys,balance';
@@ -211,7 +211,7 @@ const _transactions = {
           `account_id.eq.${filter.account},and(is_transfer.eq.true,linked_transfer_id.is.null,transfer_to_account_id.eq.${filter.account})`
         );
       }
-      if (filter.search)                 q = q.ilike('description', `%${filter.search}%`);
+      if (filter.search) q = q.or(`description.ilike.%${filter.search}%,memo.ilike.%${filter.search}%`);
       if (filter.type === 'income')      q = q.gt('amount', 0).eq('is_transfer', false);
       else if (filter.type === 'expense')q = q.lt('amount', 0).eq('is_transfer', false);
       else if (filter.type === 'transfer')     q = q.eq('is_transfer', true).eq('is_card_payment', false);
@@ -285,7 +285,22 @@ const _dashboard = {
       ]);
 
       let income = 0, expense = 0;
-      (monthRes.data || []).filter(t => !t.is_transfer && !t.is_card_payment).forEach(t => {
+      // Apply stats_exclude configuration from family preferences
+      const _statsExcl = (typeof getFamilyPreferences === 'function')
+        ? (window._cachedStatsExclude || { transfers:true, card_payments:true, adjustments:true, chat_pending:false })
+        : { transfers:true, card_payments:true, adjustments:true, chat_pending:false };
+
+      const _excCatIds = new Set(_statsExcl.excluded_category_ids || []);
+      const _excAccIds = new Set(_statsExcl.excluded_account_ids  || []);
+      (monthRes.data || []).filter(t => {
+        if (_statsExcl.transfers    && t.is_transfer && !t.is_card_payment) return false;
+        if (_statsExcl.card_payments && t.is_card_payment)                  return false;
+        if (_statsExcl.chat_pending  && t.status === 'pending')             return false;
+        if (_statsExcl.income       && (t.brl_amount ?? t.amount) > 0)      return false;
+        if (_excCatIds.size && t.category_id && _excCatIds.has(t.category_id)) return false;
+        if (_excAccIds.size && t.account_id  && _excAccIds.has(t.account_id))  return false;
+        return true;
+      }).forEach(t => {
         let brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, t.currency || 'BRL');
         // Apply linked-tx net factor (reimbursements / offsets)
         if (typeof _txLinkFindGroup === 'function' && typeof _txLinkCache !== 'undefined' && _txLinkCache) {
@@ -364,7 +379,17 @@ const _dashboard = {
 
       const { data } = await q;
       const agg = {}; // "YYYY-MM" → { inc, exp }
-      (data || []).filter(t => !t.is_transfer && !t.is_card_payment).forEach(t => {
+      const _excl2 = window._cachedStatsExclude || { transfers:true, card_payments:true };
+      const _excCatIds2 = new Set((_excl2.excluded_category_ids || []));
+      const _excAccIds2 = new Set((_excl2.excluded_account_ids  || []));
+      (data || []).filter(t => {
+        if (_excl2.transfers    && t.is_transfer && !t.is_card_payment) return false;
+        if (_excl2.card_payments && t.is_card_payment)                  return false;
+        if (_excl2.income       && (t.brl_amount ?? t.amount) > 0)      return false;
+        if (_excCatIds2.size && t.category_id && _excCatIds2.has(t.category_id)) return false;
+        if (_excAccIds2.size && t.account_id  && _excAccIds2.has(t.account_id))  return false;
+        return true;
+      }).forEach(t => {
         const k = t.date.slice(0, 7);
         if (!agg[k]) agg[k] = { inc: 0, exp: 0 };
         const brl = t.brl_amount != null ? t.brl_amount : toBRL(t.amount, t.currency || 'BRL');
@@ -409,21 +434,25 @@ const _prices = {
       const toCreate = valid.filter(i => !i.itemId);
       const toUpdate = valid.filter(i => i.itemId && i.catId);
 
-      // 1. Batch-insert new price_items
+      // 1. Upsert new price_items — handles name duplicates (price_items_family_name_unique)
       let created = [];
       if (toCreate.length) {
         const { data, error } = await sb.from('price_items')
-          .insert(toCreate.map(i => ({ family_id: fid, name: i.desc, category_id: i.catId || null })))
-          .select('id');
+          .upsert(
+            toCreate.map(i => ({ family_id: fid, name: i.desc, category_id: i.catId || null })),
+            { onConflict: 'family_id,name', ignoreDuplicates: false }
+          )
+          .select('id,name');
         if (error) throw new Error('price_items insert: ' + error.message);
         created = data || [];
       }
 
-      // 2. Assign IDs back
-      let ci = 0;
+      // 2. Assign IDs back — match by name since upsert may reorder results
+      const createdByName = {};
+      created.forEach(c => { if (c.name) createdByName[c.name.trim().toLowerCase()] = c.id; });
       const historyRows = [];
       valid.forEach(i => {
-        const itemId = i.itemId || created[ci++]?.id;
+        const itemId = i.itemId || createdByName[i.desc?.trim().toLowerCase()];
         if (!itemId) return;
         historyRows.push({ family_id: fid, item_id: itemId, store_id: storeId,
                            unit_price: i.price, quantity: i.qty, purchased_at: date });

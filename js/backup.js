@@ -1,39 +1,70 @@
 // ── backup.js — Backup local (JSON) + Backup no banco (Supabase) ───────────
 
-const BACKUP_VERSION = '4.2';
+const BACKUP_VERSION = '5.0';
 
 const BACKUP_TABLES = [
+  // ── Core structure ─────────────────────────────────────────────────────
   'families',
+  'family_preferences',
+  'family_settings',
   'family_members',
   'family_composition',
+  'family_member_restrictions',
+  // ── Financial base ─────────────────────────────────────────────────────
   'account_groups',
   'accounts',
+  'iof_settings',
   'categories',
   'payees',
+  'financial_objectives',
   'transactions',
+  'tx_reimbursements',
   'budgets',
+  // ── Scheduled ──────────────────────────────────────────────────────────
   'scheduled_transactions',
   'scheduled_occurrences',
   'scheduled_run_logs',
+  'scheduled_ar_records',
+  // ── Prices & Grocery ───────────────────────────────────────────────────
   'price_items',
   'price_stores',
   'price_history',
+  'grocery_lists',
+  'grocery_items',
+  // ── Debts ──────────────────────────────────────────────────────────────
   'debts',
   'debt_ledger',
+  // ── Investments ────────────────────────────────────────────────────────
   'investment_positions',
   'investment_transactions',
   'investment_price_history',
-  'grocery_lists',
-  'grocery_items',
+  // ── Dreams ─────────────────────────────────────────────────────────────
   'dreams',
   'dream_items',
   'dream_contributions',
+  // ── Loyalty ────────────────────────────────────────────────────────────
+  'loyalty_programs',
+  'loyalty_transactions',
+  // ── AI ─────────────────────────────────────────────────────────────────
   'ai_insight_snapshots',
   'ai_insight_recommendations',
-  'financial_objectives',
+  'ai_insight_simulations',
+  // ── Bot memory ─────────────────────────────────────────────────────────
+  'user_behavior_memory',
+  // ── Attachments ────────────────────────────────────────────────────────
   'attachments',
-  'family_preferences'
-];;
+  // ── Investment portfolios/wallets ───────────────────────────────────────
+  'investment_portfolios',
+  'investment_wallets',
+  'investment_wallet_positions',
+  // ── Family invites ──────────────────────────────────────────────────────
+  'family_invites',
+  // ── Agent & chat ────────────────────────────────────────────────────────
+  'agent_conversations',
+  'chat_pending_actions',
+  // ── Scheduled notifications ─────────────────────────────────────────────
+  'scheduled_notification_logs',
+];
 
 const BACKUP_RELATIONS = [
   ['family_members', 'family_id', 'families'],
@@ -106,27 +137,51 @@ async function _resolveActiveFamilyId() {
 }
 
 async function _collectFamilyBackupPayload(fid) {
-  const qf = (table) => Promise.resolve(sb.from(table).select('*').eq('family_id', fid));
+  // qf: executes query and returns a real Promise (await resolves Supabase builder)
+  const qf   = async (table) => { try { return await sb.from(table).select('*').eq('family_id', fid); } catch(_) { return { data: [] }; } };
+  // safe: wraps any Supabase builder call (which may not be a real Promise) in try/catch
+  const safe = async (p) => { try { return await p; } catch(_) { return { data: [] }; } };
 
-  // Core tables — always present
-  const [familiesRes, membersRes, compositionRes, groupsRes, accountsRes,
-         categoriesRes, payeesRes, txRes, budgetsRes, schedRes,
-         priceItemsRes, priceStoresRes, debtsRes, groceryListsRes, backupsRes] = await Promise.all([
+  // ── Batch 1: Core tables (all use family_id) ─────────────────────────────
+  const [
+    familiesRes, familyPrefsRes, familySettingsRes, membersRes, compositionRes,
+    memberRestrictionsRes, groupsRes, accountsRes, iofSettingsRes,
+    categoriesRes, payeesRes, objectivesRes, txRes, budgetsRes, schedRes,
+    priceItemsRes, priceStoresRes, debtsRes, groceryListsRes,
+    invPositionsRes, dreamsRes, loyaltyProgramsRes, aiSnapshotsRes,
+    invPortfoliosRes, invWalletsRes, familyInvitesRes,
+    agentConvRes, chatPendingRes, schedNotifLogsRes,
+  ] = await Promise.all([
     sb.from('families').select('*').eq('id', fid).limit(1),
+    safe(sb.from('family_preferences').select('*').eq('family_id', fid)),
+    safe(qf('family_settings')),
     sb.from('family_members').select('*').eq('family_id', fid),
-    qf('family_composition').catch(() => ({ data: [] })),
-    qf('account_groups'),
+    safe(qf('family_composition')),
+    safe(qf('family_member_restrictions')),
+    safe(qf('account_groups')),
     qf('accounts'),
+    safe(sb.from('iof_settings').select('*').eq('family_id', fid)),
     qf('categories'),
     qf('payees'),
+    safe(qf('financial_objectives')),
     qf('transactions'),
     qf('budgets'),
     qf('scheduled_transactions'),
-    qf('price_items').catch(() => ({ data: [] })),
-    qf('price_stores').catch(() => ({ data: [] })),
-    qf('debts').catch(() => ({ data: [] })),
-    qf('grocery_lists').catch(() => ({ data: [] })),
-    qf('app_backups').catch(() => ({ data: [] })),
+    safe(qf('price_items')),
+    safe(qf('price_stores')),
+    safe(qf('debts')),
+    safe(qf('grocery_lists')),
+    safe(qf('investment_positions')),
+    safe(qf('dreams')),
+    safe(qf('loyalty_programs')),
+    safe(qf('ai_insight_snapshots')),
+    // Extra tables
+    safe(qf('investment_portfolios')),
+    safe(qf('investment_wallets')),
+    safe(qf('family_invites')),
+    safe(qf('agent_conversations')),
+    safe(qf('chat_pending_actions')),
+    safe(qf('scheduled_notification_logs')),
   ]);
 
   const scheduledIds    = _arr(schedRes.data).map(r => r.id);
@@ -135,81 +190,107 @@ async function _collectFamilyBackupPayload(fid) {
   const priceStoreIds   = _arr(priceStoresRes.data).map(r => r.id);
   const debtIds         = _arr(debtsRes.data).map(r => r.id);
   const groceryListIds  = _arr(groceryListsRes.data).map(r => r.id);
+  const invPositionIds  = _arr(invPositionsRes.data).map(r => r.id);
+  const invWalletIds    = _arr(invWalletsRes.data).map(r => r.id);
+  const dreamIds        = _arr(dreamsRes.data).map(r => r.id);
+  const loyaltyIds      = _arr(loyaltyProgramsRes.data).map(r => r.id);
+  const aiSnapshotIds   = _arr(aiSnapshotsRes.data).map(r => r.id);
 
-  // Secondary tables that depend on primary IDs
-  const [occRes, runLogRes, priceHistoryRes, debtLedgerRes,
-         invPositionsRes, invTxRes, invPriceRes, groceryItemsRes] = await Promise.all([
-    scheduledIds.length
-      ? sb.from('scheduled_occurrences').select('*').in('scheduled_id', scheduledIds)
-      : Promise.resolve({ data: [] }),
-    Promise.resolve(sb.from('scheduled_run_logs').select('*').or([
-      `family_id.eq.${fid}`,
-      scheduledIds.length   ? `scheduled_id.in.(${scheduledIds.join(',')})` : null,
-      transactionIds.length ? `transaction_id.in.(${transactionIds.join(',')})` : null,
-    ].filter(Boolean).join(','))).catch(() => ({ data: [] })),
-    (priceItemIds.length || priceStoreIds.length)
-      ? Promise.resolve(sb.from('price_history').select('*').or([
-          `family_id.eq.${fid}`,
-          priceItemIds.length  ? `item_id.in.(${priceItemIds.join(',')})` : null,
-          priceStoreIds.length ? `store_id.in.(${priceStoreIds.join(',')})` : null,
-        ].filter(Boolean).join(','))).catch(() => ({ data: [] }))
-      : Promise.resolve({ data: [] }),
-    debtIds.length
-      ? Promise.resolve(sb.from('debt_ledger').select('*').in('debt_id', debtIds)).catch(() => ({ data: [] }))
-      : Promise.resolve({ data: [] }),
-    // Investments — optional module
-    qf('investment_positions').catch(() => ({ data: [] })),
-    qf('investment_transactions').catch(() => ({ data: [] })),
-    qf('investment_price_history').catch(() => ({ data: [] })),
-    groceryListIds.length
-      ? Promise.resolve(sb.from('grocery_items').select('*').in('list_id', groceryListIds)).catch(() => ({ data: [] }))
-      : Promise.resolve({ data: [] }),
-  ]);
+  // ── Batch 2: Secondary tables (depend on primary IDs) ────────────────────
+  const inQ = (table, col, ids) => ids.length
+    ? safe(sb.from(table).select('*').in(col, ids))
+    : Promise.resolve({ data: [] });
 
-  // New modules — fetched separately (optional, won't break backup if missing)
-  const [dreamsRes, dreamItemsRes, dreamContribRes, aiSnapshotsRes, aiRecsRes, objectivesRes, familyPrefsRes, attachmentsRes] = await Promise.all([
-    qf('dreams').catch(() => ({ data: [] })),
-    qf('dream_items').catch(() => ({ data: [] })),
-    qf('dream_contributions').catch(() => ({ data: [] })),
-    qf('ai_insight_snapshots').catch(() => ({ data: [] })),
-    qf('ai_insight_recommendations').catch(() => ({ data: [] })),
-    qf('financial_objectives').catch(() => ({ data: [] })),
-    Promise.resolve(sb.from('family_preferences').select('*').eq('family_id', fid)).catch(() => ({ data: [] })),
-    qf('attachments').catch(() => ({ data: [] })),
+  const [
+    occRes, runLogRes, schedArRes,
+    priceHistoryRes, debtLedgerRes,
+    invTxRes, invPriceRes, groceryItemsRes,
+    dreamItemsRes, dreamContribRes, loyaltyTxRes,
+    aiRecsRes, aiSimsRes,
+    txReimbRes, attachmentsRes,
+    behaviorMemRes, invWalletPositionsRes,
+  ] = await Promise.all([
+    inQ('scheduled_occurrences',  'scheduled_id',  scheduledIds),
+    safe(sb.from('scheduled_run_logs').select('*').eq('family_id', fid)),
+    inQ('scheduled_ar_records',   'sc_id',         scheduledIds),
+    safe(sb.from('price_history').select('*').eq('family_id', fid)),
+    inQ('debt_ledger',            'debt_id',        debtIds),
+    inQ('investment_transactions','position_id',    invPositionIds),
+    inQ('investment_price_history','position_id',   invPositionIds),
+    inQ('grocery_items',          'list_id',        groceryListIds),
+    inQ('dream_items',            'dream_id',       dreamIds),
+    inQ('dream_contributions',    'dream_id',       dreamIds),
+    inQ('loyalty_transactions',   'program_id',     loyaltyIds),
+    inQ('ai_insight_recommendations','snapshot_id', aiSnapshotIds),
+    inQ('ai_insight_simulations', 'base_snapshot_id', aiSnapshotIds),
+    safe(sb.from('tx_reimbursements').select('*').eq('family_id', fid)),
+    safe(qf('attachments')),
+    safe(sb.from('user_behavior_memory').select('*').eq('family_id', fid)),
+    inQ('investment_wallet_positions', 'wallet_id', invWalletIds),
   ]);
 
   const payload = {
-    families:                 _arr(familiesRes.data),
-    family_members:           _arr(membersRes.data),
-    family_composition:       _arr(compositionRes.data),
-    account_groups:           _arr(groupsRes.data),
-    accounts:                 _arr(accountsRes.data),
-    categories:               _arr(categoriesRes.data),
-    payees:                   _arr(payeesRes.data),
-    transactions:             _arr(txRes.data),
-    budgets:                  _arr(budgetsRes.data),
-    scheduled_transactions:   _arr(schedRes.data),
-    scheduled_occurrences:    _arr(occRes.data),
-    scheduled_run_logs:       _arr(runLogRes.data),
-    price_items:              _arr(priceItemsRes.data),
-    price_stores:             _arr(priceStoresRes.data),
-    price_history:            _arr(priceHistoryRes.data),
-    debts:                    _arr(debtsRes.data),
-    debt_ledger:              _arr(debtLedgerRes.data),
-    investment_positions:     _arr(invPositionsRes.data),
-    investment_transactions:  _arr(invTxRes.data),
-    investment_price_history: _arr(invPriceRes.data),
-    grocery_lists:            _arr(groceryListsRes.data),
-    grocery_items:            _arr(groceryItemsRes.data),
-    // New modules (graceful fallback if tables don't exist)
-    dreams:                   _arr(dreamsRes?.data),
-    dream_items:              _arr(dreamItemsRes?.data),
-    dream_contributions:      _arr(dreamContribRes?.data),
-    ai_insight_snapshots:     _arr(aiSnapshotsRes?.data),
-    ai_insight_recommendations:_arr(aiRecsRes?.data),
-    financial_objectives:     _arr(objectivesRes?.data),
-    family_preferences:       _arr(familyPrefsRes?.data),
-    attachments:              _arr(attachmentsRes?.data),
+    // Core
+    families:                   _arr(familiesRes.data),
+    family_preferences:         _arr(familyPrefsRes.data),
+    family_settings:            _arr(familySettingsRes.data),
+    family_members:             _arr(membersRes.data),
+    family_composition:         _arr(compositionRes.data),
+    family_member_restrictions: _arr(memberRestrictionsRes.data),
+    // Accounts
+    account_groups:             _arr(groupsRes.data),
+    accounts:                   _arr(accountsRes.data),
+    iof_settings:               _arr(iofSettingsRes.data),
+    // Finance
+    categories:                 _arr(categoriesRes.data),
+    payees:                     _arr(payeesRes.data),
+    financial_objectives:       _arr(objectivesRes.data),
+    transactions:               _arr(txRes.data),
+    tx_reimbursements:          _arr(txReimbRes.data),
+    budgets:                    _arr(budgetsRes.data),
+    // Scheduled
+    scheduled_transactions:     _arr(schedRes.data),
+    scheduled_occurrences:      _arr(occRes.data),
+    scheduled_run_logs:         _arr(runLogRes.data),
+    scheduled_ar_records:       _arr(schedArRes.data),
+    // Prices
+    price_items:                _arr(priceItemsRes.data),
+    price_stores:               _arr(priceStoresRes.data),
+    price_history:              _arr(priceHistoryRes.data),
+    grocery_lists:              _arr(groceryListsRes.data),
+    grocery_items:              _arr(groceryItemsRes.data),
+    // Debts
+    debts:                      _arr(debtsRes.data),
+    debt_ledger:                _arr(debtLedgerRes.data),
+    // Investments
+    investment_positions:       _arr(invPositionsRes.data),
+    investment_transactions:    _arr(invTxRes.data),
+    investment_price_history:   _arr(invPriceRes.data),
+    // Dreams
+    dreams:                     _arr(dreamsRes.data),
+    dream_items:                _arr(dreamItemsRes.data),
+    dream_contributions:        _arr(dreamContribRes.data),
+    // Loyalty
+    loyalty_programs:           _arr(loyaltyProgramsRes.data),
+    loyalty_transactions:       _arr(loyaltyTxRes.data),
+    // AI
+    ai_insight_snapshots:       _arr(aiSnapshotsRes.data),
+    ai_insight_recommendations: _arr(aiRecsRes.data),
+    ai_insight_simulations:     _arr(aiSimsRes.data),
+    // Bot memory
+    user_behavior_memory:       _arr(behaviorMemRes.data),
+    // Attachments
+    attachments:                _arr(attachmentsRes.data),
+    // Investment portfolios / wallets
+    investment_portfolios:          _arr(invPortfoliosRes.data),
+    investment_wallets:             _arr(invWalletsRes.data),
+    investment_wallet_positions:    _arr(invWalletPositionsRes.data),
+    // Family invites & agent
+    family_invites:                 _arr(familyInvitesRes.data),
+    agent_conversations:            _arr(agentConvRes.data),
+    chat_pending_actions:           _arr(chatPendingRes.data),
+    // Scheduled notifications
+    scheduled_notification_logs:    _arr(schedNotifLogsRes.data),
   };
 
   const counts = {};
@@ -219,7 +300,7 @@ async function _collectFamilyBackupPayload(fid) {
   counts.accounts = counts.accounts || 0;
   counts.categories = counts.categories || 0;
 
-  return { payload, counts, backupsRes };
+  return { payload, counts };
 }
 
 function _backupHeader(fid, counts) {
@@ -492,20 +573,57 @@ async function _validateBackupForRestore(backup, title = 'Pré-validar restore')
 function _showRestoreSectionSelector(backup) {
   const data = backup?.data || {};
   const sections = [
-    ['families', 'Família'],
-    ['family_members', 'Membros da família'],
-    ['account_groups', 'Grupos de conta'],
-    ['accounts', 'Contas'],
-    ['categories', 'Categorias'],
-    ['payees', 'Beneficiários'],
-    ['transactions', 'Transações'],
-    ['budgets', 'Orçamentos'],
-    ['scheduled_transactions', 'Programados'],
-    ['scheduled_occurrences', 'Ocorrências dos programados'],
-    ['scheduled_run_logs', 'Logs dos programados'],
-    ['price_items', 'Itens de preço'],
-    ['price_stores', 'Lojas'],
-    ['price_history', 'Histórico de preços'],
+    // Core
+    ['families',                  '🏠 Família'],
+    ['family_preferences',        '⚙️ Preferências da família'],
+    ['family_settings',           '🔑 Configurações (Gemini, etc.)'],
+    ['family_members',            '👥 Membros'],
+    ['family_composition',        '👨‍👩‍👧 Composição familiar'],
+    ['family_member_restrictions','🔐 Controle de acesso'],
+    // Accounts
+    ['account_groups',            '🗂️ Grupos de conta'],
+    ['accounts',                  '🏦 Contas'],
+    ['iof_settings',              '📋 Configurações de IOF'],
+    // Finance
+    ['categories',                '🏷️ Categorias'],
+    ['payees',                    '🏪 Beneficiários'],
+    ['financial_objectives',      '🎯 Objetivos financeiros'],
+    ['transactions',              '💸 Transações'],
+    ['tx_reimbursements',         '🔄 Reembolsos'],
+    ['budgets',                   '📊 Orçamentos'],
+    // Scheduled
+    ['scheduled_transactions',    '🗓️ Programados'],
+    ['scheduled_occurrences',     '🗓️ Ocorrências dos programados'],
+    ['scheduled_run_logs',        '📋 Logs dos programados'],
+    ['scheduled_ar_records',      '📬 Contas a receber (programados)'],
+    // Prices & Grocery
+    ['price_items',               '🏷️ Itens de preço'],
+    ['price_stores',              '🏪 Lojas'],
+    ['price_history',             '📈 Histórico de preços'],
+    ['grocery_lists',             '🛒 Listas de mercado'],
+    ['grocery_items',             '🛒 Itens de mercado'],
+    // Debts
+    ['debts',                     '💳 Dívidas'],
+    ['debt_ledger',               '📒 Lançamentos de dívidas'],
+    // Investments
+    ['investment_positions',      '📈 Posições de investimento'],
+    ['investment_transactions',   '📈 Movimentações de investimento'],
+    ['investment_price_history',  '📈 Histórico de preços de ativos'],
+    // Dreams
+    ['dreams',                    '🌟 Sonhos e metas'],
+    ['dream_items',               '🌟 Itens dos sonhos'],
+    ['dream_contributions',       '🌟 Contribuições aos sonhos'],
+    // Loyalty
+    ['loyalty_programs',          '🎯 Programas de fidelidade'],
+    ['loyalty_transactions',      '🎯 Transações de fidelidade'],
+    // AI
+    ['ai_insight_snapshots',      '🤖 Snapshots de IA'],
+    ['ai_insight_recommendations','🤖 Recomendações de IA'],
+    ['ai_insight_simulations',    '🤖 Simulações de IA'],
+    // Bot
+    ['user_behavior_memory',      '🧠 Memória do bot (Telegram)'],
+    // Attachments
+    ['attachments',               '📎 Anexos'],
   ];
 
   const available = sections.map(([key, label]) => ({
@@ -515,22 +633,22 @@ function _showRestoreSectionSelector(backup) {
   })).filter(s => s.count > 0);
 
   if (!available.length) {
-    return Promise.resolve({
-      families: true,
-      family_members: true,
-      account_groups: true,
-      accounts: true,
-      categories: true,
-      payees: true,
-      transactions: true,
-      budgets: true,
-      scheduled_transactions: true,
-      scheduled_occurrences: true,
-      scheduled_run_logs: true,
-      price_items: true,
-      price_stores: true,
-      price_history: true,
-    });
+    // All sections enabled by default
+    return Promise.resolve(Object.fromEntries([
+      'families','family_preferences','family_settings',
+      'family_members','family_composition','family_member_restrictions',
+      'account_groups','accounts','iof_settings',
+      'categories','payees','financial_objectives',
+      'transactions','tx_reimbursements','budgets',
+      'scheduled_transactions','scheduled_occurrences','scheduled_run_logs','scheduled_ar_records',
+      'price_items','price_stores','price_history','grocery_lists','grocery_items',
+      'debts','debt_ledger',
+      'investment_positions','investment_transactions','investment_price_history',
+      'dreams','dream_items','dream_contributions',
+      'loyalty_programs','loyalty_transactions',
+      'ai_insight_snapshots','ai_insight_recommendations','ai_insight_simulations',
+      'user_behavior_memory','attachments',
+    ].map(k => [k, true])));
   }
 
   return new Promise(resolve => {
@@ -579,7 +697,7 @@ function _showRestoreSectionSelector(backup) {
     const boxes = () => Array.from(wrap.querySelectorAll('input[type="checkbox"][data-key]'));
     const setAll = (v) => boxes().forEach(cb => { cb.checked = v; });
     const setCore = () => {
-      const core = new Set(['account_groups','accounts','categories','payees']);
+      const core = new Set(['families','family_preferences','account_groups','accounts','categories','payees','financial_objectives']);
       boxes().forEach(cb => { cb.checked = core.has(cb.dataset.key); });
     };
     const close = (v) => { wrap.remove(); resolve(v); };
@@ -603,108 +721,156 @@ function _showRestoreSectionSelector(backup) {
 }
 
 async function _restoreBackupData(d, statusEl, options = {}) {
-  const rowsByTable = {
-    families: _backupTableRows(d, 'families'),
-    family_members: _backupTableRows(d, 'family_members'),
-    account_groups: _backupTableRows(d, 'account_groups'),
-    accounts: _backupTableRows(d, 'accounts'),
-    categories: _backupTableRows(d, 'categories'),
-    payees: _backupTableRows(d, 'payees'),
-    transactions: _backupTableRows(d, 'transactions'),
-    budgets: _backupTableRows(d, 'budgets'),
-    scheduled_transactions: _backupTableRows(d, 'scheduled_transactions'),
-    scheduled_occurrences: _backupTableRows(d, 'scheduled_occurrences'),
-    scheduled_run_logs: _backupTableRows(d, 'scheduled_run_logs'),
-    price_items: _backupTableRows(d, 'price_items'),
-    price_stores: _backupTableRows(d, 'price_stores'),
-    price_history: _backupTableRows(d, 'price_history'),
-  };
+  // Build a helper — opt(key) returns true unless explicitly set to false
+  const opt = (k) => options[k] !== false;
+  const st  = (m) => _backupStatus(statusEl, m, 'var(--muted)');
+  const rows = (t) => opt(t) ? _backupTableRows(d, t) : [];
 
-  const restore = {
-    families: options.families ?? true,
-    family_members: options.family_members ?? true,
-    account_groups: options.account_groups ?? true,
-    accounts: options.accounts ?? true,
-    categories: options.categories ?? true,
-    payees: options.payees ?? true,
-    transactions: options.transactions ?? true,
-    budgets: options.budgets ?? true,
-    scheduled_transactions: options.scheduled_transactions ?? true,
-    scheduled_occurrences: options.scheduled_occurrences ?? true,
-    scheduled_run_logs: options.scheduled_run_logs ?? true,
-    price_items: options.price_items ?? true,
-    price_stores: options.price_stores ?? true,
-    price_history: options.price_history ?? true,
-  };
-
-  const categoriesBase = restore.categories
-    ? rowsByTable.categories.map(r => ({ ...r, parent_id: null }))
-    : [];
-  const categoriesParents = restore.categories
-    ? rowsByTable.categories.filter(r => _nonnull(r.parent_id)).map(r => ({ id: r.id, parent_id: r.parent_id, updated_at: r.updated_at || new Date().toISOString() }))
-    : [];
-  const txBase = restore.transactions
-    ? rowsByTable.transactions.map(r => ({ ...r, linked_transfer_id: null, transfer_pair_id: null }))
-    : [];
-  const txLinks = restore.transactions
-    ? rowsByTable.transactions.filter(r => _nonnull(r.linked_transfer_id) || _nonnull(r.transfer_pair_id)).map(r => ({ id: r.id, linked_transfer_id: r.linked_transfer_id || null, transfer_pair_id: r.transfer_pair_id || null, updated_at: r.updated_at || new Date().toISOString() }))
-    : [];
-
-  const plan = [
-    ['families', restore.families ? rowsByTable.families : []],
-    ['account_groups', restore.account_groups ? rowsByTable.account_groups : []],
-    ['accounts', restore.accounts ? rowsByTable.accounts : []],
-    ['categories', categoriesBase],
-    ['payees', restore.payees ? rowsByTable.payees : []],
-    ['budgets', restore.budgets ? rowsByTable.budgets : []],
-    ['scheduled_transactions', restore.scheduled_transactions ? rowsByTable.scheduled_transactions : []],
-    ['transactions', txBase],
-    ['scheduled_occurrences', restore.scheduled_occurrences ? rowsByTable.scheduled_occurrences : []],
-    ['scheduled_run_logs', restore.scheduled_run_logs ? rowsByTable.scheduled_run_logs : []],
-    ['price_items', restore.price_items ? rowsByTable.price_items : []],
-    ['price_stores', restore.price_stores ? rowsByTable.price_stores : []],
-    ['price_history', restore.price_history ? rowsByTable.price_history : []],
-  ];
-
-  for (const [table, rows] of plan) {
-    if (!rows.length) continue;
-    for (const chunk of _chunk(rows, 200)) {
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 1 — Families + config (no dependencies)
+  // ────────────────────────────────────────────────────────────────────────
+  const upsert = async (table, data, label) => {
+    if (!data.length) return;
+    for (const chunk of _chunk(data, 200)) {
       const { error } = await sb.from(table).upsert(chunk, { ignoreDuplicates: false });
-      if (error) throw new Error(`${table}: ${error.message}`);
+      if (error) throw new Error(`${label ?? table}: ${error.message}`);
     }
-    _backupStatus(statusEl, `✓ ${table} ok...`, 'var(--muted)');
-  }
+    st(`✓ ${label ?? table} (${data.length})...`);
+  };
 
-  if (categoriesParents.length) {
-    for (const item of categoriesParents) {
+  await upsert('families', rows('families'));
+  await upsert('family_preferences', rows('family_preferences'));
+  await upsert('family_settings',    rows('family_settings'));
+  await upsert('iof_settings',       rows('iof_settings').map(r => ({ ...r })));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 2 — Accounts & Categories (independent)
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('account_groups', rows('account_groups'));
+  await upsert('accounts',       rows('accounts'));
+
+  // Categories: base first (parent_id = null), then restore links
+  const catRows = rows('categories');
+  const catBase    = catRows.map(r => ({ ...r, parent_id: null }));
+  const catParents = catRows.filter(r => _nonnull(r.parent_id))
+                           .map(r => ({ id: r.id, parent_id: r.parent_id, updated_at: r.updated_at || new Date().toISOString() }));
+  await upsert('categories', catBase, 'categories (base)');
+  if (catParents.length) {
+    for (const item of catParents) {
       const { error } = await sb.from('categories').update({ parent_id: item.parent_id, updated_at: item.updated_at }).eq('id', item.id);
       if (error) throw new Error(`categories(parent_id): ${error.message}`);
     }
+    st(`✓ categories parent links (${catParents.length})...`);
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 3 — Payees, Objectives, Financial (depend on accounts+categories)
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('payees',               rows('payees'));
+  await upsert('financial_objectives', rows('financial_objectives'));
+
+  // Transactions: base first (no self-references), then restore links
+  const txRows = rows('transactions');
+  const txBase  = txRows.map(r => ({ ...r, linked_transfer_id: null, transfer_pair_id: null }));
+  const txLinks = txRows.filter(r => _nonnull(r.linked_transfer_id) || _nonnull(r.transfer_pair_id))
+                        .map(r => ({ id: r.id, linked_transfer_id: r.linked_transfer_id || null, transfer_pair_id: r.transfer_pair_id || null, updated_at: r.updated_at || new Date().toISOString() }));
+  await upsert('transactions', txBase, 'transactions (base)');
   if (txLinks.length) {
     for (const item of txLinks) {
       const { error } = await sb.from('transactions').update({ linked_transfer_id: item.linked_transfer_id, transfer_pair_id: item.transfer_pair_id, updated_at: item.updated_at }).eq('id', item.id);
       if (error) throw new Error(`transactions(links): ${error.message}`);
     }
+    st(`✓ transactions transfer links (${txLinks.length})...`);
+  }
+  await upsert('tx_reimbursements', rows('tx_reimbursements'));
+  await upsert('budgets',           rows('budgets'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 4 — Scheduled
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('scheduled_transactions', rows('scheduled_transactions'));
+  await upsert('scheduled_occurrences',  rows('scheduled_occurrences'));
+  await upsert('scheduled_run_logs',     rows('scheduled_run_logs'));
+  await upsert('scheduled_ar_records',   rows('scheduled_ar_records'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 5 — Prices & Grocery
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('price_items',   rows('price_items'));
+  await upsert('price_stores',  rows('price_stores'));
+  await upsert('price_history', rows('price_history'));
+  await upsert('grocery_lists', rows('grocery_lists'));
+  await upsert('grocery_items', rows('grocery_items'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 6 — Debts
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('debts',       rows('debts'));
+  await upsert('debt_ledger', rows('debt_ledger'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 7 — Investments
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('investment_positions',     rows('investment_positions'));
+  await upsert('investment_transactions',  rows('investment_transactions'));
+  await upsert('investment_price_history', rows('investment_price_history'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 8 — Dreams
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('dreams',             rows('dreams'));
+  await upsert('dream_items',        rows('dream_items'));
+  await upsert('dream_contributions',rows('dream_contributions'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 9 — Loyalty
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('loyalty_programs',    rows('loyalty_programs'));
+  await upsert('loyalty_transactions',rows('loyalty_transactions'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 10 — AI
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('ai_insight_snapshots',      rows('ai_insight_snapshots'));
+  await upsert('ai_insight_recommendations',rows('ai_insight_recommendations'));
+  await upsert('ai_insight_simulations',    rows('ai_insight_simulations'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 11 — User-scoped (only for users that exist in this DB)
+  // ────────────────────────────────────────────────────────────────────────
+  const behaviorRows = rows('user_behavior_memory');
+  if (behaviorRows.length) {
+    const userIds = [...new Set(behaviorRows.map(r => r.user_id).filter(_nonnull))];
+    const existingUserSet = new Set();
+    for (const chunk of _chunk(userIds, 200)) {
+      const { data: found } = await sb.from('app_users').select('id').in('id', chunk);
+      (found || []).forEach(r => existingUserSet.add(r.id));
+    }
+    const safeBehavior = behaviorRows.filter(r => existingUserSet.has(r.user_id));
+    await upsert('user_behavior_memory', safeBehavior, 'user_behavior_memory');
   }
 
-  const members = restore.family_members ? rowsByTable.family_members : [];
-  if (members.length) {
-    const ids = [...new Set(members.map(r => r.user_id).filter(_nonnull))];
-    const existingUserIds = new Set();
-    for (const chunk of _chunk(ids, 200)) {
-      const { data } = await sb.from('app_users').select('id').in('id', chunk);
-      (data || []).forEach(r => existingUserIds.add(r.id));
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 12 — Family members & access control (need user existence check)
+  // ────────────────────────────────────────────────────────────────────────
+  const memberRows = rows('family_members');
+  if (memberRows.length) {
+    const userIds = [...new Set(memberRows.map(r => r.user_id).filter(_nonnull))];
+    const existingUserSet = new Set();
+    for (const chunk of _chunk(userIds, 200)) {
+      const { data: found } = await sb.from('app_users').select('id').in('id', chunk);
+      (found || []).forEach(r => existingUserSet.add(r.id));
     }
-    const safeMembers = members.filter(r => existingUserIds.has(r.user_id));
-    if (safeMembers.length) {
-      for (const chunk of _chunk(safeMembers, 200)) {
-        const { error } = await sb.from('family_members').upsert(chunk, { ignoreDuplicates: false });
-        if (error) throw new Error(`family_members: ${error.message}`);
-      }
-    }
+    const safeMembers = memberRows.filter(r => existingUserSet.has(r.user_id));
+    await upsert('family_members', safeMembers, 'family_members');
   }
+  await upsert('family_composition', rows('family_composition'));
+  await upsert('family_member_restrictions', rows('family_member_restrictions'));
+
+  // ────────────────────────────────────────────────────────────────────────
+  // PHASE 13 — Attachments
+  // ────────────────────────────────────────────────────────────────────────
+  await upsert('attachments', rows('attachments'));
 }
 
 async function _reloadAfterRestore() {
@@ -1347,16 +1513,56 @@ async function exportAllExcelZip() {
 
     // 2. Definir tabelas a exportar
     const TABLES = [
-      { key: 'transactions',          label: 'Transações',          select: '*, payees(name), categories(name,type), accounts(name,currency)' },
-      { key: 'accounts',              label: 'Contas',              select: '*' },
-      { key: 'categories',            label: 'Categorias',          select: '*' },
-      { key: 'payees',                label: 'Beneficiários',       select: '*' },
-      { key: 'budgets',               label: 'Orçamentos',          select: '*, categories(name)' },
-      { key: 'scheduled_transactions',label: 'Programados',         select: '*' },
-      { key: 'investment_positions',  label: 'Investimentos',       select: '*' },
-      { key: 'investment_transactions',label:'Movim. Investimentos',select: '*' },
-      { key: 'debts',                 label: 'Dívidas',             select: '*' },
-      { key: 'dreams',                label: 'Sonhos',              select: '*' },
+      // Finance
+      { key: 'transactions',              label: 'Transações',             select: '*, payees(name), categories(name,type), accounts(name,currency)' },
+      { key: 'accounts',                  label: 'Contas',                 select: '*' },
+      { key: 'account_groups',            label: 'Grupos de Conta',        select: '*' },
+      { key: 'categories',                label: 'Categorias',             select: '*' },
+      { key: 'payees',                    label: 'Beneficiários',          select: '*' },
+      { key: 'budgets',                   label: 'Orçamentos',             select: '*, categories(name)' },
+      { key: 'financial_objectives',      label: 'Objetivos',              select: '*' },
+      { key: 'tx_reimbursements',         label: 'Reembolsos',             select: '*' },
+      // Scheduled
+      { key: 'scheduled_transactions',    label: 'Programados',            select: '*' },
+      { key: 'scheduled_occurrences',     label: 'Ocorrências Programadas',select: '*' },
+      { key: 'scheduled_ar_records',      label: 'A Receber',              select: '*' },
+      // Prices & Grocery
+      { key: 'price_items',               label: 'Itens Rastreados',       select: '*' },
+      { key: 'price_stores',              label: 'Lojas de Preço',         select: '*' },
+      { key: 'price_history',             label: 'Histórico de Preços',    select: '*' },
+      { key: 'grocery_lists',             label: 'Listas de Mercado',      select: '*' },
+      { key: 'grocery_items',             label: 'Itens de Mercado',       select: '*' },
+      // Debts
+      { key: 'debts',                     label: 'Dívidas',                select: '*' },
+      { key: 'debt_ledger',               label: 'Lançamentos de Dívidas', select: '*' },
+      // Investments
+      { key: 'investment_positions',      label: 'Posições Investimento',  select: '*' },
+      { key: 'investment_transactions',   label: 'Movim. Investimento',    select: '*' },
+      { key: 'investment_price_history',  label: 'Histórico Ativos',       select: '*' },
+      // Dreams
+      { key: 'dreams',                    label: 'Sonhos e Metas',         select: '*' },
+      { key: 'dream_items',               label: 'Itens dos Sonhos',       select: '*' },
+      { key: 'dream_contributions',       label: 'Contribuições Sonhos',   select: '*' },
+      // Loyalty
+      { key: 'loyalty_programs',          label: 'Programas Fidelidade',   select: '*' },
+      { key: 'loyalty_transactions',      label: 'Transações Fidelidade',  select: '*' },
+      // Investment portfolios/wallets
+      { key: 'investment_portfolios',     label: 'Carteiras Invest.',      select: '*' },
+      { key: 'investment_wallets',        label: 'Wallets Invest.',        select: '*' },
+      // investment_wallet_positions is a join table (no family_id) — skipped
+      // Agent & chat
+      { key: 'agent_conversations',       label: 'Conversas Bot',          select: '*' },
+      { key: 'chat_pending_actions',      label: 'Chat Pendentes',         select: '*' },
+      // Notifications
+      { key: 'scheduled_notification_logs', label: 'Log Notificações',     select: '*' },
+      // Family
+      { key: 'family_invites',            label: 'Convites',               select: '*' },
+      { key: 'family_composition',        label: 'Composição Familiar',    select: '*' },
+      { key: 'family_member_restrictions', label: 'Restrições de Acesso',  select: '*' },
+      { key: 'iof_settings',              label: 'Configurações IOF',      select: '*', noOrder: true },
+      { key: 'ai_insight_snapshots',      label: 'IA Snapshots',           select: '*' },
+      { key: 'ai_insight_recommendations', label: 'IA Recomendações',      select: '*' },
+      { key: 'user_behavior_memory',      label: 'Memória Comportamental', select: '*' },
     ];
 
     const zip = new JSZip();
@@ -1370,9 +1576,11 @@ async function exportAllExcelZip() {
       setProgress(pct, `Exportando ${t.label}…`);
 
       try {
-        const { data, error } = await famQ(
-          sb.from(t.key).select(t.select)
-        ).order('created_at', { ascending: false }).limit(50000);
+        let q = famQ(sb.from(t.key).select(t.select));
+        if (!t.noOrder) {
+          try { q = q.order('created_at', { ascending: false }); } catch(_) {}
+        }
+        const { data, error } = await q.limit(50000);
 
         if (error) { console.warn(`[export] ${t.key}:`, error.message); continue; }
         if (!data?.length) continue;

@@ -1338,165 +1338,911 @@ function closeUserMenu() {
 /* ── Chat Tx toggle — Transações por Chat (Telegram / WhatsApp) ──────────── */
 
 function _refreshChatTxToggle() {
-  const track  = document.getElementById('chatTxToggleTrack');
-  const logBtn = document.getElementById('chatTxLogBtn');
+  const track     = document.getElementById('chatTxToggleTrack');
+
+  const toggleBtn = document.getElementById('chatTxToggleBtn');
   if (!track) return;
-  const enabled = currentUser?.chat_tx_enabled !== false; // default true
-  track.style.background = enabled ? 'var(--accent)' : '';
-  track.classList.toggle('active', enabled);
-  if (logBtn) logBtn.style.display = enabled ? '' : 'none';
+
+  const enabled     = currentUser?.chat_tx_enabled !== false;
+  const hasTelegram = !!(currentUser?.telegram_chat_id?.trim());
+  const hasWhatsApp = !!(currentUser?.whatsapp_number?.trim());
+  const hasChannel  = hasTelegram || hasWhatsApp;
+
+  track.style.background = enabled && hasChannel ? 'var(--accent)' : '';
+  track.classList.toggle('active', enabled && hasChannel);
+
+  // Show lock icon when no channel configured
+  if (toggleBtn) {
+    const icon = toggleBtn.querySelector('.dark-mode-icon');
+    if (icon) icon.textContent = hasChannel ? '💬' : '🔒';
+    toggleBtn.title = hasChannel
+      ? 'Ativar ou desativar transações via Telegram/WhatsApp'
+      : 'Configure Telegram ou WhatsApp no perfil para usar esta função';
+    toggleBtn.style.opacity = hasChannel ? '' : '0.55';
+  }
+
+
+  // Refresh pending chat badge
+  setTimeout(() => {
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+  }, 800);
 }
 
 /* ── Histórico de transações criadas via chat ─────────────────────────────── */
-async function openChatTxLog() {
-  document.getElementById('chatTxLogModal')?.remove();
 
-  const html = `
-  <div class="modal-overlay open" id="chatTxLogModal"
-    onclick="if(event.target===this)closeModal('chatTxLogModal')">
-    <div class="modal" style="max-width:520px;max-height:90dvh;display:flex;flex-direction:column">
-      <div class="modal-handle"></div>
-      <div class="modal-header">
-        <span class="modal-title">💬 Histórico via Chat</span>
-        <button class="modal-close" onclick="closeModal('chatTxLogModal')">✕</button>
-      </div>
-      <div class="modal-body" style="flex:1;overflow-y:auto;padding:0" id="chatTxLogBody">
-        <div style="padding:24px;text-align:center;color:var(--muted);font-size:.82rem">⏳ Carregando…</div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal('chatTxLogModal')">Fechar</button>
-      </div>
-    </div>
-  </div>`;
 
-  document.body.insertAdjacentHTML('beforeend', html);
-  const body = document.getElementById('chatTxLogBody');
+// ══════════════════════════════════════════════════════════════════════════════
+// CHAT TRANSACTION VALIDATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT VALIDATION MODAL
+// Permite ao usuário revisar, corrigir e confirmar transações criadas via chat.
+// Campos editáveis: categoria (hierárquica + busca), conta, beneficiário
+// (busca + criação inline) e membro da família.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function openChatValidation() {
+  openModal('chatValidationModal');
+  await _cvLoad();
+}
+
+// ── Helpers de dados ──────────────────────────────────────────────────────────
+function _cvGetCats() {
+  const cats = (state.categories || []).filter(c => !c.is_archived);
+  // Build hierarchical structure
+  const parents  = cats.filter(c => !c.parent_id);
+  const children = cats.filter(c =>  c.parent_id);
+  const result = [];
+  parents.forEach(p => {
+    result.push({ ...p, _depth: 0 });
+    children.filter(c => c.parent_id === p.id)
+      .forEach(c => result.push({ ...c, _depth: 1, _parentName: p.name }));
+  });
+  // Orphan children (parent not in list)
+  children.filter(c => !parents.find(p => p.id === c.parent_id))
+    .forEach(c => result.push({ ...c, _depth: 0 }));
+  return result;
+}
+
+function _cvGetAccs() {
+  return (state.accounts || []).filter(a => !a.is_archived && a.active !== false);
+}
+
+function _cvGetPayees() {
+  return (state.payees || []).filter(p => p.active !== false);
+}
+
+function _cvGetMembers() {
+  // Try _fmc.members first, then family_members in state, then fallback to current user
+  const fromFmc = (typeof _fmc !== 'undefined' && _fmc.members?.length) ? _fmc.members : null;
+  if (fromFmc) return fromFmc;
+  return [];
+}
+
+// ── Load & render ──────────────────────────────────────────────────────────────
+async function _cvLoad() {
+  const body = document.getElementById('chatValidationBody');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-size:.84rem">⏳ Carregando…</div>';
 
   try {
-    if (!sb || !currentUser?.id) throw new Error('Sessão não encontrada.');
+    const fid = typeof famId === 'function' ? famId() : null;
+    if (!fid || !sb) { body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted)">Não autenticado.</div>'; return; }
 
-    // Load last 50 chat pending actions for this user (all statuses)
-    const { data: actions, error } = await sb
-      .from('chat_pending_actions')
-      .select('id,status,parsed_payload,created_at,channel')
-      .eq('user_id', currentUser.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const { data: txs, error } = await sb.from('transactions')
+      .select('id,date,description,amount,currency,brl_amount,category_id,account_id,payee_id,family_member_id,memo,categories(id,name,icon),account:accounts!account_id(id,name),payees(id,name)')
+      .eq('family_id', fid).eq('source', 'chat').eq('status', 'pending')
+      .order('created_at', { ascending: false }).limit(50);
 
     if (error) throw error;
 
-    if (!actions?.length) {
-      body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:.83rem">Nenhuma transação via chat ainda.<br>Mande uma mensagem para o bot!</div>';
+    if (!txs || txs.length === 0) {
+      body.innerHTML = `
+        <div style="text-align:center;padding:48px 24px">
+          <div style="font-size:2.5rem;margin-bottom:12px">✅</div>
+          <div style="font-weight:700;font-size:.95rem;color:var(--text);margin-bottom:6px">Tudo validado!</div>
+          <div style="font-size:.8rem;color:var(--muted)">Nenhuma transação do chat aguardando validação.</div>
+        </div>`;
+      if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
       return;
     }
 
-    const E = typeof esc === 'function' ? esc : s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-    const F = typeof fmt === 'function' ? fmt : v => 'R$'+Number(v).toFixed(2);
-    const fmtDt = iso => {
-      try { return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); }
-      catch { return iso?.slice(0,16).replace('T',' ') || '—'; }
-    };
+    if (typeof _fmc !== 'undefined' && !_fmc.loaded && typeof loadFamilyComposition === 'function') {
+      await loadFamilyComposition().catch(() => {});
+    }
 
-    const statusConfig = {
-      confirmed: { label:'Confirmada', color:'#16a34a', bg:'rgba(22,163,74,.08)', icon:'✅' },
-      cancelled:  { label:'Cancelada',  color:'#dc2626', bg:'rgba(220,38,38,.08)', icon:'❌' },
-      pending:    { label:'Pendente',   color:'#d97706', bg:'rgba(217,119,6,.08)', icon:'⏳' },
-      expired:    { label:'Expirada',   color:'#9ca3af', bg:'rgba(156,163,175,.08)', icon:'⏱' },
-    };
+    const allCats    = _cvGetCats();
+    const allAccs    = _cvGetAccs();
+    const allPayees  = _cvGetPayees();
+    const allMembers = _cvGetMembers();
 
-    const rows = actions.map(a => {
-      const p   = a.parsed_payload || {};
-      const st  = statusConfig[a.status] || statusConfig.expired;
-      const amt = p.amount ? (p.type === 'income' ? '+' : '-') + F(Math.abs(p.amount)) : '—';
-      const amtColor = p.type === 'income' ? '#16a34a' : '#dc2626';
-      const ch  = a.channel === 'telegram' ? '✈️' : '💬';
-      const inferIcon = { parser:'📝', memory:'🧠', context:'🔄', ai:'🤖', image:'📷' }[p.inferred_by] || '❓';
+    // Store txs globally for pagination
+    window._cvTxs       = txs;
+    window._cvPageIndex = 0;
+    window._cvViewMode  = window._cvViewMode || 'list'; // 'list' | 'single'
+
+    _cvRender(body, allCats, allAccs, allPayees, allMembers);
+
+  } catch(e) {
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted)">⚠️ ${esc(e.message)}</div>`;
+  }
+}
+
+function _cvRender(body, allCats, allAccs, allPayees, allMembers) {
+  const txs   = window._cvTxs || [];
+  const mode  = window._cvViewMode || 'list';
+  const idx   = window._cvPageIndex || 0;
+  const E     = typeof esc === 'function' ? esc : s => s;
+  const fmtDt = d => d ? new Date(d + 'T12:00').toLocaleDateString('pt-BR') : '—';
+
+  const buildCard = (tx, compact) => {
+    const amt    = parseFloat(tx.brl_amount ?? tx.amount) || 0;
+    const isInc  = amt > 0;
+    const color  = isInc ? '#16a34a' : '#dc2626';
+    const sign   = isInc ? '+' : '−';
+    const fmtAmt = (typeof fmt === 'function' ? fmt : v => 'R$ ' + Math.abs(v).toFixed(2))(Math.abs(amt));
+    const dateStr    = fmtDt(tx.date);
+    const curCatName = tx.categories?.name  || '';
+    const curAccName = tx.account?.name     || '';
+    const curPyeName = tx.payees?.name      || '';
+    const curCatId   = tx.category_id  || '';
+    const curAccId   = tx.account_id   || '';
+    const curPyeId   = tx.payee_id     || '';
+    const curMemId   = tx.family_member_id || '';
+
+    // Extract image URL from memo field (format: "... · url")
+    const memoUrl = tx.memo?.match(/https:\/\/\S+\.(jpg|jpeg|png|webp)/i)?.[0] || null;
+
+    if (compact) {
+      // ── COMPACT ROW (list mode) ──────────────────────────────────────────
       return `
-      <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border)">
-        <div style="width:36px;height:36px;border-radius:9px;flex-shrink:0;
-          background:${st.bg};border:1px solid ${st.color}30;
-          display:flex;align-items:center;justify-content:center;font-size:1rem">
-          ${st.icon}
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-            <span style="font-size:.83rem;font-weight:700;color:var(--text);
-              overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-              ${E(p.description || '—')}
-            </span>
-            <span style="font-size:.6rem;padding:1px 5px;border-radius:6px;
-              background:${st.bg};color:${st.color};font-weight:700;flex-shrink:0">
-              ${st.label}
-            </span>
+        <div class="cv-card cv-compact" id="cv-${tx.id}" data-id="${tx.id}">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${memoUrl ? `<div onclick="event.stopPropagation();_cvViewImage('${memoUrl}')" style="width:40px;height:40px;flex-shrink:0;border-radius:8px;overflow:hidden;cursor:pointer;border:1.5px solid var(--border)">
+              <img src="${memoUrl}" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.parentElement.innerHTML='📄'">
+            </div>` : '<div style="width:40px;height:40px;flex-shrink:0;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:1.1rem">💬</div>'}
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:.95rem;font-weight:800;font-family:var(--font-serif);color:${color}">${sign}${fmtAmt}</span>
+                <span style="font-size:.82rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">${E(tx.description || '—')}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap">
+                <span style="font-size:.65rem;color:var(--muted)">${dateStr}</span>
+                ${curCatName ? `<span style="font-size:.65rem;padding:1px 6px;background:var(--accent-lt);color:var(--accent);border-radius:20px;font-weight:600">${E(curCatName)}</span>` : '<span style="font-size:.65rem;color:#f59e0b;font-weight:600">⚠ sem categoria</span>'}
+                ${curAccName ? `<span style="font-size:.65rem;color:var(--muted)">🏦 ${E(curAccName)}</span>` : '<span style="font-size:.65rem;color:#f59e0b">⚠ sem conta</span>'}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="cv-btn cv-btn-sm" onclick="event.stopPropagation();_cvExpandCard('${tx.id}')" title="Editar e confirmar" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:.72rem;font-weight:700;cursor:pointer;touch-action:manipulation">✏️</button>
+              <button class="cv-btn cv-btn-sm" onclick="event.stopPropagation();_cvQuickConfirm('${tx.id}')" title="Confirmar como está" style="background:rgba(22,163,74,.12);color:#16a34a;border:1.5px solid rgba(22,163,74,.25);border-radius:8px;padding:6px 10px;font-size:.72rem;font-weight:700;cursor:pointer;touch-action:manipulation">✅</button>
+              <button class="cv-btn cv-btn-sm" onclick="event.stopPropagation();_cvDismiss('${tx.id}')" title="Descartar" style="background:var(--surface2);color:var(--muted);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:.72rem;cursor:pointer;touch-action:manipulation">🗑</button>
+            </div>
           </div>
-          <div style="font-size:.67rem;color:var(--muted)">
-            ${ch} ${fmtDt(a.created_at)}
-            ${p.category_name ? ' · ' + E(p.category_name) : ''}
-            ${p.account_name  ? ' · ' + E(p.account_name)  : ''}
-            <span style="margin-left:4px">${inferIcon}</span>
+        </div>`;
+    }
+
+    // ── EXPANDED CARD (edit mode / single mode) ──────────────────────────────
+    const catOptsHtml = allCats.map(c => {
+      const prefix = c._depth ? '&nbsp;&nbsp;&nbsp;↳ ' : '';
+      return `<option value="${c.id}"${c.id === curCatId ? ' selected' : ''}>${prefix}${E(c.icon||'')} ${E(c.name)}</option>`;
+    }).join('');
+    const accOptsHtml = allAccs.map(a =>
+      `<option value="${a.id}"${a.id === curAccId ? ' selected' : ''}>${E(a.name)}</option>`
+    ).join('');
+    const memOptsHtml = ['<option value="">— Todos / não definido —</option>',
+      ...allMembers.map(m => `<option value="${m.id}"${m.id === curMemId ? ' selected' : ''}>${E(m.name)}${m.relation ? ' ('+E(m.relation)+')' : ''}</option>`)
+    ].join('');
+
+    return `
+      <div class="cv-card cv-expanded" id="cv-${tx.id}" data-id="${tx.id}">
+        ${memoUrl ? `
+        <div style="margin:-2px -2px 12px;border-radius:12px 12px 0 0;overflow:hidden;max-height:200px;background:#000;cursor:pointer" onclick="_cvViewImage('${memoUrl}')">
+          <img src="${memoUrl}" style="width:100%;max-height:200px;object-fit:contain;display:block" loading="lazy" onerror="this.parentElement.style.display='none'">
+          <div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:.65rem;padding:2px 7px;border-radius:20px">📸 Foto da nota</div>
+        </div>` : ''}
+        <div class="cv-card-top">
+          <div class="cv-amount" style="color:${color}">${sign}${fmtAmt}</div>
+          <input class="cv-desc-input" id="cv-desc-${tx.id}"
+            value="${E(tx.description || '')}" placeholder="Descrição…"
+            maxlength="100" autocomplete="off" title="Editar descrição">
+          <div class="cv-date">${dateStr}</div>
+          ${mode === 'list' ? `<button onclick="_cvCollapseCard('${tx.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0 4px">▲ Fechar</button>` : ''}
+        </div>
+        <div class="cv-fields">
+          <div class="cv-field cv-field-full">
+            <label class="cv-lbl">🏷️ Categoria</label>
+            <div class="cv-picker" id="cv-catpick-${tx.id}">
+              <input type="hidden" id="cv-cat-${tx.id}" value="${E(curCatId)}">
+              <div class="cv-picker-input" onclick="_cvTogglePicker(this)" tabindex="0"
+                   onkeydown="if(event.key==='Enter'||event.key===' ')_cvTogglePicker(this)">
+                <span id="cv-cat-label-${tx.id}" class="cv-picker-label">${curCatId ? E((allCats.find(c=>c.id===curCatId)||{}).icon||'') + ' ' + E(curCatName) : '— Sem categoria —'}</span>
+                <span class="cv-picker-arrow">▾</span>
+              </div>
+              <div class="cv-picker-drop" style="display:none">
+                <div class="cv-picker-search-wrap">
+                  <input class="cv-picker-search" placeholder="Buscar categoria…" oninput="_cvFilterCat(this,'${tx.id}')" autocomplete="off">
+                </div>
+                <div class="cv-picker-list" id="cv-cat-list-${tx.id}">
+                  <div class="cv-pick-opt cv-pick-none" data-val="" onclick="_cvPickCat('${tx.id}','','','— Sem categoria —')">— Sem categoria —</div>
+                  ${allCats.map(c => `<div class="cv-pick-opt${c._depth?' cv-pick-child':''}" data-val="${c.id}" data-label="${E(c.icon||'')} ${E(c.name)}" data-search="${(c._parentName||'') + ' ' + c.name}" onclick="_cvPickCat('${tx.id}','${c.id}','${E(c.icon||'')}','${E(c.name)}')">${c._depth?'<span class="cv-child-arrow">↳</span>':''}${c.icon?'<span>'+c.icon+'</span> ':''}${E(c.name)}</div>`).join('')}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="cv-field">
+            <label class="cv-lbl">🏦 Conta</label>
+            <select class="cv-sel" id="cv-acc-${tx.id}">${accOptsHtml}</select>
+          </div>
+          <div class="cv-field">
+            <label class="cv-lbl">👤 Membro</label>
+            <select class="cv-sel" id="cv-mem-${tx.id}">${memOptsHtml}</select>
+          </div>
+          <div class="cv-field cv-field-full">
+            <label class="cv-lbl">🏪 Beneficiário</label>
+            <div class="cv-picker" id="cv-pyepick-${tx.id}">
+              <input type="hidden" id="cv-pye-${tx.id}" value="${E(curPyeId)}">
+              <div class="cv-pye-search-wrap">
+                <input class="cv-sel" id="cv-pye-search-${tx.id}"
+                  placeholder="Buscar ou criar beneficiário…" value="${E(curPyeName)}"
+                  oninput="_cvFilterPye(this,'${tx.id}')"
+                  onfocus="_cvOpenPyeDrop('${tx.id}')" onblur="_cvBlurPye('${tx.id}')"
+                  autocomplete="off">
+                ${curPyeId ? `<button class="cv-pye-clear" onclick="_cvClearPye('${tx.id}')">×</button>` : ''}
+              </div>
+              <div class="cv-picker-drop" id="cv-pye-drop-${tx.id}" style="display:none">
+                <div class="cv-picker-list" id="cv-pye-list-${tx.id}">
+                  ${allPayees.map(p => `<div class="cv-pick-opt" data-id="${p.id}" onmousedown="_cvPickPye('${tx.id}','${p.id}','${E(p.name)}')">${E(p.name)}</div>`).join('')}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:.88rem;font-weight:800;color:${amtColor}">${amt}</div>
-          <div style="font-size:.62rem;color:var(--muted);margin-top:2px">${p.date || ''}</div>
+        <div class="cv-actions">
+          <button class="cv-btn cv-btn-dismiss" onclick="_cvDismiss('${tx.id}')">🗑 Descartar</button>
+          <button class="cv-btn cv-btn-confirm" onclick="_cvConfirm('${tx.id}')">✅ Confirmar</button>
         </div>
       </div>`;
-    }).join('');
+  };
 
-    // Summary stats
-    const total     = actions.length;
-    const confirmed = actions.filter(a => a.status === 'confirmed').length;
-    const cancelled = actions.filter(a => a.status === 'cancelled').length;
-    const pending   = actions.filter(a => a.status === 'pending').length;
+  // Header toolbar
+  const total = txs.length;
+  const isSingle = mode === 'single';
+  const cur = isSingle ? txs[idx] : null;
 
-    const summary = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)">
-      <div style="background:rgba(22,163,74,.07);border:1px solid rgba(22,163,74,.2);border-radius:9px;padding:8px;text-align:center">
-        <div style="font-size:1.1rem;font-weight:800;color:#16a34a">${confirmed}</div>
-        <div style="font-size:.63rem;color:var(--muted);font-weight:600">Confirmadas</div>
-      </div>
-      <div style="background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.2);border-radius:9px;padding:8px;text-align:center">
-        <div style="font-size:1.1rem;font-weight:800;color:#dc2626">${cancelled}</div>
-        <div style="font-size:.63rem;color:var(--muted);font-weight:600">Canceladas</div>
-      </div>
-      <div style="background:rgba(217,119,6,.07);border:1px solid rgba(217,119,6,.2);border-radius:9px;padding:8px;text-align:center">
-        <div style="font-size:1.1rem;font-weight:800;color:#d97706">${pending}</div>
-        <div style="font-size:.63rem;color:var(--muted);font-weight:600">Pendentes</div>
+  const headerHtml = `
+    <div style="padding:10px 16px 8px;border-bottom:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:.82rem;font-weight:700;color:var(--text);flex:1">${total} transaç${total===1?'ão':'ões'}</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button onclick="_cvSetMode('list')" style="font-size:.72rem;padding:4px 8px;border-radius:6px;border:1.5px solid ${!isSingle?'var(--accent)':'var(--border)'};background:${!isSingle?'var(--accent-lt)':'var(--surface)'};color:${!isSingle?'var(--accent)':'var(--muted)'};font-weight:700;cursor:pointer">📋 Lista</button>
+        <button onclick="_cvSetMode('single')" style="font-size:.72rem;padding:4px 8px;border-radius:6px;border:1.5px solid ${isSingle?'var(--accent)':'var(--border)'};background:${isSingle?'var(--accent-lt)':'var(--surface)'};color:${isSingle?'var(--accent)':'var(--muted)'};font-weight:700;cursor:pointer">1️⃣ Uma por vez</button>
+        <button onclick="_cvDismissAll()" style="font-size:.72rem;color:#dc2626;font-weight:700;background:none;border:none;cursor:pointer;padding:4px 6px">🗑 Todas</button>
       </div>
     </div>`;
 
-    body.innerHTML = summary + `<div style="padding:4px 0">${rows}</div>`;
-  } catch(e) {
-    if (body) body.innerHTML = `<div style="padding:20px;color:#dc2626;text-align:center;font-size:.82rem">❌ ${typeof esc==='function'?esc(e.message):e.message}</div>`;
+  let contentHtml;
+  if (isSingle) {
+    // Single card with prev/next navigation
+    contentHtml = `
+      <div style="padding:12px 16px">
+        ${buildCard(cur, false)}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+          <button onclick="_cvPrev()" ${idx===0?'disabled':''}
+            style="padding:8px 16px;border:1.5px solid var(--border);border-radius:9px;background:var(--surface);font-size:.8rem;font-weight:600;cursor:pointer;color:${idx===0?'var(--muted)':'var(--text)'}">← Anterior</button>
+          <span style="font-size:.75rem;color:var(--muted)">${idx+1} de ${total}</span>
+          <button onclick="_cvNext()" ${idx>=total-1?'disabled':''}
+            style="padding:8px 16px;border:1.5px solid var(--border);border-radius:9px;background:var(--surface);font-size:.8rem;font-weight:600;cursor:pointer;color:${idx>=total-1?'var(--muted)':'var(--text)'}">Próxima →</button>
+        </div>
+      </div>`;
+  } else {
+    // Compact list — all cards collapsed, click ✏️ to expand
+    contentHtml = `<div style="overflow-y:auto;max-height:60vh">${txs.map(tx => buildCard(tx, !window._cvExpanded?.has(tx.id))).join('')}</div>`;
+  }
+
+  // Style block (injected once)
+  const styleHtml = `<style>
+    .cv-card { border-bottom:1px solid var(--border); transition:background .12s; }
+    .cv-compact { padding:10px 14px; }
+    .cv-expanded { padding:14px 16px; position:relative; }
+    .cv-card:last-child { border-bottom:none; }
+    .cv-card-top { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+    .cv-amount { font-size:1.15rem; font-weight:800; font-family:var(--font-serif); flex-shrink:0; }
+    .cv-date { font-size:.72rem; color:var(--muted); flex-shrink:0; }
+    .cv-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+    .cv-field-full { grid-column:1/-1; }
+    @media (max-width:420px) { .cv-fields { grid-template-columns:1fr; } .cv-field-full { grid-column:1; } }
+    .cv-desc-input { flex:1; min-width:0; font-size:.88rem; font-weight:600; color:var(--text); background:transparent; border:none; border-bottom:1.5px solid transparent; padding:2px 4px; font-family:inherit; outline:none; transition:border-color .15s; }
+    .cv-desc-input:hover { border-bottom-color:var(--border); }
+    .cv-desc-input:focus { border-bottom-color:var(--accent); }
+    .cv-lbl { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); display:block; margin-bottom:3px; }
+    .cv-sel { width:100%; padding:7px 10px; border:1.5px solid var(--border); border-radius:8px; font-size:.8rem; font-family:inherit; background:var(--surface2); color:var(--text); touch-action:manipulation; }
+    .cv-sel:focus { outline:none; border-color:var(--accent); }
+    .cv-picker { position:relative; }
+    .cv-picker-input { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; border:1.5px solid var(--border); border-radius:8px; font-size:.8rem; background:var(--surface2); color:var(--text); cursor:pointer; user-select:none; }
+    .cv-picker-input:focus { outline:none; border-color:var(--accent); }
+    .cv-picker-input.open { border-color:var(--accent); border-radius:8px 8px 0 0; }
+    .cv-picker-arrow { color:var(--muted); font-size:.65rem; margin-left:6px; transition:transform .15s; }
+    .cv-picker-input.open .cv-picker-arrow { transform:rotate(180deg); }
+    .cv-picker-drop { position:absolute; top:100%; left:0; right:0; z-index:200; background:var(--surface); border:1.5px solid var(--accent); border-top:none; border-radius:0 0 8px 8px; box-shadow:0 6px 20px rgba(0,0,0,.14); }
+    .cv-picker-search-wrap { padding:6px 8px; border-bottom:1px solid var(--border); }
+    .cv-picker-search { width:100%; padding:5px 8px; border:1.5px solid var(--border); border-radius:6px; font-size:.78rem; font-family:inherit; background:var(--surface2); color:var(--text); }
+    .cv-picker-search:focus { outline:none; border-color:var(--accent); }
+    .cv-picker-list { max-height:180px; overflow-y:auto; }
+    .cv-pick-opt { padding:7px 12px; font-size:.8rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .cv-pick-opt:hover { background:var(--accent-lt,rgba(42,96,73,.08)); }
+    .cv-pick-child { padding-left:28px; color:var(--text2); font-size:.78rem; }
+    .cv-child-arrow { color:var(--muted); font-size:.65rem; }
+    .cv-pick-none { color:var(--muted); font-style:italic; }
+    .cv-pick-create { color:var(--accent); font-weight:700; }
+    .cv-pick-opt.cv-hidden { display:none; }
+    .cv-pye-search-wrap { position:relative; }
+    .cv-pye-clear { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:0 4px; }
+    .cv-actions { display:flex; gap:8px; }
+    .cv-btn { flex:1; padding:9px 12px; border-radius:9px; font-size:.8rem; font-weight:700; font-family:inherit; cursor:pointer; border:none; touch-action:manipulation; }
+    .cv-btn-dismiss { background:var(--surface2); color:var(--muted); border:1.5px solid var(--border); }
+    .cv-btn-dismiss:hover { background:#fef2f2; color:#dc2626; border-color:#dc2626; }
+    .cv-btn-confirm { background:var(--accent); color:#fff; }
+    .cv-btn-confirm:hover { opacity:.88; }
+    .cv-card.cv-removing { opacity:0; transform:translateX(60px); transition:all .3s ease; }
+  </style>`;
+
+  body.innerHTML = styleHtml + headerHtml + contentHtml;
+}
+
+// ── View mode / pagination helpers ────────────────────────────────────────
+function _cvSetMode(mode) {
+  window._cvViewMode  = mode;
+  window._cvPageIndex = 0;
+  window._cvExpanded  = new Set();
+  const body = document.getElementById('chatValidationBody');
+  if (!body) return;
+  _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+}
+function _cvNext() {
+  const total = (window._cvTxs || []).length;
+  if ((window._cvPageIndex || 0) < total - 1) {
+    window._cvPageIndex++;
+    const body = document.getElementById('chatValidationBody');
+    if (body) _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
   }
 }
-window.openChatTxLog = openChatTxLog;
+function _cvPrev() {
+  if ((window._cvPageIndex || 0) > 0) {
+    window._cvPageIndex--;
+    const body = document.getElementById('chatValidationBody');
+    if (body) _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+  }
+}
+function _cvExpandCard(txId) {
+  if (!window._cvExpanded) window._cvExpanded = new Set();
+  window._cvExpanded.add(txId);
+  const body = document.getElementById('chatValidationBody');
+  if (body) _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+  setTimeout(() => document.getElementById('cv-' + txId)?.scrollIntoView({ behavior:'smooth', block:'nearest' }), 50);
+}
+function _cvCollapseCard(txId) {
+  if (window._cvExpanded) window._cvExpanded.delete(txId);
+  const body = document.getElementById('chatValidationBody');
+  if (body) _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+}
+function _cvViewImage(url) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:16px';
+  overlay.onclick = () => overlay.remove();
+  overlay.innerHTML = `<img src="${url}" style="max-width:100%;max-height:90vh;border-radius:12px;object-fit:contain" onerror="this.parentElement.remove()">`;
+  document.body.appendChild(overlay);
+}
+async function _cvQuickConfirm(txId) {
+  // Confirm without editing — status only
+  const confirmBtn = document.querySelector(`#cv-${txId} .cv-btn-sm[onclick*="QuickConfirm"]`);
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '⏳'; }
+  try {
+    const { error } = await sb.from('transactions').update({
+      status: 'confirmed', updated_at: new Date().toISOString()
+    }).eq('id', txId);
+    if (error) throw error;
+    // Remove from local list
+    window._cvTxs = (window._cvTxs || []).filter(t => t.id !== txId);
+    if (window._cvPageIndex >= (window._cvTxs.length) && window._cvPageIndex > 0) window._cvPageIndex--;
+    const body = document.getElementById('chatValidationBody');
+    if (window._cvTxs.length === 0) {
+      _cvCheckEmpty();
+    } else if (body) {
+      _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+    }
+    if (typeof loadTransactions === 'function') loadTransactions(true).catch(() => {});
+    if (typeof loadDashboard    === 'function') loadDashboard().catch(() => {});
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+    toast('✅ Confirmado!', 'success');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✅'; }
+  }
+}
+window._cvSetMode     = _cvSetMode;
+window._cvNext        = _cvNext;
+window._cvPrev        = _cvPrev;
+window._cvExpandCard  = _cvExpandCard;
+window._cvCollapseCard= _cvCollapseCard;
+window._cvViewImage   = _cvViewImage;
+window._cvQuickConfirm= _cvQuickConfirm;
+
+
+// ── Category picker helpers ───────────────────────────────────────────────────
+function _cvTogglePicker(trigger) {
+  const drop = trigger.nextElementSibling;
+  const isOpen = drop.style.display !== 'none';
+  // Close all other pickers first
+  document.querySelectorAll('.cv-picker-drop').forEach(d => {
+    if (d !== drop) { d.style.display = 'none'; d.previousElementSibling?.classList.remove('open'); }
+  });
+  if (isOpen) {
+    drop.style.display = 'none';
+    trigger.classList.remove('open');
+  } else {
+    drop.style.display = '';
+    trigger.classList.add('open');
+    setTimeout(() => drop.querySelector('.cv-picker-search')?.focus(), 30);
+  }
+}
+
+function _cvFilterCat(input, txId) {
+  const q = input.value.trim().toLowerCase();
+  const list = document.getElementById('cv-cat-list-' + txId);
+  if (!list) return;
+  list.querySelectorAll('.cv-pick-opt').forEach(opt => {
+    if (opt.classList.contains('cv-pick-none')) { opt.classList.toggle('cv-hidden', q.length > 0); return; }
+    const text = ((opt.dataset.search || '') + ' ' + (opt.dataset.label || '') + ' ' + opt.textContent).toLowerCase();
+    opt.classList.toggle('cv-hidden', q.length > 0 && !text.includes(q));
+  });
+}
+
+function _cvPickCat(txId, id, icon, name) {
+  document.getElementById('cv-cat-' + txId).value = id;
+  const label = document.getElementById('cv-cat-label-' + txId);
+  if (label) label.textContent = id ? (icon + (icon ? ' ' : '') + name) : '— Sem categoria —';
+  const picker = document.getElementById('cv-catpick-' + txId);
+  if (picker) {
+    picker.querySelector('.cv-picker-drop').style.display = 'none';
+    picker.querySelector('.cv-picker-input')?.classList.remove('open');
+  }
+}
+
+// Close pickers when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.cv-picker')) {
+    document.querySelectorAll('.cv-picker-drop').forEach(d => {
+      d.style.display = 'none';
+      d.previousElementSibling?.classList.remove('open');
+    });
+  }
+}, true);
+
+// ── Payee picker helpers ──────────────────────────────────────────────────────
+function _cvFilterPye(input, txId) {
+  const q = input.value.trim().toLowerCase();
+  const list = document.getElementById('cv-pye-list-' + txId);
+  if (!list) return;
+  const allPayees = _cvGetPayees();
+  const matches = q.length >= 1
+    ? allPayees.filter(p => p.name.toLowerCase().includes(q))
+    : allPayees;
+  let html = matches.slice(0, 30).map(p =>
+    `<div class="cv-pick-opt" data-id="${p.id}" onmousedown="_cvPickPye('${txId}','${p.id}','${esc(p.name)}')">${esc(p.name)}</div>`
+  ).join('');
+  // Create option
+  if (q.length >= 2) {
+    const exact = allPayees.find(p => p.name.toLowerCase() === q);
+    if (!exact) {
+      html += `<div class="cv-pick-opt cv-pick-create" onmousedown="_cvCreateAndPickPye('${txId}', event)">➕ Criar "${esc(input.value.trim())}"</div>`;
+    }
+  }
+  if (!html) html = '<div class="cv-pick-opt cv-pick-none">Nenhum resultado</div>';
+  list.innerHTML = html;
+}
+
+function _cvOpenPyeDrop(txId) {
+  const drop = document.getElementById('cv-pye-drop-' + txId);
+  if (drop) {
+    _cvFilterPye(document.getElementById('cv-pye-search-' + txId), txId);
+    drop.style.display = '';
+  }
+}
+
+function _cvBlurPye(txId) {
+  // Delay to allow mousedown on option to fire first
+  setTimeout(() => {
+    const drop = document.getElementById('cv-pye-drop-' + txId);
+    if (drop) drop.style.display = 'none';
+  }, 200);
+}
+
+function _cvPickPye(txId, id, name) {
+  document.getElementById('cv-pye-' + txId).value = id;
+  const inp = document.getElementById('cv-pye-search-' + txId);
+  if (inp) inp.value = name;
+  const drop = document.getElementById('cv-pye-drop-' + txId);
+  if (drop) drop.style.display = 'none';
+}
+
+function _cvClearPye(txId) {
+  document.getElementById('cv-pye-' + txId).value = '';
+  const inp = document.getElementById('cv-pye-search-' + txId);
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+
+async function _cvCreateAndPickPye(txId, e) {
+  e.preventDefault();
+  const inp = document.getElementById('cv-pye-search-' + txId);
+  const name = inp?.value?.trim();
+  if (!name) return;
+  try {
+    const fid = typeof famId === 'function' ? famId() : null;
+    const { data, error } = await sb.from('payees')
+      .insert({ family_id: fid, name })
+      .select('id,name').single();
+    if (error) throw error;
+    // Add to state so it appears immediately in other pickers
+    if (state.payees) state.payees.push(data);
+    _cvPickPye(txId, data.id, data.name);
+    toast('✓ Beneficiário "' + name + '" criado', 'success');
+  } catch(e) {
+    toast('Erro ao criar beneficiário: ' + e.message, 'error');
+  }
+}
+
+// ── Confirm / Dismiss ─────────────────────────────────────────────────────────
+// ── Duplicate detection helpers ──────────────────────────────────────────────
+
+/**
+ * Searches for possibly duplicate transactions within a ±5-day window
+ * of the pending transaction's date, in the same account (if set),
+ * with a similar amount (within 2%) and similar description.
+ */
+async function _cvFindDuplicates(txId, accId) {
+  try {
+    const fid = typeof famId === 'function' ? famId() : null;
+    if (!fid || !sb) return [];
+
+    // Get the pending transaction details
+    const { data: pending } = await sb.from('transactions')
+      .select('id,amount,brl_amount,description,date,payee_id,category_id,account_id')
+      .eq('id', txId).maybeSingle();
+    if (!pending) return [];
+
+    const amt  = Math.abs(parseFloat(pending.brl_amount ?? pending.amount) || 0);
+    if (amt <= 0) return [];
+
+    const date    = pending.date || new Date().toISOString().slice(0, 10);
+    const d       = new Date(date + 'T12:00');
+    const from    = new Date(d); from.setDate(from.getDate() - 5);
+    const to      = new Date(d); to.setDate(to.getDate()   + 5);
+    const fromStr = from.toISOString().slice(0, 10);
+    const toStr   = to.toISOString().slice(0, 10);
+
+    // Build query: confirmed transactions in window, same family, not this pending tx
+    let q = sb.from('transactions')
+      .select('id,amount,brl_amount,description,date,account_id,category_id,payee_id,status,categories(name),account:accounts!account_id(name),payees(name)')
+      .eq('family_id', fid)
+      .eq('status', 'confirmed')
+      .eq('is_transfer', false)
+      .gte('date', fromStr)
+      .lte('date', toStr)
+      .neq('id', txId)
+      .limit(100);
+
+    // Narrow by account when available
+    const effectiveAcc = accId || pending.account_id;
+    if (effectiveAcc) q = q.eq('account_id', effectiveAcc);
+
+    const { data: candidates } = await q;
+    if (!candidates?.length) return [];
+
+    // Score each candidate
+    const normText = s => (s || '').toLowerCase().normalize('NFD')
+      .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const pendDesc = normText(pending.description);
+
+    return candidates.filter(c => {
+      const cAmt = Math.abs(parseFloat(c.brl_amount ?? c.amount) || 0);
+      // Amount within 2% tolerance
+      if (cAmt === 0 || Math.abs(cAmt - amt) / amt > 0.02) return false;
+      // Description similarity: at least one 4+ char word in common
+      const cDesc = normText(c.description);
+      const pendWords = pendDesc.split(' ').filter(w => w.length >= 4);
+      const cWords    = cDesc.split(' ').filter(w => w.length >= 4);
+      const hasWordMatch = pendWords.some(w => cWords.includes(w)) || pendDesc === cDesc;
+      // Also match if same payee
+      const samePayee = pending.payee_id && c.payee_id && pending.payee_id === c.payee_id;
+      return hasWordMatch || samePayee;
+    }).sort((a, b) => {
+      // Sort by date proximity
+      const da = Math.abs(new Date(a.date).getTime() - d.getTime());
+      const db = Math.abs(new Date(b.date).getTime() - d.getTime());
+      return da - db;
+    }).slice(0, 3);
+  } catch (_) { return []; }
+}
+
+/**
+ * Renders a styled duplicate warning modal and resolves with user's decision.
+ * Returns: 'confirm' | 'cancel' | 'dismiss' (dismiss = discard duplicate risk and keep)
+ */
+function _cvShowDuplicateWarning(pendingTx, duplicates) {
+  return new Promise(resolve => {
+    document.getElementById('cvDupModal')?.remove();
+
+    const F = typeof fmt === 'function' ? fmt : v => 'R$' + Math.abs(Number(v)).toFixed(2);
+    const E = typeof esc === 'function' ? esc : s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const fmtDt = d => {
+      try { return new Date(d + 'T12:00').toLocaleDateString('pt-BR', {day:'2-digit',month:'short',year:'2-digit'}); }
+      catch { return d; }
+    };
+
+    const pendAmt = Math.abs(parseFloat(pendingTx.brl_amount ?? pendingTx.amount) || 0);
+
+    const dupRows = duplicates.map(d => {
+      const dAmt = Math.abs(parseFloat(d.brl_amount ?? d.amount) || 0);
+      const diffDays = Math.round((new Date(d.date + 'T12:00') - new Date(pendingTx.date + 'T12:00')) / 86400000);
+      const dayLabel = diffDays === 0 ? 'mesmo dia' : (diffDays > 0 ? '+' + diffDays + ' dia' : diffDays + ' dia');
+      const amtColor = pendAmt > 0 ? '#dc2626' : '#16a34a';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(220,38,38,.07);
+            display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0">⚠️</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.83rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${E(d.description || '—')}
+            </div>
+            <div style="font-size:.68rem;color:var(--muted);margin-top:2px">
+              ${fmtDt(d.date)} <span style="color:var(--accent);font-weight:700">(${dayLabel})</span>
+              ${d.categories?.name ? ' · ' + E(d.categories.name) : ''}
+              ${d.account?.name   ? ' · ' + E(d.account.name) : ''}
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:.9rem;font-weight:800;color:${amtColor}">−${F(dAmt)}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    const html = `
+    <div class="modal-overlay open" id="cvDupModal" style="z-index:9999">
+      <div class="modal" style="max-width:460px">
+        <div class="modal-handle"></div>
+        <div class="modal-header" style="background:rgba(220,38,38,.06);border-bottom:1px solid rgba(220,38,38,.15)">
+          <span class="modal-title" style="color:#dc2626">⚠️ Possível Duplicata</span>
+        </div>
+        <div class="modal-body" style="padding:16px 18px">
+
+          <!-- Transação que está sendo confirmada -->
+          <div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+            <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px">Transação a confirmar</div>
+            <div style="font-size:.88rem;font-weight:700;color:var(--text)">${E(pendingTx.description || '—')}</div>
+            <div style="font-size:.78rem;color:#dc2626;font-weight:800;margin-top:2px">−${F(pendAmt)}</div>
+            <div style="font-size:.68rem;color:var(--muted);margin-top:2px">${fmtDt(pendingTx.date)}</div>
+          </div>
+
+          <!-- Possíveis duplicadas -->
+          <div style="font-size:.75rem;font-weight:700;color:#dc2626;margin-bottom:8px">
+            ${duplicates.length === 1 ? 'Encontrei 1 transação similar:' : 'Encontrei ' + duplicates.length + ' transações similares:'}
+          </div>
+          <div style="border-radius:10px;border:1.5px solid rgba(220,38,38,.2);padding:0 12px">
+            ${dupRows}
+          </div>
+          <div style="margin-top:12px;font-size:.73rem;color:var(--muted);line-height:1.5">
+            Pode ser a mesma despesa registrada duas vezes.<br>
+            Se for legítima, clique em <b>Confirmar mesmo assim</b>.
+          </div>
+        </div>
+        <div class="modal-footer" style="gap:8px;flex-direction:column">
+          <div style="display:flex;gap:8px;width:100%">
+            <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('cvDupModal').remove();window._cvDupResolve('cancel')">
+              ❌ Cancelar
+            </button>
+            <button class="btn" style="flex:1;background:#dc2626;color:#fff" onclick="document.getElementById('cvDupModal').remove();window._cvDupResolve('confirm')">
+              ✅ Confirmar mesmo assim
+            </button>
+          </div>
+          <button class="btn btn-ghost" style="width:100%;font-size:.75rem;color:var(--muted)"
+            onclick="document.getElementById('cvDupModal').remove();window._cvDupResolve('dismiss')">
+            🗑 Descartar esta transação (é duplicata)
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+    window._cvDupResolve = resolve;
+    document.body.insertAdjacentHTML('beforeend', html);
+  });
+}
+
+// ── Confirm with duplicate check ──────────────────────────────────────────────
+async function _cvConfirm(txId, skipDupCheck = false) {
+  const card  = document.getElementById('cv-' + txId);
+  const descEl  = document.getElementById('cv-desc-' + txId);
+  const newDesc = descEl?.value?.trim() || null;
+  const catId = document.getElementById('cv-cat-' + txId)?.value || null;
+  const accId = document.getElementById('cv-acc-' + txId)?.value || null;
+  const pyeId = document.getElementById('cv-pye-' + txId)?.value || null;
+  const memId = document.getElementById('cv-mem-' + txId)?.value || null;
+
+  // Show loading state on the confirm button
+  const confirmBtn = card?.querySelector('.cv-btn-confirm');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '⏳ Verificando…'; }
+
+  try {
+    // ── 1. Duplicate detection (unless already confirmed by user) ──────────────
+    if (!skipDupCheck) {
+      const duplicates = await _cvFindDuplicates(txId, accId);
+      if (duplicates.length > 0) {
+        // Get pending tx details for the warning
+        const { data: pendingTx } = await sb.from('transactions')
+          .select('id,amount,brl_amount,description,date').eq('id', txId).maybeSingle();
+
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✅ Confirmar'; }
+
+        const decision = await _cvShowDuplicateWarning(pendingTx || { description:'—', amount:0, date:'—' }, duplicates);
+
+        if (decision === 'cancel') return;
+        if (decision === 'dismiss') {
+          // Discard the chat transaction — it's a duplicate
+          await _cvDismiss(txId);
+          return;
+        }
+        // decision === 'confirm' — fall through with skipDupCheck=true implicitly
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '⏳ Confirmando…'; }
+      }
+    }
+
+    // ── 2. Save the transaction ────────────────────────────────────────────────
+    const updates = {
+      status: 'confirmed',
+      updated_at: new Date().toISOString(),
+    };
+    if (newDesc) updates.description     = newDesc;
+    if (catId)   updates.category_id     = catId;
+    if (accId)   updates.account_id      = accId;
+    if (pyeId)   updates.payee_id        = pyeId;
+    if (memId)   updates.family_member_id = memId;
+
+    const { error } = await sb.from('transactions').update(updates).eq('id', txId);
+    if (error) throw error;
+
+    if (card) {
+      card.classList.add('cv-removing');
+      setTimeout(() => { card.remove(); _cvCheckEmpty(); }, 300);
+    }
+
+    if (typeof loadTransactions === 'function') loadTransactions(true).catch(() => {});
+    if (typeof loadDashboard    === 'function') loadDashboard().catch(() => {});
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+    toast('✅ Transação confirmada!', 'success');
+  } catch(e) {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✅ Confirmar'; }
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+async function _cvDismiss(txId) {
+  const card = document.getElementById('cv-' + txId);
+  try {
+    // Before deleting: fetch memo to get storage URL and delete image if present
+    const { data: txRow } = await sb.from('transactions')
+      .select('memo,family_id').eq('id', txId).maybeSingle();
+    if (txRow?.memo) {
+      const storageUrl = txRow.memo.match(/https:\/\/\S+\/fintrack-attachments\/([^\s]+)/);
+      if (storageUrl) {
+        const path = storageUrl[1]; // e.g. "telegram/family-id/tx-id.jpg"
+        await sb.storage.from('fintrack-attachments').remove([path]).catch(() => {});
+      }
+    }
+    // Delete attachment record too (wrapped in try/catch — supabase builder has no .catch())
+    try { await sb.from('attachments').delete().eq('transaction_id', txId); } catch(_) {}
+
+    const { error } = await sb.from('transactions').delete().eq('id', txId);
+    if (error) throw error;
+
+    // Remove from local cache
+    window._cvTxs = (window._cvTxs || []).filter(t => t.id !== txId);
+    if (window._cvPageIndex >= (window._cvTxs.length) && window._cvPageIndex > 0) window._cvPageIndex--;
+
+    if (window._cvTxs.length === 0) {
+      _cvCheckEmpty();
+    } else {
+      const body = document.getElementById('chatValidationBody');
+      if (body) _cvRender(body, _cvGetCats(), _cvGetAccs(), _cvGetPayees(), _cvGetMembers());
+    }
+    if (card) {
+      card.classList.add('cv-removing');
+      setTimeout(() => card.remove(), 300);
+    }
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+    toast('Transação descartada', 'info');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+async function _cvDismissAll() {
+  if (!confirm('Descartar TODAS as transações pendentes por chat?')) return;
+  try {
+    const fid = typeof famId === 'function' ? famId() : null;
+    if (!fid) return;
+    await sb.from('transactions').delete()
+      .eq('family_id', fid).eq('source', 'chat').eq('status', 'pending');
+    await _cvLoad();
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+    toast('Todas as transações descartadas', 'info');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+function _cvCheckEmpty() {
+  const body = document.getElementById('chatValidationBody');
+  if (!body) return;
+  const remaining = body.querySelectorAll('.cv-card').length;
+  const countEl   = body.querySelector('span[style*="font-size:.8rem"]');
+  if (countEl) countEl.textContent = remaining + ' transaç' + (remaining===1?'ão':'ões') + ' aguardando';
+  if (remaining === 0) {
+    body.innerHTML = `
+      <div style="text-align:center;padding:48px 24px">
+        <div style="font-size:2.5rem;margin-bottom:12px">✅</div>
+        <div style="font-weight:700;font-size:.95rem;color:var(--text);margin-bottom:6px">Tudo validado!</div>
+        <div style="font-size:.8rem;color:var(--muted)">Todas as transações foram tratadas.</div>
+      </div>`;
+    if (typeof _agRefreshChatPendingBadge === 'function') _agRefreshChatPendingBadge();
+  }
+}
+
+window.openChatValidation    = openChatValidation;
+
+window._cvConfirm            = _cvConfirm;
+window._cvDismiss            = _cvDismiss;
+window._cvDismissAll         = _cvDismissAll;
+
 
 async function _toggleChatTxEnabled() {
-  const newVal = !(currentUser?.chat_tx_enabled !== false);
+  const currentlyEnabled = currentUser?.chat_tx_enabled !== false;
+  const newVal = !currentlyEnabled;
+
+  // ── Validação: só pode ATIVAR se tiver Telegram ou WhatsApp configurado ──
+  if (newVal) {
+    const hasTelegram  = !!(currentUser?.telegram_chat_id?.trim());
+    const hasWhatsApp  = !!(currentUser?.whatsapp_number?.trim());
+    if (!hasTelegram && !hasWhatsApp) {
+      toast(
+        '⚠️ Configure o Telegram ou WhatsApp primeiro no seu perfil para usar transações por chat.',
+        'error'
+      );
+      // Highlight the profile section where these can be set
+      setTimeout(() => {
+        closeUserMenu();
+        if (typeof openMyProfile === 'function') openMyProfile();
+      }, 800);
+      return;
+    }
+  }
+
   // Optimistic UI update
   if (currentUser) currentUser.chat_tx_enabled = newVal;
   _refreshChatTxToggle();
 
   if (!sb || !currentUser) return;
   try {
-    const { data: appRow } = await sb
-      .from('app_users')
-      .select('id')
-      .eq('auth_uid', (await sb.auth.getUser())?.data?.user?.id)
-      .maybeSingle();
-    if (!appRow) return;
+    const appUserId = currentUser.app_user_id;
+    if (!appUserId) return;
     const { error } = await sb
       .from('app_users')
       .update({ chat_tx_enabled: newVal })
-      .eq('id', appRow.id);
+      .eq('id', appUserId);
     if (error) {
-      // Rollback on error
       if (currentUser) currentUser.chat_tx_enabled = !newVal;
       _refreshChatTxToggle();
       toast('Erro ao salvar preferência de chat: ' + error.message, 'error');
     } else {
-      const label = newVal ? 'ativadas' : 'desativadas';
+      const label = newVal ? 'ativadas ✅' : 'desativadas';
       toast(`Transações por chat ${label}.`, 'success');
     }
   } catch (e) {
@@ -6046,8 +6792,8 @@ function mfmSwitchFamily(famId) {
 
 // ── Section tab switcher for the redesigned family modal ──────────────────
 function mfmSwitchTab(tab) {
-  const paneMap = { modulos:'mfmPaneModulos', membros:'mfmPaneMembros', integrantes:'mfmPaneIntegrantes', dados:'mfmPaneDados', nova:'mfmPaneNova', ia:'mfmPaneIa' };
-  const navMap  = { modulos:'mfmNavModulos',  membros:'mfmNavMembros',  integrantes:'mfmNavIntegrantes',  dados:'mfmNavDados',  nova:'mfmNavNova',  ia:'mfmNavIa' };
+  const paneMap = { modulos:'mfmPaneModulos', membros:'mfmPaneMembros', integrantes:'mfmPaneIntegrantes', dados:'mfmPaneDados', nova:'mfmPaneNova', ia:'mfmPaneIa', acesso:'mfmPaneAcesso', filtros:'mfmPaneFiltros' };
+  const navMap  = { modulos:'mfmNavModulos',  membros:'mfmNavMembros',  integrantes:'mfmNavIntegrantes',  dados:'mfmNavDados',  nova:'mfmNavNova',  ia:'mfmNavIa',  acesso:'mfmNavAcesso', filtros:'mfmNavFiltros' };
   Object.keys(paneMap).forEach(t => {
     document.getElementById(paneMap[t])?.classList.toggle('active', t === tab);
     document.getElementById(navMap[t])?.classList.toggle('active', t === tab);
@@ -6056,6 +6802,8 @@ function mfmSwitchTab(tab) {
   if (tab === 'integrantes') _mfmLoadIntegrantes();
   if (tab === 'dados')       _mfmRenderDataSection(_mfmActiveFamilyId);
   if (tab === 'ia')          _mfmLoadIaConfig();
+  if (tab === 'acesso')      { if (typeof _mfmRenderAcesso   === 'function') _mfmRenderAcesso(); }
+  if (tab === 'filtros')     { if (typeof _mfmRenderFiltros  === 'function') _mfmRenderFiltros(); }
 }
 window.mfmSwitchTab = mfmSwitchTab;
 

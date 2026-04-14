@@ -47,6 +47,22 @@ function _drmAmtBlur(el) {
   const centsOnly = cents % 100;
   el.value = reais.toLocaleString('pt-BR') + ',' + String(centsOnly).padStart(2, '0');
 }
+// Auto-format all drm amount inputs in a container (call after injecting wizard HTML)
+function _drmInitAllAmtFields(containerEl) {
+  const el = containerEl || document;
+  el.querySelectorAll('input[id^="wizAmount"],input[id^="wizEntrada"],input[id^="wizFgts"],input[id^="wizCusto"],input[id^="wizNewItemAmt"],input.drm-wiz-item-amt,input[id="contribAmount"]').forEach(inp => {
+    if (inp.value) {
+      const raw = (inp.value + '').replace(/\./g, '').replace(',', '.');
+      const cents = Math.round(Math.abs(parseFloat(raw) || 0) * 100);
+      if (cents) {
+        inp.dataset.cents = String(cents);
+        inp.value = Math.floor(cents/100).toLocaleString('pt-BR') + ',' + String(cents%100).padStart(2,'0');
+      }
+    }
+  });
+}
+window._drmInitAllAmtFields = _drmInitAllAmtFields;
+
 // Read numeric value from a drm amount field (returns float in BRL)
 function _drmAmtVal(el) {
   if (!el) return 0;
@@ -66,11 +82,25 @@ async function isDreamsEnabled() {
     try {
       await getFamilyPreferences(); // populates _fpCache
       if (typeof isModuleEnabled === 'function') {
-        // Only trust an EXPLICIT false — if cache empty/not loaded, default to enabled
         if (typeof _fpCache !== 'undefined' && _fpCache !== null) {
           const enabled = isModuleEnabled('dreams');
-          // If explicitly disabled, honour it
-          if (_fpCache.modules && 'dreams' in _fpCache.modules) return !!enabled;
+          if (_fpCache.modules && 'dreams' in _fpCache.modules) {
+            if (enabled) return true;
+            // Flag is false — but DB default is false, so check if family has
+            // existing dreams data. If yes, auto-enable so data is never hidden.
+            try {
+              const { count } = await sb.from('dreams')
+                .select('id', { count: 'exact', head: true })
+                .eq('family_id', fid);
+              if (count > 0) {
+                if (typeof updateFamilyPreferences === 'function') {
+                  updateFamilyPreferences({ modules: { dreams: true } }).catch(() => {});
+                }
+                return true;
+              }
+            } catch(_) {}
+            return false;
+          }
         }
       }
     } catch(_) {}
@@ -313,6 +343,45 @@ function _dreamStatusColor(status) {
 }
 
 /* ── Main page render ─────────────────────────────────────────────── */
+function _updateDreamsHero(active, achieved) {
+  // Populate hero banner KPIs
+  const kpiActive   = document.getElementById('drmKpiActive');
+  const kpiTotal    = document.getElementById('drmKpiTotal');
+  const kpiAcc      = document.getElementById('drmKpiAcc');
+  const kpiAccSub   = document.getElementById('drmKpiAccSub');
+  const kpiAchieved = document.getElementById('drmKpiAchieved');
+  const progDiv     = document.getElementById('drmHeroProgress');
+  const progFill    = document.getElementById('drmHeroProgressFill');
+  const progPct     = document.getElementById('drmHeroProgressPct');
+  const heroTitle   = document.getElementById('drmHeroTitle');
+
+  const totalTarget = active.reduce((s, d) => s + (parseFloat(d.target_amount) || 0), 0);
+  const totalAcc    = active.reduce((s, d) => s + _dreamAccumulated(d), 0);
+  const pct         = totalTarget > 0 ? Math.min(100, Math.round((totalAcc / totalTarget) * 100)) : 0;
+
+  if (kpiActive)   kpiActive.textContent   = active.length || '—';
+  if (kpiTotal)    kpiTotal.textContent    = totalTarget > 0 ? _fmtCurrency(totalTarget) : '—';
+  if (kpiAcc)      kpiAcc.textContent      = totalAcc > 0 ? _fmtCurrency(totalAcc) : '—';
+  if (kpiAccSub)   kpiAccSub.textContent   = totalTarget > 0 ? pct + '% do total' : '';
+  if (kpiAchieved) kpiAchieved.textContent = achieved.length || '0';
+
+  // Show progress bar only when there are active dreams with targets
+  if (progDiv) progDiv.style.display = (active.length && totalTarget > 0) ? '' : 'none';
+  if (progFill) progFill.style.width = pct + '%';
+  if (progPct)  progPct.textContent  = pct + '%';
+
+  // Personalise title
+  if (heroTitle) {
+    if (!active.length && !achieved.length) {
+      heroTitle.textContent = 'Objetivos & Realizações';
+    } else if (achieved.length && !active.length) {
+      heroTitle.textContent = achieved.length + (achieved.length === 1 ? ' sonho conquistado' : ' sonhos conquistados') + ' 🏆';
+    } else {
+      heroTitle.textContent = active.length + (active.length === 1 ? ' sonho ativo' : ' sonhos ativos');
+    }
+  }
+}
+
 function renderDreamsPage() {
   const container = document.getElementById('dreams-list-container');
   if (!container) return;
@@ -321,6 +390,9 @@ function renderDreamsPage() {
   const achieved = _drm.dreams.filter(d => d.status === 'achieved');
   const paused   = _drm.dreams.filter(d => d.status === 'paused');
   const others   = _drm.dreams.filter(d => d.status === 'cancelled');
+
+  // Update hero banner with live KPIs
+  _updateDreamsHero(active, achieved);
 
   const allGroups = [
     { label: 'Ativos', dreams: active, emptyMsg: '' },
@@ -630,6 +702,16 @@ function openDreamDetail(dreamId) {
   </div>`;
 
   document.body.insertAdjacentHTML('beforeend', html);
+  // Auto-format pre-filled amount fields, then re-run sums
+  requestAnimationFrame(() => {
+    const body = document.getElementById('wizardBody');
+    if (body) {
+      _drmInitAllAmtFields(body);
+      if (typeof _wizSomaCirurgia  === 'function') _wizSomaCirurgia();
+      if (typeof _wizSomaEstudos   === 'function') _wizSomaEstudos();
+      if (typeof _refreshItemsTotal === 'function') _refreshItemsTotal();
+    }
+  });
 }
 window.openDreamDetail = openDreamDetail;
 
@@ -918,9 +1000,15 @@ function openDreamWizard(dreamId = null) {
     const d = _drm.dreams.find(x => x.id === dreamId);
     if (d) {
       _drm.wizard.type = d.dream_type;
-      _drm.wizard.data = { ...d };
+      const dCopy = { ...d };
+      // Always ensure ai_generated_fields_json is a plain object (may be stored as JSON string)
+      if (typeof dCopy.ai_generated_fields_json === 'string') {
+        try { dCopy.ai_generated_fields_json = JSON.parse(dCopy.ai_generated_fields_json); }
+        catch(_) { dCopy.ai_generated_fields_json = {}; }
+      }
+      _drm.wizard.data  = dCopy;
       _drm.wizard.items = [...(_drm.items[dreamId] || [])];
-      _drm.wizard.step = 2; // jump to type step so fields show
+      _drm.wizard.step  = 2; // jump to type step so fields show
     }
   }
 
@@ -1212,7 +1300,7 @@ function _wizFieldsImovel(d) {
     <div class="drm-form-row">
       <div class="form-group">
         <label class="form-label">Entrada</label>
-        <input type="number" id="wizEntrada" class="form-input" placeholder="0,00" value="${meta.entrada||''}">
+        <input type="text" inputmode="numeric" id="wizEntrada" class="form-input" placeholder="0,00" value="${meta.entrada||''}" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
       </div>
       <div class="form-group">
         <label class="form-label">FGTS (opcional)</label>
@@ -1244,7 +1332,7 @@ function _wizStep3() {
     <p class="drm-wiz-subhead">Detalhe os custos. A IA pode sugerir automaticamente baseado no seu sonho.</p>
 
     <div class="drm-wiz-items-toolbar">
-      <span class="drm-items-total-label">Total: <strong id="wizItemsTotal">${_fmtCurrency(items.reduce((s,it)=>s+(parseFloat(it.estimated_amount)||0),0))}</strong></span>
+      <span class="drm-items-total-label">Total: <strong id="wizItemsTotal">${_fmtCurrency(items.reduce((s,it)=>{const v=it.estimated_amount;return s+(typeof v==='number'?v:(parseFloat(String(v||'').replace(/\.([^,])/g,'$1').replace(',','.'))||0));},0))}</strong></span>
       <button class="btn drm-btn-ai btn-sm" onclick="wizardAiSuggestItems()">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         Sugerir com IA
@@ -1258,7 +1346,8 @@ function _wizStep3() {
     <div class="drm-wiz-add-item">
       <input type="text" id="wizNewItemName" class="form-input" placeholder="Nome do componente"
         onkeydown="if(event.key==='Enter')addWizItem()">
-      <input type="number" id="wizNewItemAmt" class="form-input" placeholder="Valor" min="0" step="0.01"
+      <input type="text" inputmode="numeric" id="wizNewItemAmt" class="form-input" placeholder="0,00"
+        oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)"
         onkeydown="if(event.key==='Enter')addWizItem()">
       <button class="btn btn-secondary btn-sm" onclick="addWizItem()">+ Adicionar</button>
     </div>
@@ -1283,7 +1372,7 @@ function _renderWizItem(it, i) {
 
 function addWizItem() {
   const name = document.getElementById('wizNewItemName')?.value?.trim();
-  const amt  = parseFloat(document.getElementById('wizNewItemAmt')?.value || 0);
+  const amt  = _drmAmtVal(document.getElementById('wizNewItemAmt'));
   if (!name) { toast('Informe o nome do componente', 'warning'); return; }
   _drm.wizard.items.push({ name, estimated_amount: amt || 0, is_ai_suggested: false });
   _refreshWizItemsList();
@@ -1312,9 +1401,14 @@ function _refreshWizItemsList() {
 }
 
 function _refreshItemsTotal() {
-  const total = (_drm.wizard?.items || []).reduce((s, it) => s + (parseFloat(it.estimated_amount)||0), 0);
+  const total = (_drm.wizard?.items || []).reduce((s, it) => {
+    const v = it.estimated_amount;
+    const n = typeof v === 'number' ? v
+            : parseFloat(String(v||'').replace(/\./g,'').replace(',','.')) || 0;
+    return s + n;
+  }, 0);
   const el = document.getElementById('wizItemsTotal');
-  if (el) el.textContent = _fmtCurrency(total);
+  if (el) el.innerHTML = _fmtCurrency(total);
 }
 window._refreshItemsTotal = _refreshItemsTotal;
 
@@ -1496,7 +1590,7 @@ function wizardNext() {
     w.step = 2;
   } else if (w.step === 2) {
     const title  = document.getElementById('wizTitle')?.value?.trim();
-    const amount = parseFloat(document.getElementById('wizAmount')?.value || 0);
+    const amount = _drmAmtVal(document.getElementById('wizAmount'));
     if (!title) { toast('Informe o nome do sonho', 'warning'); return; }
     if (!amount || amount <= 0) { toast('Informe o valor estimado', 'warning'); return; }
     // Persist step 2 data
@@ -1516,17 +1610,17 @@ function wizardNext() {
         modelo:     document.getElementById('wizModelo')?.value || '',
         ano:        document.getElementById('wizAno')?.value || '',
         tipo_compra: document.getElementById('wizTipoCompra')?.value || 'avista',
-        entrada:    document.getElementById('wizEntrada')?.value || '',
-        taxa_juros: document.getElementById('wizJuros')?.value || '',
+        entrada:    _drmAmtVal(document.getElementById('wizEntrada')) || 0,
+        taxa_juros: parseFloat(document.getElementById('wizJuros')?.value) || 0,
       };
     } else if (w.type === 'imovel') {
       w.data.ai_generated_fields_json = {
         subtipo:    document.getElementById('wizSubtipo')?.value || '',
         cidade:     document.getElementById('wizCidade')?.value || '',
         tipo_compra: document.getElementById('wizTipoCompra')?.value || 'avista',
-        entrada:    document.getElementById('wizEntrada')?.value || '',
-        fgts:       document.getElementById('wizFgts')?.value || '',
-        taxa_juros: document.getElementById('wizJuros')?.value || '',
+        entrada:    _drmAmtVal(document.getElementById('wizEntrada')) || 0,
+        fgts:       _drmAmtVal(document.getElementById('wizFgts')) || 0,
+        taxa_juros: parseFloat(document.getElementById('wizJuros')?.value) || 0,
       };
     } else if (w.type === 'cirurgia_plastica') {
       w.data.ai_generated_fields_json = {
@@ -1564,7 +1658,7 @@ function wizardNext() {
     const amtEls  = document.querySelectorAll('.drm-wiz-item-amt');
     w.items = Array.from(nameEls).map((el, i) => ({
       name: el.value,
-      estimated_amount: parseFloat(amtEls[i]?.value || 0) || 0,
+      estimated_amount: _drmAmtVal(amtEls[i]) || 0,
       is_ai_suggested: w.items[i]?.is_ai_suggested || false,
     })).filter(it => it.name.trim());
     w.step = 4;
@@ -1623,21 +1717,21 @@ function _wizFieldsCirurgia(d) {
   <div class="drm-form-row">
     <div class="form-group">
       <label class="form-label">Honorários do médico (R$)</label>
-      <input type="text" inputmode="numeric" id="wizCustoMedico" class="form-input" placeholder="0,00" value="${meta.custo_medico||''}" oninput="_wizSomaCirurgia()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoMedico" class="form-input" placeholder="0,00" value="${meta.custo_medico||''}" oninput="_wizSomaCirurgia();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
     <div class="form-group">
       <label class="form-label">Anestesia (R$)</label>
-      <input type="text" inputmode="numeric" id="wizCustoAnestesia" class="form-input" placeholder="0,00" value="${meta.custo_anestesia||''}" oninput="_wizSomaCirurgia()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoAnestesia" class="form-input" placeholder="0,00" value="${meta.custo_anestesia||''}" oninput="_wizSomaCirurgia();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
   </div>
   <div class="drm-form-row">
     <div class="form-group">
       <label class="form-label">Hospital / Clínica (R$)</label>
-      <input type="text" inputmode="numeric" id="wizCustoHospital" class="form-input" placeholder="0,00" value="${meta.custo_hospital||''}" oninput="_wizSomaCirurgia()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoHospital" class="form-input" placeholder="0,00" value="${meta.custo_hospital||''}" oninput="_wizSomaCirurgia();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
     <div class="form-group">
       <label class="form-label">Exames pré-op (R$)</label>
-      <input type="text" inputmode="numeric" id="wizCustoExames" class="form-input" placeholder="0,00" value="${meta.custo_exames||''}" oninput="_wizSomaCirurgia()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoExames" class="form-input" placeholder="0,00" value="${meta.custo_exames||''}" oninput="_wizSomaCirurgia();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
   </div>
   <div style="margin-top:6px;padding:8px 12px;background:var(--accent-lt);border-radius:8px;font-size:.8rem;color:var(--accent);font-weight:600" id="wizCirurgiaTotal" style="display:none"></div>`;
@@ -1645,14 +1739,20 @@ function _wizFieldsCirurgia(d) {
 
 function _wizSomaCirurgia() {
   const ids = ['wizCustoMedico','wizCustoAnestesia','wizCustoHospital','wizCustoExames'];
-  const total = ids.reduce((s,id) => s + (parseFloat(document.getElementById(id)?.value)||0), 0);
+  const total = ids.reduce((s,id) => s + (_drmAmtVal(document.getElementById(id)) || 0), 0);
   const el = document.getElementById('wizCirurgiaTotal');
-  if (el && total > 0) {
-    el.textContent = '💰 Total estimado: ' + (typeof fmt === 'function' ? fmt(total) : 'R$ ' + total.toFixed(2));
-    el.style.display = '';
-    // Sugerir preenchimento do valor total do sonho
+  if (el) {
+    el.textContent = total > 0
+      ? '💰 Total estimado: ' + (typeof fmt === 'function' ? fmt(total) : 'R$ ' + total.toLocaleString('pt-BR',{minimumFractionDigits:2}))
+      : '';
+    el.style.display = total > 0 ? '' : 'none';
+    // Sugerir preenchimento do valor total do sonho se ainda estiver vazio
     const amtEl = document.getElementById('wizAmount');
-    if (amtEl && !amtEl.value) amtEl.value = total.toFixed(2);
+    if (amtEl && !amtEl.dataset.cents && !amtEl.value && total > 0) {
+      const cents = Math.round(total * 100);
+      amtEl.dataset.cents = String(cents);
+      amtEl.value = Math.floor(cents/100).toLocaleString('pt-BR') + ',' + String(cents%100).padStart(2,'0');
+    }
   }
 }
 window._wizSomaCirurgia = _wizSomaCirurgia;
@@ -1705,18 +1805,18 @@ function _wizFieldsEstudos(d) {
     </div>
     <div class="form-group">
       <label class="form-label">Mensalidade</label>
-      <input type="text" inputmode="numeric" id="wizCustoMensalidade" class="form-input" placeholder="0,00" value="${meta.custo_mensalidade||''}" oninput="_wizSomaEstudos()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoMensalidade" class="form-input" placeholder="0,00" value="${meta.custo_mensalidade||''}" oninput="_wizSomaEstudos();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
   </div>
   <div class="drm-wiz-section-title" style="margin-top:10px">✈️ Custos Adicionais</div>
   <div class="drm-form-row">
     <div class="form-group">
       <label class="form-label">Moradia (por mês)</label>
-      <input type="text" inputmode="numeric" id="wizCustoMoradia" class="form-input" placeholder="0,00" value="${meta.custo_moradia||''}" oninput="_wizSomaEstudos()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoMoradia" class="form-input" placeholder="0,00" value="${meta.custo_moradia||''}" oninput="_wizSomaEstudos();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
     <div class="form-group">
       <label class="form-label">Passagem (total)</label>
-      <input type="text" inputmode="numeric" id="wizCustoPassagem" class="form-input" placeholder="0,00" value="${meta.custo_passagem||''}" oninput="_wizSomaEstudos()" oninput="_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
+      <input type="text" inputmode="numeric" id="wizCustoPassagem" class="form-input" placeholder="0,00" value="${meta.custo_passagem||''}" oninput="_wizSomaEstudos();_drmAmtInput(this)" onblur="_drmAmtBlur(this)">
     </div>
   </div>
   <div style="margin-top:6px;padding:8px 12px;background:var(--accent-lt);border-radius:8px;font-size:.8rem;color:var(--accent);font-weight:600" id="wizEstudosTotal"></div>`;
@@ -1734,7 +1834,11 @@ function _wizSomaEstudos() {
       ? '💰 Total estimado: ' + (typeof fmt === 'function' ? fmt(total) : 'R$ ' + total.toFixed(2)) + ` (${meses} meses)`
       : '';
     const amtEl = document.getElementById('wizAmount');
-    if (amtEl && !amtEl.value && total > 0) amtEl.value = total.toFixed(2);
+    if (amtEl && !amtEl.dataset.cents && !amtEl.value && total > 0) {
+      const cents = Math.round(total * 100);
+      amtEl.dataset.cents = String(cents);
+      amtEl.value = Math.floor(cents/100).toLocaleString('pt-BR') + ',' + String(cents%100).padStart(2,'0');
+    }
   }
 }
 window._wizSomaEstudos = _wizSomaEstudos;
@@ -1780,20 +1884,30 @@ async function saveDream() {
 
   const fid = famId();
 
+  // Ensure target_amount is a valid number
+  const _finalAmount = parseFloat(w.data.target_amount) || 0;
+
+  // Ensure ai_generated_fields_json is serialized (may already be object or string)
+  let _aiJson = w.data.ai_generated_fields_json || null;
+  if (_aiJson && typeof _aiJson === 'object') _aiJson = JSON.stringify(_aiJson);
+  else if (_aiJson === '{}' || _aiJson === 'null') _aiJson = null;
+
   const dreamPayload = {
     family_id:   fid,
-    created_by:  currentUser?.id,
     title:       w.data.title,
     description: w.data.description || null,
     dream_type:  w.type,
-    target_amount: w.data.target_amount,
-    currency:    'BRL',
+    target_amount: _finalAmount,
+    currency:    w.data.currency || 'BRL',
     target_date: w.data.target_date || null,
     priority:    w.data.priority || 1,
     status:      w.data.status || 'active',
-    ai_generated_fields_json: w.data.ai_generated_fields_json ? JSON.stringify(w.data.ai_generated_fields_json) : null,
+    ai_generated_fields_json: _aiJson,
+    simulation_json: w.data.simulation_json || null,
     updated_at:  new Date().toISOString(),
   };
+  // Only set created_by on new dreams
+  if (!w.editing) dreamPayload.created_by = currentUser?.app_user_id || currentUser?.id;
 
   try {
     let dreamId;
@@ -1817,17 +1931,16 @@ async function saveDream() {
 
     // Save items
     if (w.items.length) {
-      if (w.editing) {
-        // Remove old AI items, keep manual ones
-        await sb.from('dream_items').delete().eq('dream_id', dreamId).eq('is_ai_suggested', true);
-      } else {
-        await sb.from('dream_items').delete().eq('dream_id', dreamId);
-      }
+      // On edit or create: delete all existing items then re-insert current list
+      // This ensures any name/value changes to manual items are also persisted
+      await sb.from('dream_items').delete().eq('dream_id', dreamId);
       const itemsPayload = w.items.filter(it => it.name?.trim()).map(it => ({
         dream_id: dreamId,
         family_id: fid,
         name: it.name.trim(),
-        estimated_amount: parseFloat(it.estimated_amount) || 0,
+        estimated_amount: typeof it.estimated_amount === 'number'
+          ? it.estimated_amount
+          : (parseFloat(String(it.estimated_amount || '').replace(/\./g,'').replace(',','.')) || 0),
         is_ai_suggested: !!it.is_ai_suggested,
         created_at: new Date().toISOString(),
       }));

@@ -323,8 +323,10 @@ ${s.upcomingCount ? `**Próximos 7 dias:** ${s.upcomingCount} programados (${s.u
 ## REGRAS DE FERRAMENTAS
 - **Consultas** → use get_* para dados reais; não invente números
 - **Ações** → sempre confirme antes de criar/alterar dados (1 mensagem de confirmação, breve)
-- **Confirmação do usuário** (sim/pode/ok/confirma/vai/registra/salva) → execute a ação pendente IMEDIATAMENTE com create_transaction
-- **Criar transação** → use SEMPRE create_transaction (não open_new_transaction_form) quando o usuário confirmar; se conta não informada, use a conta corrente principal
+- **Confirmação do usuário** (sim/pode/ok/confirma/vai/registra/salva) → execute IMEDIATAMENTE com create_transaction (status padrão: pendente validação)
+- **Criar transação definitiva** → só use status 'confirmed' quando o usuário dizer explicitamente: "definitivo", "confirmar agora", "salvar definitivo", "sem revisão"
+- **Criar transação** → use SEMPRE create_transaction; se conta não informada, use a conta corrente principal; SEMPRE criar como pendente a não ser que usuário peça definitivo
+- **Transações pendentes**: ficam aguardando validação no app (Menu → Validar transações por chat)
 - **Perguntas financeiras gerais** → use answer_financial_question (educação financeira, conceitos, estratégias)
 - **Navegação** → use navigate_to para ir a páginas
 - Resolva nomes de contas/categorias pelos dados acima (fuzzy match tolerante)
@@ -645,6 +647,9 @@ async function _agExecTool(name, args, ctx) {
       let cat = match(ctx.categories.filter(c=>c.type===catType),args.category_name)||match(ctx.categories,args.category_name);
       const payee = match(ctx.payees,args.payee_name);
       const signedAmt = args.type==='income' ? amt : -amt;
+      // Determinar status: definitivo apenas se explicitamente solicitado
+      const explicit = args.definitive === true || args.status === 'confirmed';
+      const txStatus = explicit ? 'confirmed' : 'pending';
       const row = {
         date:args.date||new Date().toISOString().slice(0,10),
         description:args.description, amount:signedAmt,
@@ -652,14 +657,43 @@ async function _agExecTool(name, args, ctx) {
         currency:acc.currency||'BRL', account_id:acc.id,
         category_id:cat?.id||null, payee_id:payee?.id||null,
         memo:args.memo||null, is_transfer:false, is_card_payment:false,
-        status:args.status||'confirmed', family_id:fid,
+        status:txStatus, source:'chat', family_id:fid,
         created_at:new Date().toISOString(), updated_at:new Date().toISOString(),
       };
       const {data:tx,error} = await sb.from('transactions').insert(row).select().single();
       if (error) return {ok:false,error:error.message};
       _agInvalidateCtx();
-      setTimeout(()=>{ if(typeof loadTransactions==='function') loadTransactions(true).catch(()=>{}); if(typeof loadDashboard==='function') loadDashboard().catch(()=>{}); },400);
-      return {ok:true,msg:`✅ Transação registrada: ${args.description} — ${fmt(amt)} na conta ${acc.name}`,id:tx.id};
+      setTimeout(()=>{
+        if(typeof loadTransactions==='function') loadTransactions(true).catch(()=>{});
+        if(typeof loadDashboard==='function') loadDashboard().catch(()=>{});
+        _agRefreshChatPendingBadge();
+      },400);
+      // Duplicate detection: check last 7 days for similar amount + description
+      let dupWarning = '';
+      try {
+        const d7 = new Date(); d7.setDate(d7.getDate() - 7);
+        const { data: nearTx } = await famQ(
+          sb.from('transactions').select('id,date,description,amount')
+        ).gte('date', d7.toISOString().slice(0,10))
+         .neq('id', tx.id).neq('status', 'pending')
+         .gte('amount', Math.min(signedAmt * 0.95, signedAmt * 1.05))
+         .lte('amount', Math.max(signedAmt * 0.95, signedAmt * 1.05))
+         .limit(5);
+        const descQ = (args.description || '').toLowerCase().replace(/\s+/g, '').slice(0, 10);
+        const dup = (nearTx || []).find(t => {
+          const td = (t.description || '').toLowerCase().replace(/\s+/g, '');
+          return td.slice(0, 8) === descQ.slice(0, 8) || (descQ.length > 5 && td.includes(descQ.slice(0, 6)));
+        });
+        if (dup) {
+          const dd = new Date(dup.date + 'T12:00').toLocaleDateString('pt-BR');
+          dupWarning = '\n\n⚠️ _Atenção: encontrei uma transação similar — "' + dup.description + '" em ' + dd + '. Se for duplicado, descarte em **Menu → Validar transações por chat**._';
+        }
+      } catch(_) { /* duplicate check is best-effort */ }
+
+      if (txStatus === 'pending') {
+        return {ok:true,msg:`📝 Salva como pendente: ${args.description} — ${fmt(amt)}\n\n_Valide em Menu → Validar transações por chat_` + dupWarning,id:tx.id,pending:true};
+      }
+      return {ok:true,msg:`✅ Registrado definitivamente: ${args.description} — ${fmt(amt)} na conta ${acc.name}` + dupWarning,id:tx.id};
     }
 
     case 'create_transfer': {
@@ -1068,4 +1102,43 @@ window._agentOnInput    = _agOnInput;
 window._agentOnKeydown  = _agOnKeydown;
 window.agentSend        = agentSend;
 window.agentSuggest     = agentSuggest;
+// ── Chat pending badge ─────────────────────────────────────────────────────
+async function _agRefreshChatPendingBadge() {
+  try {
+    const fid = typeof famId === 'function' ? famId() : null;
+    if (!fid || !sb) return;
+    const { count } = await sb.from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', fid).eq('source', 'chat').eq('status', 'pending');
+    const n = count || 0;
+
+    // Update menu badge
+    const badge = document.getElementById('chatValidateBadge');
+    if (badge) {
+      badge.textContent = n || '';
+      badge.style.display = n > 0 ? 'inline-flex' : 'none';
+    }
+
+    // Update topbar button (visible whenever there are pending chat transactions)
+    const topbarBtn   = document.getElementById('chatPendingTopbarBtn');
+    const topbarCount = document.getElementById('chatPendingTopbarCount');
+    if (topbarBtn) {
+      topbarBtn.style.display = n > 0 ? '' : 'none';
+      topbarBtn.style.color = n > 0 ? '#dc2626' : 'var(--muted)';
+    }
+    if (topbarCount) topbarCount.textContent = n > 0 ? String(n) : '';
+
+    // Show/update a toast banner only first time there are new pending transactions
+    if (n > 0 && !window._chatPendingNotified) {
+      window._chatPendingNotified = true;
+      if (typeof toast === 'function') {
+        toast(`💬 ${n} transaç${n===1?'ão':'ões'} do chat aguardando validação — toque em ✅ no topo`, 'info', 6000);
+      }
+    }
+    if (n === 0) window._chatPendingNotified = false;
+  } catch(e) { console.warn('[chatPendingBadge]', e?.message); }
+}
+window._agRefreshChatPendingBadge = _agRefreshChatPendingBadge;
+
+
 window.toggleAgent      = toggleAgent;

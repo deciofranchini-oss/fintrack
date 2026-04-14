@@ -3171,7 +3171,9 @@ async function _openPatrimonioModal() {
     const k = p.asset_type || 'outro';
     if (!invByType[k]) invByType[k] = { positions: [], total: 0 };
     const mv = typeof _invMarketValue === 'function' ? _invMarketValue(p) : (+(p.quantity||0)*(+(p.current_price||p.avg_cost||0)));
-    invByType[k].positions.push({...p, _mv:mv});
+    // Attach account currency so position row can use it as fallback
+    const _pAcc = accs.find(a => a.id === p.account_id);
+    invByType[k].positions.push({...p, _mv: mv, _accCurrency: _pAcc?.currency || 'BRL'});
     invByType[k].total += mv;
   });
 
@@ -3214,16 +3216,27 @@ async function _openPatrimonioModal() {
         </summary>
         <div style="background:var(--surface2);padding:4px 0">
           ${grp.positions.sort((a,b)=>b._mv-a._mv).map(p => {
-            const mv = p._mv||0, cost = (+(p.quantity||0))*(+(p.avg_cost||0));
-            const pnl = mv-cost, pnlPct = cost>0?(pnl/cost*100):0;
+            // mv in BRL (for totals/sorting); native values for display
+            const mv     = p._mv || 0;  // BRL
+            const pCur   = (p.currency && p.currency !== 'BRL') ? p.currency
+                         : ((p._accCurrency && p._accCurrency !== 'BRL') ? p._accCurrency : 'BRL');
+            const isFxP  = pCur !== 'BRL';
+            const qty    = +(p.quantity || 0);
+            const avgC   = +(p.avg_cost    || 0);   // native currency
+            const cprice = +(p.current_price || 0); // native currency
+            const mvNat  = isFxP ? qty * cprice : mv;
+            const costNat= qty * avgC;
+            const pnlNat = mvNat - costNat;
+            const pnlPct = costNat > 0 ? (pnlNat / costNat * 100) : 0;
             return `<div style="display:flex;align-items:center;gap:10px;padding:7px 14px 7px 42px;border-bottom:1px solid var(--border)">
               <div style="flex:1;min-width:0">
-                <div style="font-size:.81rem;font-weight:700">${esc(p.ticker||'—')}</div>
-                <div style="font-size:.64rem;color:var(--muted)">${(+(p.quantity||0)).toLocaleString('pt-BR',{maximumFractionDigits:4})} un. · PM ${dashFmt(+(p.avg_cost||0),'BRL')}</div>
+                <div style="font-size:.81rem;font-weight:700">${esc(p.ticker||'—')}${isFxP?`<span style="font-size:.56rem;font-weight:800;padding:1px 4px;background:#1e3a8a;color:#fff;border-radius:3px;margin-left:4px">${esc(pCur)}</span>`:''}</div>
+                <div style="font-size:.64rem;color:var(--muted)">${qty.toLocaleString('pt-BR',{maximumFractionDigits:4})} un. · PM ${dashFmt(avgC, pCur)}${isFxP?` <span style="opacity:.6">≈ ${dashFmt(typeof toBRL==='function'?toBRL(avgC,pCur):avgC,'BRL')}</span>`:''}</div>
               </div>
               <div style="text-align:right">
-                <div style="font-size:.83rem;font-weight:800;font-family:var(--font-serif)">${dashFmt(mv,'BRL')}</div>
-                <div style="font-size:.62rem;color:${pnl>=0?'#10b981':'#ef4444'};font-weight:700">${pnl>=0?'▲':'▼'} ${Math.abs(pnlPct).toFixed(1)}%</div>
+                <div style="font-size:.83rem;font-weight:800;font-family:var(--font-serif)">${dashFmt(mvNat, pCur)}</div>
+                ${isFxP?`<div style="font-size:.63rem;color:var(--muted)">≈ ${dashFmt(mv,'BRL')}</div>`:''}
+                <div style="font-size:.62rem;color:${pnlNat>=0?'#10b981':'#ef4444'};font-weight:700">${pnlNat>=0?'▲':'▼'} ${Math.abs(pnlPct).toFixed(1)}%</div>
               </div>
             </div>`;
           }).join('')}
@@ -3460,20 +3473,38 @@ async function _openPatrimonioModal() {
 </div>
 
 <!-- ── ANÁLISE IA ── -->
-<div style="border-top:1px solid var(--border);background:var(--surface)">
-  <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2)">
-    <span style="font-size:.9rem">🤖</span>
-    <span style="font-size:.8rem;font-weight:700;color:var(--text);flex:1">Análise Patrimonial com Gemini</span>
-    <button id="patAiBtn"
-      onclick="_patAnalyzeWithGemini()"
-      style="padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:.75rem;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent">
-      ✨ Analisar
-    </button>
+<div id="patAiCard" style="margin:0;border-top:1px solid var(--border)">
+  <!-- Header gradiente -->
+  <div style="background:linear-gradient(135deg,#0f2a1e 0%,#163a28 60%,#1a4433 100%);padding:14px 16px 12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">✨</div>
+      <div>
+        <div style="font-size:.85rem;font-weight:800;color:#fff;line-height:1.2">Análise com IA</div>
+        <div style="font-size:.65rem;color:rgba(255,255,255,.5);font-weight:500">Gemini · Patrimônio</div>
+      </div>
+      <button id="patAiBtn" onclick="_patAnalyzeWithGemini()"
+        style="margin-left:auto;padding:5px 11px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.15);border-radius:8px;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;display:none">
+        ↺ Refazer
+      </button>
+    </div>
+    <!-- Score bar inline -->
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="flex:1;height:4px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden">
+        <div id="patAiScoreBar" style="height:100%;width:${healthScore}%;background:${hColor};border-radius:4px;transition:width .6s ease"></div>
+      </div>
+      <span style="font-size:.72rem;font-weight:800;color:${hColor};min-width:28px;text-align:right">${healthScore}</span>
+      <span style="font-size:.68rem;color:rgba(255,255,255,.45);font-weight:600">${hLabel}</span>
+    </div>
   </div>
-  <div id="patAiResult" style="padding:12px 14px;font-size:.8rem;color:var(--muted);line-height:1.65">
-    Clique em <strong>Analisar</strong> para obter uma análise personalizada do seu patrimônio.
+  <!-- Resultado da análise -->
+  <div id="patAiResult" style="padding:14px 16px;background:var(--surface);min-height:64px">
+    <div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.8rem">
+      <span id="patAiSpinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></span>
+      <span>Consultando Gemini…</span>
+    </div>
   </div>
 </div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 
 </div>`;/* end patModal */
 
@@ -3497,102 +3528,146 @@ async function _openPatrimonioModal() {
   };
   document.getElementById('patrimonioModalBody').innerHTML = html;
   openModal('patrimonioModal');
+  // Auto-trigger AI analysis immediately after modal renders
+  setTimeout(() => _patAnalyzeWithGemini(), 80);
 }
 window._openPatrimonioModal = _openPatrimonioModal;
 
 // ── Análise patrimonial com Gemini ────────────────────────────────────────
 async function _patAnalyzeWithGemini() {
   const metrics = window._patMetrics || {};
-  const btn = document.getElementById('patAiBtn');
+  const btn    = document.getElementById('patAiBtn');
   const result = document.getElementById('patAiResult');
   if (!btn || !result) return;
 
-  // PWA fix: update UI synchronously before any await
-  // (loading state already set above)
+  // Prevent double-call while running
+  if (btn._patRunning) return;
+  btn._patRunning = true;
 
-  const apiKey = typeof getAppSetting === 'function'
+  const apiKey = typeof getGeminiApiKey === 'function'
     ? await getGeminiApiKey().catch(() => '')
     : '';
 
   if (!apiKey || !apiKey.startsWith('AIza')) {
-    result.innerHTML = '<span style="color:#f59e0b">⚠️ Configure a chave Gemini em <strong>Gerenciar Família → IA</strong> para usar esta análise.</span>';
+    result.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:10px"><span style="font-size:1rem;flex-shrink:0">⚠️</span><span style="font-size:.82rem;color:#f59e0b;line-height:1.5">Configure a chave Gemini em <strong>Gerenciar Família → IA</strong> para usar esta análise.</span></div>';
+    btn._patRunning = false;
+    btn.style.display = '';
     return;
   }
 
-  btn.disabled = true;
-  btn.textContent = '⏳ Analisando…';
-  result.innerHTML = '<span style="color:var(--muted)">Consultando Gemini…</span>';
+  btn.style.display = 'none';
+  result.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.8rem"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></span><span>Consultando Gemini…</span></div>';
 
-  // Use admin-configured model; fall back to stable default
-  const _patModel = (typeof getGeminiModel === 'function') ? await getGeminiModel() : 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${_patModel}:generateContent?key=${apiKey}`;
+  // Use configured model, fallback to 1.5-flash (stable, no thinking quirks)
+  let _patModel = 'gemini-2.0-flash';
+  try {
+    const m = typeof getGeminiModel === 'function' ? await getGeminiModel() : null;
+    if (m && typeof m === 'string' && m.startsWith('gemini')) _patModel = m;
+  } catch(_) {}
 
-  // Safe coercion — avoids TypeError when a metric field is undefined
+  // Safe metric coercion
   const _safe = v => (typeof v === 'number' && isFinite(v)) ? v : 0;
-  const _patLiq    = _safe(metrics.patrimonioTotal);
-  const _totalAtiv = _safe(metrics.totalAtivos);
-  const _liquidAmt = _safe(metrics.liquidTotal);
-  const _invAmt    = _safe(metrics.invTotal);
-  const _totalPass = _safe(metrics.totalPassivos);
-  const _debtAmt   = _safe(metrics.debtTotal);
-  const _cardDebt  = _safe(metrics.totalCartNeg);   // stored as totalCartNeg
-  const _endivPct  = _safe(metrics.endividamento);
-  const _score     = _safe(metrics.healthScore);
-  const _nAccs     = _safe(metrics.accsCount);
-  const _nDebts    = _safe(metrics.debtsCount);
+  const _patLiq   = _safe(metrics.patrimonioTotal);
+  const _totalAtiv= _safe(metrics.totalAtivos);
+  const _liquidAmt= _safe(metrics.liquidTotal);
+  const _invAmt   = _safe(metrics.invTotal);
+  const _totalPass= _safe(metrics.totalPassivos);
+  const _debtAmt  = _safe(metrics.debtTotal);
+  const _cardDebt = _safe(metrics.totalCartNeg);
+  const _endivPct = _safe(metrics.endividamento);
+  const _score    = _safe(metrics.healthScore);
+  const _fmt2     = v => 'R$\u00a0' + Math.round(Math.abs(v)).toLocaleString('pt-BR');
 
-  const _fmt2 = v => 'R$\u00a0' + Math.round(Math.abs(v)).toLocaleString('pt-BR');
-  const prompt = 'Responda APENAS com 2 parágrafos de texto puro (sem markdown, sem asteriscos, sem títulos, sem introdução). Seja direto.\n\n'
-    + 'Dados financeiros da família:\n'
-    + '• Patrimônio líquido: ' + _fmt2(_patLiq) + '\n'
-    + '• Ativos: ' + _fmt2(_totalAtiv) + ' (liquidez: ' + _fmt2(_liquidAmt) + ', investimentos: ' + _fmt2(_invAmt) + ')\n'
-    + '• Passivos: ' + _fmt2(_totalPass) + ' (dívidas: ' + _fmt2(_debtAmt) + ', cartões: ' + _fmt2(_cardDebt) + ')\n'
-    + '• Endividamento: ' + (_endivPct * 100).toFixed(0) + '% | Score financeiro: ' + _score + '/100\n\n'
-    + 'Parágrafo 1: Situação atual — pontos fortes e fracos.\n'
-    + 'Parágrafo 2: 2 a 3 ações concretas para melhorar.\n'
-    + 'Não use formatação. Não escreva introdução. Comece direto pela análise.';
+  const prompt =
+    'Responda APENAS com 2 parágrafos curtos de texto puro (sem markdown, sem asteriscos, sem títulos). Seja direto.\n\n' +
+    'Dados financeiros da família:\n' +
+    '• Patrimônio líquido: ' + _fmt2(_patLiq) + '\n' +
+    '• Ativos: ' + _fmt2(_totalAtiv) + ' (liquidez: ' + _fmt2(_liquidAmt) + ', investimentos: ' + _fmt2(_invAmt) + ')\n' +
+    '• Passivos: ' + _fmt2(_totalPass) + ' (dívidas: ' + _fmt2(_debtAmt) + ', cartões: ' + _fmt2(_cardDebt) + ')\n' +
+    '• Endividamento: ' + (_endivPct * 100).toFixed(0) + '% | Score: ' + _score + '/100\n\n' +
+    'Parágrafo 1: pontos fortes e fracos da situação atual.\n' +
+    'Parágrafo 2: 2 ações concretas prioritárias para melhorar.';
 
+  // For 2.5 models, disable thinking to guarantee fast response
+  const is25 = /gemini-2\.5/.test(_patModel);
+  const genConfig = { temperature: 0.5, maxOutputTokens: 512 };
+  if (is25) genConfig.thinkingConfig = { thinkingBudget: 0 };
+
+  const reqBody = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: genConfig,
+  });
+
+  // Hard 30s timeout via AbortController — no more infinite spinners
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 30000);
+
+  const _tryFetch = async (model) => {
+    const url  = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: reqBody,
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error((err?.error?.message) || 'HTTP ' + resp.status);
+    }
+    return resp.json();
+  };
 
   try {
-    const data = await geminiRetryFetch(url, {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.6, maxOutputTokens: 600 },
-    }, {
-      onRetry: (attempt, max, waitMs) => {
-        result.innerHTML = `<span style="color:var(--muted)">⏳ Tentando novamente (${attempt}/${max})…</span>`;
-      },
-    });
+    let data;
+    try {
+      data = await _tryFetch(_patModel);
+    } catch(primaryErr) {
+      if (primaryErr.name === 'AbortError') throw primaryErr;
+      // Fallback to stable model if configured model fails
+      if (_patModel !== 'gemini-2.5-flash') {
+        result.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.8rem"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></span><span>Tentando modelo alternativo…</span></div>';
+        data = await _tryFetch('gemini-2.5-flash');
+      } else {
+        throw primaryErr;
+      }
+    }
 
-    const text = _parseGeminiText(data);
+    clearTimeout(timeoutId);
 
-    // Strip common AI preamble patterns
-    let cleanText = text.trim()
-      .replace(/^(aqui (está|estão|vai)|aqui (a análise|está a análise|está o resultado):?\s*)/i, '')
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const raw   = parts.map(p => p.text || '').join('').trim();
+    if (!raw) throw new Error('Resposta vazia do modelo. Tente novamente.');
+
+    let cleanText = raw
+      .replace(/^(aqui (está|estão|vai)|aqui (a análise|está a análise):?\s*)/i, '')
       .replace(/^(claro[,!]?\s*)/i, '')
       .replace(/^(análise[:\s]+)/i, '')
       .trim();
 
-    // Convert basic markdown to HTML
     const _mdToHtml = s => s
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // **bold**
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')                 // *italic*
-      .replace(/^#{1,3}\s+/gm, '')                           // strip headings
-      .replace(/^[-•]\s+/gm, '• ')                           // list bullets
-      .replace(/^(P[12]:|Parágrafo \d+:)/gm, '')             // strip P1/P2 labels
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/^#{1,3}\s+/gm, '')
+      .replace(/^[-•]\s+/gm, '• ')
+      .replace(/^(P[12]:|Parágrafo \d+:)/gm, '')
       .trim();
 
     const paras = cleanText.split(/\n\n+/).map(p => _mdToHtml(p.trim())).filter(Boolean);
-    result.innerHTML = paras.map(p =>
-      '<p style="margin:0 0 10px;color:var(--text);line-height:1.7;font-size:.88rem">' + p + '</p>'
+    if (!paras.length) throw new Error('Resposta inválida. Tente novamente.');
+
+    result.innerHTML = paras.map((p, i) =>
+      '<p style="margin:0 0 ' + (i < paras.length-1 ? '12' : '0') + 'px;color:var(--text);line-height:1.7;font-size:.85rem">' + p + '</p>'
     ).join('');
+
   } catch(e) {
-    clearTimeout(_timer);
+    clearTimeout(timeoutId);
     const _msg = e.name === 'AbortError'
-      ? 'Tempo limite atingido (30s). Verifique sua conexão e tente novamente.'
+      ? 'Tempo limite de 30s atingido. Verifique sua conexão e tente novamente.'
       : (e.message || String(e));
-    result.innerHTML = `<span style="color:#ef4444">❌ ${esc(_msg)}</span>`;
+    result.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:10px"><span style="font-size:.9rem;flex-shrink:0">❌</span><span style="font-size:.8rem;color:#ef4444;line-height:1.5">' + (typeof esc === 'function' ? esc(_msg) : _msg) + '</span></div>';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✨ Analisar'; }
+    btn._patRunning = false;
+    btn.style.display = '';
   }
 }
 window._patAnalyzeWithGemini = _patAnalyzeWithGemini;

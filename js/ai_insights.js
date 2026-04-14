@@ -190,7 +190,12 @@ function _aiApplyFiltersToUi(filters) {
   if (memberEl) memberEl.value = f.memberId || '';
   if (payeeEl) payeeEl.value = f.payeeId || '';
   _aiSetSelectValues('aiAccountFilter', f.accountIds || f.accountId || '');
-  _aiSetSelectValues('aiCategoryFilter', f.categoryIds || f.categoryId || '');
+  // aiCategoryFilter is now a hidden input
+  const aiCatHidden = document.getElementById('aiCategoryFilter');
+  const aiCatLabel  = document.getElementById('aiCatPickLabel');
+  const firstCatId  = Array.isArray(f.categoryIds) ? f.categoryIds[0] : (f.categoryId || '');
+  if (aiCatHidden) aiCatHidden.value = firstCatId || '';
+  if (aiCatLabel)  { aiCatLabel.textContent = firstCatId ? (state?.categories?.find(c=>c.id===firstCatId)?.name || firstCatId) : 'Todas'; aiCatLabel.style.color = firstCatId ? 'var(--text)' : 'var(--muted)'; }
   if (extraContextEl) extraContextEl.value = f.extraContext || '';
 }
 
@@ -328,13 +333,7 @@ function _aiPopulateFilters() {
   }
 
   // Categories
-  const catSel = document.getElementById('aiCategoryFilter');
-  if (catSel) {
-    catSel.innerHTML = '<option value="">Todas as categorias</option>' +
-      (state.categories || []).filter(c => !c.parent_id).map(c =>
-        `<option value="${esc(c.id)}">${esc(c.name)}</option>`
-      ).join('');
-  }
+  // aiCategoryFilter uses picker button — no options to populate
 
   // Payees
   const paySel = document.getElementById('aiPayeeFilter');
@@ -381,7 +380,8 @@ function _aiBuildAccountOrFilter(accountIds) {
 
 function _aiGetFilters() {
   const accountIds = _aiGetSelectedValues('aiAccountFilter');
-  const categoryIds = _aiGetSelectedValues('aiCategoryFilter');
+  const aiCatVal = document.getElementById('aiCategoryFilter')?.value || '';
+  const categoryIds = aiCatVal ? [aiCatVal] : [];
   const filters = {
     dateFrom: document.getElementById('aiDateFrom')?.value || '',
     dateTo: document.getElementById('aiDateTo')?.value || '',
@@ -1146,8 +1146,29 @@ async function runAiAnalysis() {
     const ctx = await _aiCollectFinancialContext();
     if (!ctx?.summary?.txCount) {
       _aiSetAnalysisState('empty');
+      _ai.analysisLoading = false;
+      const btn = document.querySelector('.ai2-btn-analyze');
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
       return;
     }
+
+    // Show review modal — user can inspect data and add extra context
+    const previewText = _aiBuildPromptPreview(ctx);
+    const confirmed = await _aiShowReviewModal(previewText, ctx);
+    if (!confirmed) {
+      _ai.analysisLoading = false;
+      _aiSetAnalysisState('idle');
+      const btn = document.querySelector('.ai2-btn-analyze');
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+      return;
+    }
+    if (confirmed.extraContext !== undefined) {
+      if (!ctx.filters) ctx.filters = {};
+      ctx.filters.extraContext = confirmed.extraContext;
+      ctx.userContext = { extraContext: confirmed.extraContext };
+    }
+
+    _aiSetAnalysisState('loading');
     const result = await _callGeminiAnalysis(apiKey, ctx);
     _ai.financialContext = ctx;
     _ai.currentContext = ctx;
@@ -1156,7 +1177,7 @@ async function runAiAnalysis() {
     _ai.currentSnapshotHash = null;
     _aiRenderAnalysis(result);
     _aiRefreshSnapshotButton();
-    toast('Análise pronta. Use “Salvar snapshot” para guardar esta versão da família.', 'success');
+    toast('Análise pronta. Use "Salvar snapshot" para guardar esta versão da família.', 'success');
   } catch (e) {
     _aiSetAnalysisState('error', e.message);
     toast('Erro na análise: ' + e.message, 'error');
@@ -1169,6 +1190,111 @@ async function runAiAnalysis() {
   }
 }
 
+
+// ── Build human-readable summary of what will be sent to Gemini ──────────────
+function _aiBuildPromptPreview(ctx) {
+  const s = ctx.summary || {};
+  const period = ctx.period ? `${ctx.period.from} → ${ctx.period.to}` : '—';
+  const lines = [];
+  lines.push(`📅 Período: ${period}`);
+  lines.push(`📊 Transações: ${s.txCount || 0} | Receitas: ${typeof fmt==='function'?fmt(s.totalIncome||0):s.totalIncome} | Despesas: ${typeof fmt==='function'?fmt(s.totalExpense||0):s.totalExpense}`);
+  lines.push(`💰 Saldo do período: ${typeof fmt==='function'?fmt(s.netBalance||0):s.netBalance}`);
+  if (ctx.topCategories?.length)
+    lines.push(`🏷️ Top categorias: ${ctx.topCategories.slice(0,3).map(c=>c.name+' ('+fmt(c.total)+')').join(', ')}`);
+  if (ctx.topPayees?.length)
+    lines.push(`👤 Top beneficiários: ${ctx.topPayees.slice(0,3).map(p=>p.name).join(', ')}`);
+  if (ctx.accountBalances?.length)
+    lines.push(`🏦 Contas: ${ctx.accountBalances.slice(0,3).map(a=>a.name+' '+fmt(a.balance)).join(', ')}`);
+  if (ctx.budgets?.length)
+    lines.push(`🎯 Orçamentos: ${ctx.budgets.length} categorias monitoradas`);
+  if (ctx.scheduledItems)
+    lines.push(`📆 Programados: ${ctx.scheduledItems.total_count||0} ativos`);
+  const dataSize = JSON.stringify(ctx).length;
+  lines.push('\n\xf0\x9f\x93\xa6 Tamanho do contexto: ~' + Math.round(dataSize/1024) + ' KB (~' + Math.round(dataSize/4) + ' tokens estimados)');
+  return lines.join('\n');
+}
+
+// ── Show review modal before sending to Gemini ────────────────────────────────
+async function _aiShowReviewModal(previewText, ctx) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('aiReviewModal');
+    if (existing) existing.remove();
+
+    const existingCtx = ctx.userContext?.extraContext || ctx.filters?.extraContext || '';
+
+    const modal = document.createElement('div');
+    modal.id = 'aiReviewModal';
+    modal.className = 'modal-overlay open';
+    modal.style.zIndex = '2500';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <span class="modal-title">🔍 Revisar antes de enviar ao Gemini</span>
+          <button class="modal-close" id="aiReviewClose">✕</button>
+        </div>
+        <div class="modal-body">
+          <!-- Summary of what will be sent -->
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:11px;
+            padding:13px 15px;margin-bottom:14px">
+            <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+              color:var(--muted);margin-bottom:8px">📤 Dados que serão enviados ao Gemini</div>
+            <pre id="aiReviewPreview" style="font-size:.76rem;line-height:1.65;color:var(--text2);
+              white-space:pre-wrap;word-break:break-word;margin:0;font-family:inherit">${previewText}</pre>
+          </div>
+
+          <!-- Toggle: show full JSON -->
+          <div style="margin-bottom:14px">
+            <button onclick="document.getElementById('aiReviewFullJson').style.display=document.getElementById('aiReviewFullJson').style.display==='none'?'':'none'"
+              style="font-size:.74rem;color:var(--accent);background:none;border:none;cursor:pointer;
+              font-family:inherit;font-weight:700;padding:0;touch-action:manipulation">
+              📋 Ver / ocultar JSON completo
+            </button>
+            <textarea id="aiReviewFullJson" style="display:none;width:100%;margin-top:8px;
+              font-family:monospace;font-size:.7rem;border:1.5px solid var(--border);border-radius:9px;
+              padding:8px;background:var(--surface2);color:var(--text);height:180px;resize:vertical"
+              readonly>${JSON.stringify({summary:ctx.summary, period:ctx.period, topCategories:ctx.topCategories?.slice?.(0,5)}, null, 2)}</textarea>
+          </div>
+
+          <!-- Extra context field -->
+          <div>
+            <label style="font-size:.78rem;font-weight:700;color:var(--text2);display:block;margin-bottom:6px">
+              💬 Contexto adicional para o Gemini <span style="color:var(--muted);font-weight:400">(opcional)</span>
+            </label>
+            <textarea id="aiReviewExtraCtx" rows="3" style="width:100%;padding:9px 11px;
+              border:1.5px solid var(--border);border-radius:9px;font-size:.83rem;
+              font-family:inherit;background:var(--surface2);color:var(--text);resize:vertical"
+              placeholder="Ex: Estou querendo economizar para uma viagem. Ignore os gastos de novembro que foram atípicos por causa de mudança…">${existingCtx}</textarea>
+            <div style="font-size:.69rem;color:var(--muted);margin-top:4px">
+              Este texto será enviado ao Gemini como orientação adicional — complementa os dados mas não os substitui.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="aiReviewCancel">✕ Cancelar</button>
+          <button class="btn btn-primary" id="aiReviewConfirm" style="min-width:160px">
+            🤖 Enviar ao Gemini
+          </button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(modal);
+
+    const cleanup = (result) => {
+      modal.classList.remove('open');
+      setTimeout(() => modal.remove(), 200);
+      resolve(result);
+    };
+
+    document.getElementById('aiReviewClose').onclick   = () => cleanup(false);
+    document.getElementById('aiReviewCancel').onclick  = () => cleanup(false);
+    document.getElementById('aiReviewConfirm').onclick = () => {
+      const extra = document.getElementById('aiReviewExtraCtx')?.value?.trim() || '';
+      cleanup({ extraContext: extra });
+    };
+    modal.onclick = e => { if (e.target === modal) cleanup(false); };
+  });
+}
 
 async function saveCurrentAiSnapshot() {
   if (_ai.analysisLoading || _ai.snapshotSaving) return;
@@ -2732,3 +2858,16 @@ window.exportAiAnalysis                    = exportAiAnalysis;
 window.initAiInsightsPage                  = initAiInsightsPage;
 window.runAiAnalysis                       = runAiAnalysis;
 window.sendAiChatMessage                   = sendAiChatMessage;
+
+// ── Category picker for AI Insights filter ───────────────────────────────────
+function _aiCatPickerOpen() {
+  openCatChooser('tx', function(catId, catName) {
+    const hidden = document.getElementById('aiCategoryFilter');
+    const label  = document.getElementById('aiCatPickLabel');
+    const btn    = document.getElementById('aiCatPickBtn');
+    if (hidden) hidden.value = catId || '';
+    if (label)  { label.textContent = catName || 'Todas'; label.style.color = catId ? 'var(--text)' : 'var(--muted)'; }
+    if (btn)    btn.style.borderColor = catId ? 'var(--accent)' : '';
+  });
+}
+window._aiCatPickerOpen = _aiCatPickerOpen;

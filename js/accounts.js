@@ -135,7 +135,7 @@ async function renderAccounts(ft=''){
   _syncAccountsTab(ft);
   try { renderGroupManager(); } catch(e) {}
   // Render loyalty programs section (já carregado acima, só renderiza a seção)
-  if (typeof renderLoyaltySection === 'function') renderLoyaltySection().catch(()=>{});
+  // Loyalty programs now on dedicated page (navigate to 'loyalty')
 }
 
 function _renderArchivedSection(grid) {
@@ -420,7 +420,7 @@ function _onAccModalTypeChange() {
 window._onAccModalTypeChange = _onAccModalTypeChange;
 
 async function openAccountModal(id=''){
-  const form={id:'',name:'',type:'corrente',currency:'BRL',initial_balance:0,icon:'',color:'#2a6049',is_brazilian:false,iof_rate:3.5,group_id:'',is_favorite:false,best_purchase_day:null,due_day:null,bank_name:'',bank_code:'',agency:'',account_number:'',iban:'',routing_number:'',swift_bic:'',pix_key:'',pix_keys:[],card_brand:'',card_limit:null,card_type:'',card_issuer:'',linked_dream_id:null,notes:''};
+  const form={id:'',name:'',type:'corrente',currency:'BRL',initial_balance:0,icon:'',color:'#2a6049',is_brazilian:false,iof_rate:3.5,group_id:'',is_favorite:false,chat_enabled:true,best_purchase_day:null,due_day:null,bank_name:'',bank_code:'',agency:'',account_number:'',iban:'',routing_number:'',swift_bic:'',pix_key:'',pix_keys:[],card_brand:'',card_limit:null,card_type:'',card_issuer:'',linked_dream_id:null,notes:''};
   if(id){
     const a = state.accounts.find(x=>x.id===id)
            || (state.archivedAccounts||[]).find(x=>x.id===id);
@@ -451,6 +451,8 @@ async function openAccountModal(id=''){
   // Favorite (Feature 7)
   const favEl=document.getElementById('accountIsFavorite');
   if(favEl) favEl.checked=!!form.is_favorite;
+  const chatEl=document.getElementById('accountChatEnabled');
+  if(chatEl) chatEl.checked=form.chat_enabled !== false;  // default true if null
   // Credit card config
   const isCC=form.type==='cartao_credito';
   const iofConfig=document.getElementById('accountIofConfig');
@@ -570,6 +572,7 @@ async function saveAccount(){
     iof_rate:isBR?(parseFloat(iofRateEl&&iofRateEl.value)||3.5):null,
     group_id:gid,
     is_favorite: favEl ? !!favEl.checked : false,
+    chat_enabled: document.getElementById('accountChatEnabled') ? !!document.getElementById('accountChatEnabled').checked : true,
     best_purchase_day: isCC&&bpdEl&&bpdEl.value ? (parseInt(bpdEl.value)||null) : null,
     due_day: isCC&&ddEl&&ddEl.value ? (parseInt(ddEl.value)||null) : null,
     // Dados bancários

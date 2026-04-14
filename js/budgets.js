@@ -123,9 +123,11 @@ async function loadBudgets() {
     bq = bq.eq('budget_type', _budgetView);
     if (_budgetView === 'monthly') {
       const ms = `${period.year}-${String(period.month).padStart(2, '0')}-01`;
-      bq = bq.eq('month', ms);
+      // Include: specific-month budgets OR recurring templates (month IS NULL)
+      bq = bq.or(`month.eq.${ms},and(auto_reset.eq.true,month.is.null)`);
     } else {
-      bq = bq.eq('year', period.year);
+      // Include: specific-year budgets OR recurring annual templates (year IS NULL)
+      bq = bq.or(`year.eq.${period.year},and(auto_reset.eq.true,year.is.null)`);
     }
   } else {
     // Banco antigo: só mensal por mês
@@ -497,22 +499,22 @@ function openBudgetModal(id = '') {
   const yearEl = document.getElementById('budgetModalYear');
   if (yearEl) yearEl.value = existing?.year || period.year || now.getFullYear();
 
-  // Categorias: pai + filhos indentados
-  const catSel  = document.getElementById('budgetCategory');
-  const parents = state.categories.filter(c => c.type === 'despesa' && !c.parent_id)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  let opts = '';
-  parents.forEach(p => {
-    opts += `<option value="${p.id}">${p.icon || '📦'} ${esc(p.name)}</option>`;
-    state.categories.filter(c => c.type === 'despesa' && c.parent_id === p.id)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .forEach(c => { opts += `<option value="${c.id}">　↳ ${c.icon || '•'} ${esc(c.name)}</option>`; });
-  });
-  catSel.innerHTML = opts;
-  if (existing?.category_id) catSel.value = existing.category_id;
-
+  // Categorias: usa picker modal
+  const budCatHidden = document.getElementById('budgetCategory');
+  const budCatLabel  = document.getElementById('budgetCatPickLabel');
+  const budCatBtn    = document.getElementById('budgetCatPickBtn');
+  if (budCatHidden) budCatHidden.value = '';
+  if (budCatLabel)  { budCatLabel.textContent = '— Selecionar categoria —'; budCatLabel.style.color = 'var(--muted)'; }
+  if (budCatBtn)    { budCatBtn.style.borderColor = ''; }
+  if (existing?.category_id) {
+    const cat = state.categories.find(c => c.id === existing.category_id);
+    if (cat) {
+      if (budCatHidden) budCatHidden.value = cat.id;
+      if (budCatLabel)  { budCatLabel.textContent = `${cat.icon || '📦'} ${cat.name}`; budCatLabel.style.color = 'var(--text)'; }
+      if (budCatBtn)    { budCatBtn.style.borderColor = 'var(--accent)'; }
+    }
+  }
   _updateBudgetCatHint();
-  catSel.onchange = _updateBudgetCatHint;
 
   // Valor
   setAmtField('budgetAmount', existing?.amount || 0);
@@ -540,8 +542,25 @@ function openBudgetModal(id = '') {
   const pausedGroup = document.getElementById('budgetPausedGroup');
   if (pausedGroup) pausedGroup.style.display = id ? '' : 'none';
 
+  // Update picker visibility based on recurring state
+  _onBudgetRecurringChange();
+
   openModal('budgetModal');
 }
+
+function _budgetCatPickerOpen() {
+  if (typeof openCatChooser !== 'function') return;
+  openCatChooser('tx', function(catId, catName) {
+    const hidden = document.getElementById('budgetCategory');
+    const label  = document.getElementById('budgetCatPickLabel');
+    const btn    = document.getElementById('budgetCatPickBtn');
+    if (hidden) hidden.value = catId || '';
+    if (label)  { label.textContent = catName || '— Selecionar categoria —'; label.style.color = catId ? 'var(--text)' : 'var(--muted)'; }
+    if (btn)    { btn.style.borderColor = catId ? 'var(--accent)' : ''; }
+    _updateBudgetCatHint?.();
+  });
+}
+window._budgetCatPickerOpen = _budgetCatPickerOpen;
 
 function _updateBudgetCatHint() {
   const catId = document.getElementById('budgetCategory')?.value;
@@ -556,15 +575,39 @@ function setBudgetModalType(type) { _setBudgetModalType(type); }
 function _setBudgetModalType(type) {
   document.getElementById('budgetModalTypeMonthly')?.classList.toggle('active', type === 'monthly');
   document.getElementById('budgetModalTypeAnnual')?.classList.toggle('active',  type === 'annual');
+  const tt = document.getElementById('budgetModalTypeCurrent');
+  if (tt) tt.setAttribute('data-type', type);
+  // Update period label in recurring notice
+  const periodLabel = document.getElementById('budgetRecurringPeriodLabel');
+  if (periodLabel) periodLabel.textContent = type === 'annual' ? 'todos os anos' : 'todos os meses';
+  // Update visibility of month/year pickers based on recurring state
+  _onBudgetRecurringChange();
+  // Auto-reset only makes sense for monthly
+  const rg = document.getElementById('budgetAutoResetGroup');
+  if (rg) rg.style.display = type === 'monthly' ? '' : 'none';
+}
+
+/** Show/hide month or year picker based on whether budget is recurring */
+function _onBudgetRecurringChange() {
+  const isRecurring = document.getElementById('budgetAutoReset')?.checked ?? false;
+  const type        = document.getElementById('budgetModalTypeCurrent')?.getAttribute('data-type') || 'monthly';
   const mg = document.getElementById('budgetModalMonthGroup');
   const yg = document.getElementById('budgetModalYearGroup');
-  const rg = document.getElementById('budgetAutoResetGroup');
-  const tt = document.getElementById('budgetModalTypeCurrent');
-  if (mg) mg.style.display = type === 'monthly' ? '' : 'none';
-  if (yg) yg.style.display = type === 'annual'  ? '' : 'none';
-  if (rg) rg.style.display = type === 'monthly' ? '' : 'none';
-  if (tt) tt.setAttribute('data-type', type);
+  const rn = document.getElementById('budgetRecurringNotice');
+
+  if (isRecurring) {
+    // Recurring: hide period picker, show notice
+    if (mg) mg.style.display = 'none';
+    if (yg) yg.style.display = 'none';
+    if (rn) rn.style.display = '';
+  } else {
+    // Non-recurring: show appropriate picker
+    if (mg) mg.style.display = type === 'monthly' ? '' : 'none';
+    if (yg) yg.style.display = type === 'annual'  ? '' : 'none';
+    if (rn) rn.style.display = 'none';
+  }
 }
+window._onBudgetRecurringChange = _onBudgetRecurringChange;
 
 // ── Save / Delete ─────────────────────────────────────────────────────────
 
@@ -573,22 +616,39 @@ async function saveBudget() {
   const btype     = document.getElementById('budgetModalTypeCurrent')?.getAttribute('data-type') || _budgetView;
   const catId     = document.getElementById('budgetCategory').value;
   const amount    = Math.abs(getAmtField('budgetAmount'));
-  const autoReset = document.getElementById('budgetAutoReset')?.checked ?? true;
+  // autoReset is read above as autoReset2
   const notes     = document.getElementById('budgetNotes')?.value.trim() || null;
 
   if (!catId)  { toast('Selecione uma categoria', 'error'); return; }
   if (!amount) { toast('Informe o valor limite', 'error');  return; }
 
-  let month = null, year = null;
+  const autoReset2 = document.getElementById('budgetAutoReset')?.checked ?? true;
+  // month column is NOT NULL in DB — use first-of-current-month as placeholder for recurring budgets
+  const _nowMonth = new Date();
+  const _recurMonth = `${_nowMonth.getFullYear()}-${String(_nowMonth.getMonth()+1).padStart(2,'0')}-01`;
+
+  let month = _recurMonth, year = null;
   if (btype === 'monthly') {
-    const mv = document.getElementById('budgetModalMonth')?.value;
-    if (!mv) { toast('Selecione o mês', 'error'); return; }
-    const [y, m] = mv.split('-');
-    month = `${y}-${m}-01`;
-    year  = parseInt(y);
+    if (autoReset2) {
+      // Recurring monthly: use current month as placeholder (auto_reset=true identifies it as recurring)
+      month = _recurMonth;
+      year  = null;
+    } else {
+      const mv = document.getElementById('budgetModalMonth')?.value;
+      if (!mv) { toast('Selecione o mês', 'error'); return; }
+      const [y, m] = mv.split('-');
+      month = `${y}-${m}-01`;
+      year  = parseInt(y);
+    }
   } else {
-    year = parseInt(document.getElementById('budgetModalYear')?.value);
-    if (!year) { toast('Selecione o ano', 'error'); return; }
+    if (autoReset2) {
+      // Recurring annual: no specific year needed
+      year  = null;
+      month = null;
+    } else {
+      year = parseInt(document.getElementById('budgetModalYear')?.value);
+      if (!year) { toast('Selecione o ano', 'error'); return; }
+    }
   }
 
   const hasNewSchema = await _checkBudgetSchema();
@@ -604,7 +664,7 @@ async function saveBudget() {
   // Campos extras (só quando banco tem o schema novo)
   if (hasNewSchema) {
     data.budget_type = btype;
-    data.auto_reset  = btype === 'monthly' ? autoReset : false;
+    data.auto_reset  = autoReset2;
     data.year        = year;
     data.notes       = notes;
     // paused — só salvar em edições (novo orçamento começa ativo)
@@ -625,10 +685,26 @@ async function saveBudget() {
     ({ error: err } = await sb.from('budgets').update(data).eq('id', id));
   } else if (hasNewSchema) {
     // Insert com upsert usando nova constraint
-    const conflict = btype === 'monthly'
-      ? 'family_id,category_id,month,budget_type'
-      : 'family_id,category_id,year,budget_type';
-    ({ error: err } = await sb.from('budgets').upsert(data, { onConflict: conflict }));
+    // Recurring budgets (auto_reset=true, month=null) use different conflict key
+    let conflict;
+    if (autoReset2) {
+      conflict = 'family_id,category_id,budget_type,auto_reset';
+    } else if (btype === 'monthly') {
+      conflict = 'family_id,category_id,month,budget_type';
+    } else {
+      conflict = 'family_id,category_id,year,budget_type';
+    }
+    // Try upsert first; if the unique constraint doesn't exist, fall back to plain insert
+    try {
+      ({ error: err } = await sb.from('budgets').upsert(data, { onConflict: conflict }));
+      // If upsert succeeded but constraint doesn't exist, Supabase may return 42P10 error
+      if (err && (err.code === '42P10' || err.message?.includes('no unique or exclusion constraint'))) {
+        ({ error: err } = await sb.from('budgets').insert(data));
+      }
+    } catch(_uErr) {
+      // Network or unexpected error — fall back to plain insert
+      try { ({ error: err } = await sb.from('budgets').insert(data)); } catch(e2) { err = e2; }
+    }
   } else {
     // Schema antigo: upsert com constraint original
     ({ error: err } = await sb.from('budgets').upsert(data, { onConflict: 'category_id,month' }));
@@ -748,9 +824,21 @@ async function _autoProjectRecurringBudgets(period) {
     const prevMonthStr = `${prevY}-${String(prevM).padStart(2,'0')}-01`;
     const curMonthStr  = `${period.year}-${String(period.month).padStart(2,'0')}-01`;
 
-    const { data: prevBudgets } = await famQ(
+    // Fetch recurring templates: either from previous month OR with month=null (new format)
+    const { data: prevBudgetsByMonth } = await famQ(
       sb.from('budgets').select('category_id,amount,budget_type,family_member_id,notes')
     ).eq('budget_type','monthly').eq('month', prevMonthStr).eq('auto_reset', true);
+
+    const { data: recurringTemplates } = await famQ(
+      sb.from('budgets').select('category_id,amount,budget_type,family_member_id,notes')
+    ).eq('budget_type','monthly').eq('auto_reset', true).is('month', null);
+
+    // Merge: prefer templates (new format), fall back to previous month copies
+    const templateCats = new Set((recurringTemplates || []).map(b => b.category_id));
+    const prevBudgets = [
+      ...(recurringTemplates || []),
+      ...((prevBudgetsByMonth || []).filter(b => !templateCats.has(b.category_id))),
+    ];
 
     if (!prevBudgets || !prevBudgets.length) return;
 

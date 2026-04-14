@@ -289,8 +289,7 @@ function _detectAndShowAuthError() {
       setTimeout(() => _showAuthErrorBanner(msg), 300);
     } else {
       // No credentials — show setup screen with error
-      const setup = document.getElementById('setupScreen');
-      if (setup) setup.style.display = 'flex';
+      _showSetupScreen();
       setTimeout(() => _showAuthErrorBanner(msg), 300);
     }
 
@@ -471,8 +470,7 @@ async function tryAutoConnect(){
       showLoginScreen();
     }
   } else {
-    const setup=document.getElementById('setupScreen');
-    if(setup) setup.style.display='flex';
+    _showSetupScreen();
   }
 }
 
@@ -593,6 +591,8 @@ async function bootApp(){
   if (typeof runScheduledAutoRegister === 'function') {
     runScheduledAutoRegister().catch(() => {});
   }
+  // Arm the midnight timer so auto-register runs daily even during long sessions
+  scheduleDailyAutoRegister();
 
   populateSelects();
   // Start auto-check timer if configured
@@ -609,6 +609,23 @@ async function bootApp(){
   // Navegar para dashboard — requestAnimationFrame garante que o
   // layout é pintado antes de iniciar as queries pesadas
   await new Promise(r => requestAnimationFrame(() => setTimeout(r, 60)));
+  // ── Subscription gate ──────────────────────────────────────────────────
+  if (typeof checkSubscriptionGate === 'function') {
+    try {
+      const gate = await checkSubscriptionGate();
+      if (!gate.allowed) {
+        showPaywall?.(gate);
+        return;
+      }
+      // Show trial reminder if <= 5 days left
+      if (gate.reason === 'trialing' && gate.daysLeft <= 5) {
+        setTimeout(() => {
+          toast(`⏰ Trial expira em ${gate.daysLeft} dia(s). Assine para manter o acesso.`, 'warning');
+        }, 2500);
+      }
+    } catch(_) { /* gate error: não bloqueia */ }
+  }
+
   navigate('dashboard');
   // Notificações de login para o usuário (transações do dia + saúde financeira)
   // Notifications: run after loadScheduled resolves so data is ready
@@ -642,6 +659,7 @@ const pageTitles={dashboard:'Dashboard',transactions:'Transações',accounts:'Co
   ai_insights:'AI Insights',
   debts:'Dívidas',
   dreams:'Meus Sonhos',
+  loyalty:'Programas de Fidelidade',
   help:'Ajuda',
   audit:'Auditoria de Programadas',
   telemetry:'Telemetria',
@@ -667,6 +685,7 @@ const _pageIconsSVG = {
   telemetry:    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><polyline points="22 20 2 20"/></svg>',
   privacy:      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   dreams:       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  loyalty:      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
 };
 async function togglePrivacy(){
   state.privacyMode=!state.privacyMode;
@@ -684,6 +703,13 @@ async function togglePrivacy(){
       await loadDashboard?.();
     }else if(p==='transactions'){
       await loadTransactions?.();
+      // Scroll to today's row after render
+      setTimeout(() => {
+        const todayRow = document.getElementById('tx-today-row');
+        if (todayRow) {
+          todayRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 80);
     }else if(p==='accounts'){
       renderAccounts?.();
     }else if(p==='reports'){
@@ -986,6 +1012,7 @@ function navigate(page){
       grocery:      '',
       ai_insights:  '',
       dreams:       `<button class="page-header-action" onclick="openDreamWizard()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo Sonho</button>`,
+      loyalty:      `<button class="page-header-action" onclick="openLoyaltyModal('')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo</button>`,
       help:         '',
     };
     const bar = document.createElement('div');
@@ -1001,10 +1028,13 @@ function navigate(page){
     }
     if (fxBar) {
       pageEl.insertBefore(fxBar, bar.nextSibling);
-      fxBar.style.display = '';
-      if (typeof _renderFxBadge === 'function') {
-        try { _renderFxBadge(); } catch (_) {}
-      }
+      fxBar.style.display = '';   // always show immediately
+      // Defer render so state (accounts, user) is guaranteed ready
+      setTimeout(() => {
+        if (typeof _renderFxBadge === 'function') {
+          try { _renderFxBadge(); } catch (_) {}
+        }
+      }, 80);
     }
   })(page);
   state.currentPage=page;closeSidebar();
@@ -1035,6 +1065,7 @@ function navigate(page){
     }
   }
   else if(page==='accounts'){ if(typeof initAccountsPage==='function') initAccountsPage(); else renderAccounts(); }
+  else if(page==='loyalty'){ if(typeof initLoyaltyPage==='function') initLoyaltyPage(); }
   else if(page==='reports'){if(typeof populateSelects==='function')populateSelects();if(typeof populateReportFilters==='function')populateReportFilters();loadCurrentReport();}
   else if(page==='budgets')initBudgetsPage();
   else if(page==='categories')initCategoriesPage();
@@ -1445,4 +1476,35 @@ if (document.readyState === 'loading') {
 // Restore again after bootApp loads app_settings from Supabase (cross-device pass)
 document.addEventListener('appsettings:loaded', () => {
   try { _restoreModuleIntroStates(); } catch(_) {}
+  // Restore alert/sound prefs from Supabase (cross-device sync)
+  if (typeof restoreAlertPrefsFromDB === 'function') {
+    restoreAlertPrefsFromDB().catch(() => {});
+  }
 });
+
+// ── Setup screen helpers ───────────────────────────────────────────────────
+function _showSetupScreen(msg) {
+  const setup = document.getElementById('setupScreen');
+  if (!setup) return;
+  // Check if Supabase session might already exist (e.g. iOS cleared localStorage)
+  const maybeLoggedIn = document.cookie.includes('sb-') ||
+    Object.keys(localStorage).some(k => k.startsWith('sb-'));
+  const reloadBtn  = document.getElementById('setupReloadBtn');
+  const msgEl      = document.getElementById('setupScreenMsg');
+  if (maybeLoggedIn) {
+    if (reloadBtn) reloadBtn.style.display = 'flex';
+    if (msgEl) {
+      msgEl.textContent = 'Parece que suas credenciais foram perdidas pelo browser. Tente recarregar o app antes de reconfigurar.';
+      msgEl.style.display = '';
+    }
+  }
+  if (msg && msgEl) { msgEl.textContent = msg; msgEl.style.display = ''; }
+  setup.style.display = 'flex';
+}
+window._showSetupScreen = _showSetupScreen;
+
+function _dismissSetupScreen() {
+  const setup = document.getElementById('setupScreen');
+  if (setup) setup.style.display = 'none';
+}
+window._dismissSetupScreen = _dismissSetupScreen;
